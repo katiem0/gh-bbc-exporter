@@ -1,4 +1,4 @@
-module github.com/katiem0/gh-bbc-archiver
+module github.com/katiem0/gh-bbc-exporter
 
 go 1.23.1
 
