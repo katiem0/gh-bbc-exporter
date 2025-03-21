@@ -1,7 +1,11 @@
 package cmd
 
 import (
-	"github.com/katiem0/gh-export-bbc/internal/log"
+	"fmt"
+	"strings"
+
+	"github.com/katiem0/gh-bbc-exporter/internal/log"
+	"github.com/katiem0/gh-bbc-exporter/internal/utils"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -21,7 +25,7 @@ func NewCmdRoot() *cobra.Command {
 	cmdFlags := cmdFlags{}
 
 	exportCmd := &cobra.Command{
-		Use:   "export-bbc",
+		Use:   "bbc-exporter",
 		Short: "Export repository and metadata from BitBucket Cloud",
 		Long:  "Export repository and metadata from BitBucket Cloud for GitHub Cloud import.",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -51,7 +55,40 @@ func NewCmdRoot() *cobra.Command {
 }
 
 func runCmdExport(cmdFlags *cmdFlags, logger *zap.Logger) error {
-	logger.Info("Starting BitBucket Cloud export")
+	logger.Info("Starting BitBucket Cloud export",
+		zap.String("workspace", cmdFlags.workspace),
+		zap.String("repository", cmdFlags.repository))
 
+	// Validate authentication
+	if cmdFlags.bitbucketToken == "" && (cmdFlags.bitbucketUser == "" || cmdFlags.bitbucketAppPass == "") {
+		return fmt.Errorf("either token or both username and app password must be provided")
+	}
+
+	// Create BitBucket client
+	client := utils.NewClient(
+		cmdFlags.bitbucketAPIURL,
+		cmdFlags.bitbucketToken,
+		cmdFlags.bitbucketUser,
+		cmdFlags.bitbucketAppPass,
+		logger,
+	)
+	exporter := utils.NewExporter(client, cmdFlags.outputDir, logger)
+
+	// Run export
+	if err := exporter.Export(cmdFlags.workspace, cmdFlags.repository, logger); err != nil {
+		logger.Error("Export failed", zap.Error(err))
+		return err
+	}
+
+	// Check if output is an archive
+	outputPath := exporter.GetOutputPath()
+	if strings.HasSuffix(outputPath, ".tar.gz") {
+		fmt.Printf("\nExport successful!\nArchive created: %s\n", outputPath)
+		fmt.Println("You can use this archive with GitHub's repository importer.")
+	} else {
+		fmt.Printf("\nExport successful!\nOutput directory: %s\n", outputPath)
+	}
+
+	logger.Info("Export completed successfully")
 	return nil
 }

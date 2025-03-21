@@ -115,18 +115,16 @@ type Repository struct {
 	Owner         string        `json:"owner"`
 	Name          string        `json:"name"`
 	Description   string        `json:"description"`
-	Website       *string       `json:"website"`
 	Private       bool          `json:"private"`
 	HasIssues     bool          `json:"has_issues"`
 	HasWiki       bool          `json:"has_wiki"`
 	HasDownloads  bool          `json:"has_downloads"`
 	Labels        []Label       `json:"labels"`
-	Webhooks      []interface{} `json:"webhooks"`
 	Collaborators []interface{} `json:"collaborators"`
 	CreatedAt     string        `json:"created_at"`
 	GitURL        string        `json:"git_url"`
 	DefaultBranch string        `json:"default_branch"`
-	WikiURL       string        `json:"wiki_url"`
+	PublicKeys    []interface{} `json:"public_keys"`
 }
 
 // Label represents a repository label
@@ -220,4 +218,15 @@ type MigrationArchive struct {
 	Description    string `json:"description"`
 	CreatedAt      string `json:"created_at"`
 	Private        bool   `json:"private"`
+}
+
+type Branch struct {
+	Name   string `json:"name"`
+	IsMain bool   `json:"is_main"`
+}
+
+// BranchRestriction represents a branch restriction
+type BranchRestriction struct {
+	BranchName string `json:"branch_name"`
+	Kind       string `json:"kind"`
 }
