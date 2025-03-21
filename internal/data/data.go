@@ -1,6 +1,5 @@
 package data
 
-// BitbucketRepository represents a repository in Bitbucket
 type BitbucketRepository struct {
 	Name        string `json:"name"`
 	UUID        string `json:"uuid"`
@@ -11,18 +10,15 @@ type BitbucketRepository struct {
 	IsPrivate   bool   `json:"is_private"`
 }
 
-// Owner represents a repository owner
 type Owner struct {
 	Username string `json:"username"`
 	UUID     string `json:"uuid"`
 }
 
-// MigrationArchiveSchema represents the schema version
 type MigrationArchiveSchema struct {
 	Version string `json:"version"`
 }
 
-// URLs represents URL templates for GitHub resources
 type URLs struct {
 	User                 string           `json:"user"`
 	Organization         string           `json:"organization"`
@@ -39,13 +35,11 @@ type URLs struct {
 	Label                string           `json:"label"`
 }
 
-// IssueCommentURLs represents URL templates for issue comments
 type IssueCommentURLs struct {
 	Issue       string `json:"issue"`
 	PullRequest string `json:"pull_request"`
 }
 
-// User represents a user in the migration archive
 type User struct {
 	Type      string  `json:"type"`
 	URL       string  `json:"url"`
@@ -58,13 +52,11 @@ type User struct {
 	CreatedAt string  `json:"created_at"`
 }
 
-// Email represents a user's email
 type Email struct {
 	Address string `json:"address"`
 	Primary bool   `json:"primary"`
 }
 
-// Organization represents an organization in the migration archive
 type Organization struct {
 	Type        string   `json:"type"`
 	URL         string   `json:"url"`
@@ -77,14 +69,12 @@ type Organization struct {
 	Members     []Member `json:"members"`
 }
 
-// Member represents an organization member
 type Member struct {
 	User  string `json:"user"`
 	Role  string `json:"role"`
 	State string `json:"state"`
 }
 
-// Team represents a team in the migration archive
 type Team struct {
 	Type         string       `json:"type"`
 	URL          string       `json:"url"`
@@ -96,7 +86,6 @@ type Team struct {
 	CreatedAt    string       `json:"created_at"`
 }
 
-// Permission represents a team's repository permission
 type Permission struct {
 	Repository string `json:"repository"`
 	Access     string `json:"access"`
@@ -108,7 +97,6 @@ type TeamMember struct {
 	Role string `json:"role"`
 }
 
-// Repository represents a repository in the migration archive
 type Repository struct {
 	Type          string        `json:"type"`
 	URL           string        `json:"url"`
@@ -120,14 +108,15 @@ type Repository struct {
 	HasWiki       bool          `json:"has_wiki"`
 	HasDownloads  bool          `json:"has_downloads"`
 	Labels        []Label       `json:"labels"`
+	Webhooks      []interface{} `json:"webhooks"`
 	Collaborators []interface{} `json:"collaborators"`
 	CreatedAt     string        `json:"created_at"`
 	GitURL        string        `json:"git_url"`
 	DefaultBranch string        `json:"default_branch"`
+	WikiURL       string        `json:"wiki_url"`
 	PublicKeys    []interface{} `json:"public_keys"`
 }
 
-// Label represents a repository label
 type Label struct {
 	Type      string `json:"type"`
 	URL       string `json:"url"`
@@ -136,7 +125,6 @@ type Label struct {
 	CreatedAt string `json:"created_at"`
 }
 
-// ProtectedBranch represents a protected branch in the migration archive
 type ProtectedBranch struct {
 	Type                                 string   `json:"type"`
 	Name                                 string   `json:"name"`
@@ -159,25 +147,24 @@ type ProtectedBranch struct {
 	RequiredStatusChecks                 []string `json:"required_status_checks"`
 }
 
-// PullRequest represents a pull request in the migration archive
 type PullRequest struct {
-	Type       string   `json:"type"`
-	URL        string   `json:"url"`
-	User       string   `json:"user"`
-	Repository string   `json:"repository"`
-	Title      string   `json:"title"`
-	Body       *string  `json:"body"`
-	Base       PRBranch `json:"base"`
-	Head       PRBranch `json:"head"`
-	Assignee   *string  `json:"assignee"`
-	Milestone  *string  `json:"milestone"`
-	Labels     []string `json:"labels"`
-	MergedAt   *string  `json:"merged_at"`
-	ClosedAt   *string  `json:"closed_at"`
-	CreatedAt  string   `json:"created_at"`
+	Type           string   `json:"type"`
+	URL            string   `json:"url"`
+	User           string   `json:"user"`
+	Repository     string   `json:"repository"`
+	Title          string   `json:"title"`
+	Body           string   `json:"body"`
+	Base           PRBranch `json:"base"`
+	Head           PRBranch `json:"head"`
+	MergeCommitSha *string  `json:"merge_commit_sha"`
+	Labels         []string `json:"labels"`
+	MergedAt       *string  `json:"merged_at"`
+	ClosedAt       *string  `json:"closed_at"`
+	CreatedAt      string   `json:"created_at"`
+	Assignee       *string  `json:"assignee"`
+	Milestone      *string  `json:"milestone"`
 }
 
-// PRBranch represents a pull request branch
 type PRBranch struct {
 	Ref  string `json:"ref"`
 	Sha  string `json:"sha"`
@@ -185,7 +172,6 @@ type PRBranch struct {
 	Repo string `json:"repo"`
 }
 
-// Issue represents an issue in the migration archive
 type Issue struct {
 	Type       string   `json:"type"`
 	URL        string   `json:"url"`
@@ -200,7 +186,6 @@ type Issue struct {
 	CreatedAt  string   `json:"created_at"`
 }
 
-// IssueComment represents an issue comment in the migration archive
 type IssueComment struct {
 	Type        string `json:"type"`
 	URL         string `json:"url"`
@@ -211,7 +196,6 @@ type IssueComment struct {
 	CreatedAt   string `json:"created_at"`
 }
 
-// MigrationArchive represents the old structure
 type MigrationArchive struct {
 	RepositoryName string `json:"repository_name"`
 	Owner          string `json:"owner"`
@@ -225,8 +209,60 @@ type Branch struct {
 	IsMain bool   `json:"is_main"`
 }
 
-// BranchRestriction represents a branch restriction
 type BranchRestriction struct {
 	BranchName string `json:"branch_name"`
 	Kind       string `json:"kind"`
+}
+
+type CommitData struct {
+	Type    string `json:"type"`
+	Hash    string `json:"hash"`
+	Date    string `json:"date"`
+	Message string `json:"message"`
+}
+
+type BitbucketPRResponse struct {
+	Size     int           `json:"size"`
+	Page     int           `json:"page"`
+	PageLen  int           `json:"pagelen"`
+	Next     string        `json:"next"`
+	Previous string        `json:"previous"`
+	Values   []BitbucketPR `json:"values"`
+}
+
+type BitbucketPR struct {
+	ID                int                 `json:"id"`
+	Title             string              `json:"title"`
+	Description       *string             `json:"description"`
+	State             string              `json:"state"`
+	CreatedOn         string              `json:"created_on"`
+	UpdatedOn         string              `json:"updated_on"`
+	CloseSourceBranch bool                `json:"close_source_branch"`
+	Source            BitbucketPREndpoint `json:"source"`
+	Destination       BitbucketPREndpoint `json:"destination"`
+	MergeCommit       *BitbucketCommit    `json:"merge_commit"`
+	Author            BitbucketUser       `json:"author"`
+}
+
+type BitbucketPREndpoint struct {
+	Branch struct {
+		Name string `json:"name"`
+	} `json:"branch"`
+	Commit struct {
+		Hash string `json:"hash"`
+	} `json:"commit"`
+	Repository struct {
+		FullName string `json:"full_name"`
+	} `json:"repository"`
+}
+
+type BitbucketCommit struct {
+	Hash string `json:"hash"`
+}
+
+type BitbucketUser struct {
+	DisplayName string `json:"display_name"`
+	UUID        string `json:"uuid"`
+	Nickname    string `json:"nickname"`
+	AccountID   string `json:"account_id"`
 }

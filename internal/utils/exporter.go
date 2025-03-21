@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
@@ -131,13 +132,20 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 		e.logger.Warn("Failed to fetch pull requests", zap.Error(err))
 		// Create empty pull requests array if API call fails
 		prs = []data.PullRequest{}
+	} else {
+		e.logger.Info("Successfully fetched pull requests",
+			zap.Int("count", len(prs)))
 	}
+
 	if len(prs) > 0 {
+		// Ensure repository field is set
 		for i := range prs {
 			prs[i].Repository = fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug)
 		}
+
+		// Write pull requests to file
 		if err := e.writeJSONFile("pull_requests_000001.json", prs); err != nil {
-			return err
+			return fmt.Errorf("failed to write pull requests: %w", err)
 		}
 	}
 
@@ -225,11 +233,12 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string, logger 
 		zap.String("repository", repoSlug),
 		zap.String("destination", repoDir))
 
-	// Create directory
+	// Create parent directory (not the repo dir itself)
 	if err := os.MkdirAll(repoDir, 0755); err != nil {
 		return fmt.Errorf("failed to create repository directory: %w", err)
 	}
 
+	// First clone as a regular repo with --mirror flag
 	cmd := exec.Command("git", "clone", "--bare", "--mirror", cloneURL, repoDir)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -263,45 +272,60 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string, logger 
 		return fmt.Errorf("failed to fetch repository: %w", err)
 	}
 
-	// Fetch pull request data and create refs for merge requests
-	// prs, err := e.client.GetPullRequests(workspace, repoSlug)
-	// if err == nil && len(prs) > 0 {
-	// 	for _, pr := range prs {
-	// 		// Extract PR ID from URL
-	// 		urlParts := strings.Split(pr.URL, "/")
-	// 		prID := urlParts[len(urlParts)-1]
+	logger.Info("Successfully cloned repository to temp dir",
+		zap.String("output", string(output)))
 
-	// 		// Create directory for this PR
-	// 		prDir := filepath.Join(mrDir, prID)
-	// 		if err := os.MkdirAll(prDir, 0755); err != nil {
-	// 			e.logger.Warn("Failed to create PR directory",
-	// 				zap.String("path", prDir),
-	// 				zap.Error(err))
-	// 			continue
-	// 		}
+	if _, err := os.Stat(repoDir); err == nil {
+		if err := os.RemoveAll(repoDir); err != nil {
+			return fmt.Errorf("failed to remove existing repository directory: %w", err)
+		}
+	}
 
-	// 		// Create head file with PR branch SHA
-	// 		headPath := filepath.Join(prDir, "head")
-	// 		if err := os.WriteFile(headPath, []byte(pr.Head.Sha+"\n"), 0644); err != nil {
-	// 			e.logger.Warn("Failed to create PR head file",
-	// 				zap.String("path", headPath),
-	// 				zap.Error(err))
-	// 		}
+	// Determine default branch
+	cmd = exec.Command("git", "remote", "show", "origin")
+	cmd.Dir = repoDir
+	output, err = cmd.CombinedOutput()
+	defaultBranch := "main"
 
-	// 		// If PR is merged, create merge file
-	// 		if pr.MergedAt != nil {
-	// 			mergePath := filepath.Join(prDir, "merge")
-	// 			// For merged PRs, use the head SHA as a fallback
-	// 			// In a real implementation, you'd need to get the merge commit SHA from BitBucket
-	// 			mergeCommit := pr.Head.Sha
-	// 			if err := os.WriteFile(mergePath, []byte(mergeCommit+"\n"), 0644); err != nil {
-	// 				e.logger.Warn("Failed to create PR merge file",
-	// 					zap.String("path", mergePath),
-	// 					zap.Error(err))
-	// 			}
-	// 		}
-	// 	}
-	// }
+	if err == nil {
+		outputStr := string(output)
+		lines := strings.Split(outputStr, "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "HEAD branch:") {
+				parts := strings.Split(line, ":")
+				if len(parts) == 2 {
+					candidateBranch := strings.TrimSpace(parts[1])
+					if candidateBranch != "" {
+						defaultBranch = candidateBranch
+						break
+					}
+				}
+			}
+		}
+	} else {
+		// If remote show fails, try to check the symbolic-ref directly
+		cmd = exec.Command("git", "symbolic-ref", "--short", "HEAD")
+		cmd.Dir = repoDir
+		symOutput, symErr := cmd.Output()
+		if symErr == nil {
+			symBranch := strings.TrimSpace(string(symOutput))
+			if symBranch != "" {
+				defaultBranch = symBranch
+			}
+		}
+	}
+
+	e.logger.Info("Detected default branch", zap.String("branch", defaultBranch))
+
+	// Update HEAD file to point to the default branch
+	headFile := filepath.Join(repoDir, "HEAD")
+	headContent := fmt.Sprintf("ref: refs/heads/%s\n", defaultBranch)
+	if err := os.WriteFile(headFile, []byte(headContent), 0644); err != nil {
+		e.logger.Warn("Failed to update HEAD file", zap.Error(err))
+	}
+
+	// Update repositories_000001.json with correct default branch
+	e.updateRepositoryDefaultBranch(workspace, repoSlug, defaultBranch)
 
 	return nil
 }
@@ -507,11 +531,13 @@ func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, worksp
 			HasWiki:       false,
 			HasDownloads:  true,
 			Labels:        labels,
+			Webhooks:      []interface{}{},
 			Collaborators: []interface{}{},
 			CreatedAt:     createdAt,
 			GitURL:        fmt.Sprintf("tarball://root/repositories/%s/%s.git", workspace, repo.Name),
 			DefaultBranch: "main",
-			PublicKeys:    []interface{}{}, // You might need to fetch this from the API
+			PublicKeys:    []interface{}{},
+			WikiURL:       "", // You might need to fetch this from the API
 		},
 	}
 }

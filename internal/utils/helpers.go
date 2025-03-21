@@ -1,31 +1,80 @@
 package utils
 
-// // GetIssues retrieves issues for a repository
-// func (c *Client) GetIssues(workspace, repoSlug string) ([]data.Issue, error) {
-// 	endpoint := fmt.Sprintf("/repositories/%s/%s/issues", workspace, repoSlug)
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"time"
 
-// 	c.logger.Debug("Fetching issues",
-// 		zap.String("workspace", workspace),
-// 		zap.String("repository", repoSlug))
+	"github.com/katiem0/gh-bbc-exporter/internal/data"
+	"go.uber.org/zap"
+)
 
-// 	// Implement pagination and response handling for issues
+func formatDateToZ(inputDate string) string {
+	// Try parsing with various formats
+	formats := []string{
+		"2006-01-02T15:04:05.999999+00:00",
+		"2006-01-02T15:04:05.999999-07:00",
+		"2006-01-02T15:04:05Z",
+		"2006-01-02T15:04:05.999Z",
+		"2006-01-02 15:04:05 -0700",
+	}
 
-// 	// This is a placeholder that you'd need to implement
-// 	return []data.Issue{}, nil
-// }
+	for _, format := range formats {
+		t, err := time.Parse(format, inputDate)
+		if err == nil {
+			return t.UTC().Format("2006-01-02T15:04:05Z")
+		}
+	}
 
-// // GetPullRequests retrieves pull requests for a repository
-// func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest, error) {
-// 	endpoint := fmt.Sprintf("/repositories/%s/%s/pullrequests", workspace, repoSlug)
+	return inputDate
+}
 
-// 	c.logger.Debug("Fetching pull requests",
-// 		zap.String("workspace", workspace),
-// 		zap.String("repository", repoSlug))
+// UpdateRepositoryDefaultBranch updates the default branch in repositories_000001.json
+func (e *Exporter) updateRepositoryDefaultBranch(workspace, repoSlug, defaultBranch string) {
+	// Read the current file
+	filePath := filepath.Join(e.outputDir, "repositories_000001.json")
+	fileData, err := os.ReadFile(filePath)
+	if err != nil {
+		e.logger.Warn("Failed to read repositories file", zap.Error(err))
+		return
+	}
 
-// 	// Implement pagination and response handling for pull requests
+	// Parse the JSON
+	var repositories []data.Repository
+	if err := json.Unmarshal(fileData, &repositories); err != nil {
+		e.logger.Warn("Failed to parse repositories file", zap.Error(err))
+		return
+	}
 
-// 	// This is a placeholder that you'd need to implement
-// 	return []data.PullRequest{}, nil
-// }
+	// Find the repository and update its default branch
+	repoUpdated := false
+	for i, repo := range repositories {
+		if repo.Name == repoSlug {
+			repositories[i].DefaultBranch = defaultBranch
+			repoUpdated = true
+			break
+		}
+	}
 
-// // Additional API methods would be added here for users, commits, etc.
+	if !repoUpdated {
+		e.logger.Warn("Repository not found in repositories file",
+			zap.String("repo", repoSlug))
+		return
+	}
+
+	// Write the updated file
+	updatedData, err := json.MarshalIndent(repositories, "", "  ")
+	if err != nil {
+		e.logger.Warn("Failed to encode repositories data", zap.Error(err))
+		return
+	}
+
+	if err := os.WriteFile(filePath, updatedData, 0644); err != nil {
+		e.logger.Warn("Failed to write updated repositories file", zap.Error(err))
+		return
+	}
+
+	e.logger.Info("Updated default branch in repositories file",
+		zap.String("branch", defaultBranch))
+}
