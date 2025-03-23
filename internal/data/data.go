@@ -8,6 +8,10 @@ type BitbucketRepository struct {
 	Description string `json:"description"`
 	CreatedOn   string `json:"created_on"`
 	IsPrivate   bool   `json:"is_private"`
+	MainBranch  *struct {
+		Name string `json:"name"`
+		Type string `json:"type"`
+	} `json:"mainbranch"`
 }
 
 type Owner struct {
@@ -148,21 +152,20 @@ type ProtectedBranch struct {
 }
 
 type PullRequest struct {
-	Type           string   `json:"type"`
-	URL            string   `json:"url"`
-	User           string   `json:"user"`
-	Repository     string   `json:"repository"`
-	Title          string   `json:"title"`
-	Body           string   `json:"body"`
-	Base           PRBranch `json:"base"`
-	Head           PRBranch `json:"head"`
-	MergeCommitSha *string  `json:"merge_commit_sha"`
-	Labels         []string `json:"labels"`
-	MergedAt       *string  `json:"merged_at"`
-	ClosedAt       *string  `json:"closed_at"`
-	CreatedAt      string   `json:"created_at"`
-	Assignee       *string  `json:"assignee"`
-	Milestone      *string  `json:"milestone"`
+	Type       string   `json:"type"`
+	URL        string   `json:"url"`
+	User       string   `json:"user"`
+	Repository string   `json:"repository"`
+	Title      string   `json:"title"`
+	Body       string   `json:"body"`
+	Base       PRBranch `json:"base"`
+	Head       PRBranch `json:"head"`
+	Labels     []string `json:"labels"`
+	MergedAt   *string  `json:"merged_at"`
+	ClosedAt   *string  `json:"closed_at"`
+	CreatedAt  string   `json:"created_at"`
+	Assignee   *string  `json:"assignee"`
+	Milestone  *string  `json:"milestone"`
 }
 
 type PRBranch struct {
@@ -207,11 +210,6 @@ type MigrationArchive struct {
 type Branch struct {
 	Name   string `json:"name"`
 	IsMain bool   `json:"is_main"`
-}
-
-type BranchRestriction struct {
-	BranchName string `json:"branch_name"`
-	Kind       string `json:"kind"`
 }
 
 type CommitData struct {
@@ -265,4 +263,11 @@ type BitbucketUser struct {
 	UUID        string `json:"uuid"`
 	Nickname    string `json:"nickname"`
 	AccountID   string `json:"account_id"`
+}
+
+type BranchRestriction struct {
+	ID            int      `json:"id"`
+	Type          string   `json:"type"`
+	BranchPattern string   `json:"branch_pattern"`
+	Users         []string `json:"users"`
 }

@@ -16,14 +16,12 @@ import (
 	"go.uber.org/zap"
 )
 
-// Exporter handles exporting data from BitBucket to GitHub migration archive format
 type Exporter struct {
 	client    *Client
 	outputDir string
 	logger    *zap.Logger
 }
 
-// NewExporter creates a new exporter
 func NewExporter(client *Client, outputDir string, logger *zap.Logger) *Exporter {
 	return &Exporter{
 		client:    client,
@@ -70,51 +68,39 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 		return err
 	}
 
-	// Create default labels for the repository
 	defaultLabels := []data.Label{}
-
-	// Create repositories_000001.json
 	repositories := e.createRepositoriesData(repo, workspace, defaultLabels)
 	if err := e.writeJSONFile("repositories_000001.json", repositories); err != nil {
 		return err
 	}
-
-	// Clone the Git repository
 	cloneURL := fmt.Sprintf("https://%s:%s@bitbucket.org/%s/%s.git",
 		e.client.username, e.client.appPass, workspace, repoSlug)
 	if err := e.CloneRepository(workspace, repoSlug, cloneURL, logger); err != nil {
 		e.logger.Warn("Failed to clone repository, creating empty repository structure",
 			zap.String("repo", repoSlug),
 			zap.Error(err))
-
-		// Create an empty repository structure if clone fails
 		if err := e.createEmptyRepository(workspace, repoSlug); err != nil {
 			return fmt.Errorf("failed to create empty repository structure: %w", err)
 		}
 	}
 
-	// Fetch users and create users_000001.json
 	users, err := e.client.GetUsers(workspace, repoSlug)
 	if err != nil {
 		e.logger.Warn("Failed to fetch users", zap.Error(err))
-		// Create a basic set of users if API call fails
 		users = e.createBasicUsers(workspace)
 	}
 	if err := e.writeJSONFile("users_000001.json", users); err != nil {
 		return err
 	}
 
-	// Create organization data and create organizations_000001.json
 	orgs := e.createOrganizationData(workspace)
 	if err := e.writeJSONFile("organizations_000001.json", orgs); err != nil {
 		return err
 	}
 
-	// Fetch issues and create issues_000001.json
 	issues, err := e.client.GetIssues(workspace, repoSlug)
 	if err != nil {
 		e.logger.Warn("Failed to fetch issues", zap.Error(err))
-		// Create empty issues array if API call fails
 		issues = []data.Issue{}
 	}
 	if len(issues) > 0 {
@@ -126,11 +112,9 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 		}
 	}
 
-	// Fetch pull requests and create pull_requests_000001.json
 	prs, err := e.client.GetPullRequests(workspace, repoSlug)
 	if err != nil {
 		e.logger.Warn("Failed to fetch pull requests", zap.Error(err))
-		// Create empty pull requests array if API call fails
 		prs = []data.PullRequest{}
 	} else {
 		e.logger.Info("Successfully fetched pull requests",
@@ -138,7 +122,6 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 	}
 
 	if len(prs) > 0 {
-		// Ensure repository field is set
 		for i := range prs {
 			prs[i].Repository = fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug)
 		}
@@ -168,11 +151,18 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 		return err
 	}
 
-	// // Create protected branches
-	// protectedBranches := e.createProtectedBranchesData(workspace, repoSlug)
-	// if err := e.writeJSONFile("protected_branches_000001.json", protectedBranches); err != nil {
-	// 	return err
-	// }
+	protectedBranches, err := e.createProtectedBranchesData(workspace, repoSlug)
+	if err != nil {
+		e.logger.Warn("Failed to create protected branches data", zap.Error(err))
+		// Create empty protected branches array if API call fails
+		protectedBranches = []data.ProtectedBranch{}
+	}
+
+	if len(protectedBranches) > 0 {
+		if err := e.writeJSONFile("protected_branches_000001.json", protectedBranches); err != nil {
+			return err
+		}
+	}
 
 	archivePath, err := e.CreateArchive()
 	if err != nil {
@@ -189,7 +179,6 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 	return nil
 }
 
-// writeJSONFile writes data as JSON to a file
 func (e *Exporter) writeJSONFile(filename string, data interface{}) error {
 	filepath := filepath.Join(e.outputDir, filename)
 	e.logger.Debug("Writing file", zap.String("path", filepath))
@@ -209,23 +198,20 @@ func (e *Exporter) writeJSONFile(filename string, data interface{}) error {
 	return nil
 }
 
-// createURLsTemplate creates the URL templates for GitHub resources
 func (e *Exporter) createURLsTemplate() data.URLs {
 	return data.URLs{
-		User:         "{scheme}://{+host}{/segments*}/{user}",
-		Organization: "{scheme}://{+host}/{organization}",
-		Team:         "{scheme}://{+host}/{owner}/teams/{team}",
-		Repository:   "{scheme}://{+host}/{owner}/{repository}",
-		PullRequest:  "{scheme}://{+host}/{owner}/{repository}/pull-requests/{number}",
-		// Add other URL templates...
-		// IssueComment: data.IssueCommentURLs{
-		// 	Issue:       "{scheme}://{+host}/{owner}/{repository}/issues/{number}#note_{issue_comment}",
-		// 	PullRequest: "{scheme}://{+host}/{owner}/{repository}/merge_requests/{number}#note_{issue_comment}",
-		// },
+		User:            "{scheme}://{+host}{/segments*}/{user}",
+		Organization:    "{scheme}://{+host}/{organization}",
+		Team:            "{scheme}://{+host}/{owner}/teams/{team}",
+		Repository:      "{scheme}://{+host}/{owner}/{repository}",
+		ProtectedBranch: "{scheme}://{+host}/{owner}/{repository}/protected_branches/{protected_branch}",
+		PullRequest:     "{scheme}://{+host}/{owner}/{repository}/merge_requests/{number}",
+		CommitComment:   "{scheme}://{+host}/{owner}/{repository}/commit/{commit}#note_{commit_comment}",
+		Release:         "{scheme}://{+host}/{owner}/{repository}/tags/{release}",
+		Label:           "{scheme}://{+host}/{owner}/{repository}/labels#/{label}",
 	}
 }
 
-// CloneRepository clones a BitBucket repository to the export directory
 func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string, logger *zap.Logger) error {
 	repoDir := filepath.Join(e.outputDir, "repositories", workspace, repoSlug+".git")
 
@@ -233,104 +219,154 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string, logger 
 		zap.String("repository", repoSlug),
 		zap.String("destination", repoDir))
 
-	// Create parent directory (not the repo dir itself)
-	if err := os.MkdirAll(repoDir, 0755); err != nil {
-		return fmt.Errorf("failed to create repository directory: %w", err)
-	}
+	logger.Debug("Fetching repository details from BitBucket API")
+	repoDetails, err := e.client.GetRepository(workspace, repoSlug)
+	defaultBranch := "main"
 
-	// First clone as a regular repo with --mirror flag
-	cmd := exec.Command("git", "clone", "--bare", "--mirror", cloneURL, repoDir)
-	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to clone repository: %s: %w", string(output), err)
-	}
-
-	logger.Info("Successfully cloned repository", zap.String("output", string(output)))
-
-	// Update the remote URL to remove credentials
-	cmd = exec.Command("git", "remote", "set-url", "origin",
-		fmt.Sprintf("https://bitbucket.org/%s/%s.git", workspace, repoSlug))
-	cmd.Dir = repoDir
-	if err := cmd.Run(); err != nil {
-		e.logger.Warn("Failed to update remote URL", zap.Error(err))
-	}
-	cmd = exec.Command("git", "branch")
-	cmd.Dir = repoDir
-	branchOutput, err := cmd.CombinedOutput()
-	if err != nil {
-		e.logger.Warn("Failed to list branches",
-			zap.String("output", string(branchOutput)),
+		logger.Warn("Failed to get repository details from API, will use 'main' as default branch",
 			zap.Error(err))
-	} else {
-		e.logger.Info("Branches in cloned repository",
-			zap.String("branches", string(branchOutput)))
-	}
-	// Fetch all
-	cmd = exec.Command("git", "fetch", "--all")
-	cmd.Dir = repoDir
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to fetch repository: %w", err)
+	} else if repoDetails != nil && repoDetails.MainBranch != nil && repoDetails.MainBranch.Name != "" {
+		defaultBranch = repoDetails.MainBranch.Name
+		logger.Info("Using mainbranch from BitBucket API",
+			zap.String("default_branch", defaultBranch))
 	}
 
-	logger.Info("Successfully cloned repository to temp dir",
-		zap.String("output", string(output)))
+	if err := os.MkdirAll(filepath.Dir(repoDir), 0755); err != nil {
+		return fmt.Errorf("failed to create parent directory: %w", err)
+	}
 
 	if _, err := os.Stat(repoDir); err == nil {
 		if err := os.RemoveAll(repoDir); err != nil {
 			return fmt.Errorf("failed to remove existing repository directory: %w", err)
 		}
 	}
+	tempDir, err := os.MkdirTemp("", "bbc-export-")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
 
-	// Determine default branch
-	cmd = exec.Command("git", "remote", "show", "origin")
+	logger.Debug("Cloning repository to temporary directory first")
+	cmd := exec.Command("git", "clone", "--mirror", cloneURL, tempDir)
+	cmd.Env = append(os.Environ(),
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_SSL_NO_VERIFY=true")
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to clone repository: %s: %w", string(output), err)
+	}
+
+	logger.Debug("Clone to temporary directory successful",
+		zap.String("output", string(output)))
+	if _, err := os.Stat(repoDir); err == nil {
+		if err := os.RemoveAll(repoDir); err != nil {
+			return fmt.Errorf("failed to remove existing repository directory: %w", err)
+		}
+	}
+
+	if err := os.Rename(tempDir, repoDir); err != nil {
+		return fmt.Errorf("failed to move repository from temp dir: %w", err)
+	}
+
+	logger.Debug("Updating remote URL")
+	cmd = exec.Command("git", "remote", "set-url", "origin",
+		fmt.Sprintf("https://bitbucket.org/%s/%s.git", workspace, repoSlug))
 	cmd.Dir = repoDir
-	output, err = cmd.CombinedOutput()
-	defaultBranch := "main"
+	if err := cmd.Run(); err != nil {
+		logger.Warn("Failed to update remote URL", zap.Error(err))
+	}
+	logger.Debug("Verifying default branch exists",
+		zap.String("branch", defaultBranch))
 
-	if err == nil {
-		outputStr := string(output)
-		lines := strings.Split(outputStr, "\n")
-		for _, line := range lines {
-			if strings.Contains(line, "HEAD branch:") {
-				parts := strings.Split(line, ":")
-				if len(parts) == 2 {
-					candidateBranch := strings.TrimSpace(parts[1])
-					if candidateBranch != "" {
-						defaultBranch = candidateBranch
-						break
-					}
+	cmd = exec.Command("git", "rev-parse", "--verify", fmt.Sprintf("refs/heads/%s", defaultBranch))
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		logger.Warn("Default branch not found in repository, will attempt fallback methods",
+			zap.String("expected_branch", defaultBranch),
+			zap.Error(err))
+
+		logger.Debug("Looking for most recent branch")
+		cmd = exec.Command("git", "for-each-ref", "--sort=-committerdate", "refs/heads/", "--format=%(refname:short)", "--count=1")
+		cmd.Dir = repoDir
+		branchOutput, err := cmd.Output()
+		if err == nil && len(branchOutput) > 0 {
+			mostRecentBranch := strings.TrimSpace(string(branchOutput))
+			if mostRecentBranch != "" {
+				defaultBranch = mostRecentBranch
+				logger.Info("Found default branch by commit date",
+					zap.String("branch", defaultBranch))
+			}
+		} else {
+			for _, branch := range []string{"main", "master", "develop", "development"} {
+				cmd = exec.Command("git", "rev-parse", "--verify", fmt.Sprintf("refs/heads/%s", branch))
+				cmd.Dir = repoDir
+				if err := cmd.Run(); err == nil {
+					defaultBranch = branch
+					logger.Info("Found default branch from common names",
+						zap.String("branch", defaultBranch))
+					break
 				}
 			}
 		}
 	} else {
-		// If remote show fails, try to check the symbolic-ref directly
-		cmd = exec.Command("git", "symbolic-ref", "--short", "HEAD")
+		logger.Info("Verified default branch exists",
+			zap.String("branch", defaultBranch))
+	}
+
+	headFile := filepath.Join(repoDir, "HEAD")
+	headContent := fmt.Sprintf("ref: refs/heads/%s\n", defaultBranch)
+
+	logger.Info("Setting HEAD file to point to default branch",
+		zap.String("branch", defaultBranch))
+
+	if err := os.WriteFile(headFile, []byte(headContent), 0644); err != nil {
+		logger.Error("Failed to update HEAD file",
+			zap.Error(err),
+			zap.String("path", headFile))
+		return fmt.Errorf("failed to update HEAD file: %w", err)
+	}
+
+	refsHeadsDir := filepath.Join(repoDir, "refs", "heads")
+	if _, err := os.Stat(refsHeadsDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(refsHeadsDir, 0755); err != nil {
+			logger.Warn("Failed to create refs/heads directory", zap.Error(err))
+		}
+	}
+
+	defaultBranchRef := filepath.Join(refsHeadsDir, defaultBranch)
+	if _, err := os.Stat(defaultBranchRef); os.IsNotExist(err) {
+		logger.Warn("Default branch reference file doesn't exist",
+			zap.String("path", defaultBranchRef))
+
+		cmd = exec.Command("git", "rev-parse", "HEAD")
 		cmd.Dir = repoDir
-		symOutput, symErr := cmd.Output()
-		if symErr == nil {
-			symBranch := strings.TrimSpace(string(symOutput))
-			if symBranch != "" {
-				defaultBranch = symBranch
+		commitID, err := cmd.Output()
+		if err == nil {
+			logger.Info("Creating reference file for default branch",
+				zap.String("branch", defaultBranch),
+				zap.String("commit", strings.TrimSpace(string(commitID))))
+
+			if err := os.WriteFile(defaultBranchRef, []byte(strings.TrimSpace(string(commitID))), 0644); err != nil {
+				logger.Warn("Failed to create default branch reference", zap.Error(err))
 			}
 		}
 	}
 
-	e.logger.Info("Detected default branch", zap.String("branch", defaultBranch))
+	// Step 9: Update repositories_000001.json with correct default branch and git URL
+	logger.Debug("Updating repositories_000001.json")
+	e.updateRepositoryDefaultBranch(repoSlug, defaultBranch)
 
-	// Update HEAD file to point to the default branch
-	headFile := filepath.Join(repoDir, "HEAD")
-	headContent := fmt.Sprintf("ref: refs/heads/%s\n", defaultBranch)
-	if err := os.WriteFile(headFile, []byte(headContent), 0644); err != nil {
-		e.logger.Warn("Failed to update HEAD file", zap.Error(err))
-	}
+	gitURL := fmt.Sprintf("tarball://root/repositories/%s/%s.git", workspace, repoSlug)
+	e.updateRepositoryGitURL(repoSlug, gitURL)
 
-	// Update repositories_000001.json with correct default branch
-	e.updateRepositoryDefaultBranch(workspace, repoSlug, defaultBranch)
+	logger.Info("Repository clone and setup complete",
+		zap.String("default_branch", defaultBranch))
 
 	return nil
 }
 
-// createEmptyRepository creates an empty repository structure when cloning fails
 func (e *Exporter) createEmptyRepository(workspace, repoSlug string) error {
 	repoDir := filepath.Join(e.outputDir, "repositories", workspace, repoSlug+".git")
 
@@ -338,99 +374,87 @@ func (e *Exporter) createEmptyRepository(workspace, repoSlug string) error {
 		zap.String("repository", repoSlug),
 		zap.String("path", repoDir))
 
-	// Create directory
-	if err := os.MkdirAll(repoDir, 0755); err != nil {
-		return fmt.Errorf("failed to create repository directory: %w", err)
-	}
-
-	// Initialize bare repo
-	cmd := exec.Command("git", "init", "--bare")
-	cmd.Dir = repoDir
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to initialize bare repository: %w", err)
-	}
-
-	// Create empty dirs and required files
-	dirsToCreate := []string{
-		filepath.Join(repoDir, "objects", "pack"),
-		filepath.Join(repoDir, "refs", "heads"),
-		filepath.Join(repoDir, "refs", "tags"),
-		filepath.Join(repoDir, "refs", "merge-requests"),
-	}
-
-	for _, dir := range dirsToCreate {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	// Check if directory already exists and remove it
+	if _, err := os.Stat(repoDir); err == nil {
+		if err := os.RemoveAll(repoDir); err != nil {
+			return fmt.Errorf("failed to remove existing repository directory: %w", err)
 		}
 	}
 
-	// Create HEAD file
+	// Create parent directory
+	if err := os.MkdirAll(filepath.Dir(repoDir), 0755); err != nil {
+		return fmt.Errorf("failed to create parent directory: %w", err)
+	}
+
+	// Initialize empty Git repo
+	cmd := exec.Command("git", "init", "--bare", repoDir)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		e.logger.Error("Failed to initialize bare repository",
+			zap.String("output", string(output)),
+			zap.Error(err))
+
+		// If git init fails, create directory structure manually
+		if err := os.MkdirAll(repoDir, 0755); err != nil {
+			return fmt.Errorf("failed to create repository directory: %w", err)
+		}
+
+		// Create required directories
+		for _, dir := range []string{
+			filepath.Join(repoDir, "objects", "info"),
+			filepath.Join(repoDir, "objects", "pack"),
+			filepath.Join(repoDir, "refs", "heads"),
+			filepath.Join(repoDir, "refs", "tags"),
+			filepath.Join(repoDir, "hooks"),
+			filepath.Join(repoDir, "info"),
+		} {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return fmt.Errorf("failed to create directory %s: %w", dir, err)
+			}
+		}
+	}
+
+	defaultBranch := "main"
+	emptyTreeSHA := "4b825dc642cb6eb9a060e54bf8d69288fbee4904" // Git's empty tree object
+	defaultBranchRef := filepath.Join(repoDir, "refs", "heads", defaultBranch)
+	if err := os.WriteFile(defaultBranchRef, []byte(emptyTreeSHA+"\n"), 0644); err != nil {
+		e.logger.Warn("Failed to create default branch reference", zap.Error(err))
+	}
+
 	headFile := filepath.Join(repoDir, "HEAD")
-	if err := os.WriteFile(headFile, []byte("ref: refs/heads/master\n"), 0644); err != nil {
+	headContent := fmt.Sprintf("ref: refs/heads/%s\n", defaultBranch)
+	if err := os.WriteFile(headFile, []byte(headContent), 0644); err != nil {
 		return fmt.Errorf("failed to create HEAD file: %w", err)
 	}
 
-	// Create description file
-	descFile := filepath.Join(repoDir, "description")
-	if err := os.WriteFile(descFile, []byte("Unnamed repository; edit this file 'description' to name the repository.\n"), 0644); err != nil {
-		return fmt.Errorf("failed to create description file: %w", err)
-	}
-
-	// Create config file
+	configFile := filepath.Join(repoDir, "config")
 	configContent := fmt.Sprintf(`[core]
-	bare = true
 	repositoryformatversion = 0
 	filemode = true
+	bare = true
 [remote "origin"]
 	url = https://bitbucket.org/%s/%s.git
 	fetch = +refs/heads/*:refs/remotes/origin/*
 `, workspace, repoSlug)
-	configFile := filepath.Join(repoDir, "config")
 	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
 		return fmt.Errorf("failed to create config file: %w", err)
 	}
 
-	// Create hooks directory with README
-	hooksDir := filepath.Join(repoDir, "hooks")
-	if err := os.MkdirAll(hooksDir, 0755); err != nil {
-		return fmt.Errorf("failed to create hooks directory: %w", err)
-	}
-	readmeContent := `#!/bin/sh
-#
-# Place appropriately named executable hook scripts into this directory
-# to intercept various actions that git takes.  See 'git help hooks' for
-# more information.
-`
-	readmeFile := filepath.Join(hooksDir, "README.sample")
-	if err := os.WriteFile(readmeFile, []byte(readmeContent), 0644); err != nil {
-		return fmt.Errorf("failed to create hooks README: %w", err)
+	descFile := filepath.Join(repoDir, "description")
+	if err := os.WriteFile(descFile, []byte("Unnamed repository; edit this file to name it for gitweb.\n"), 0644); err != nil {
+		return fmt.Errorf("failed to create description file: %w", err)
 	}
 
-	// Create info directory with exclude file
-	infoDir := filepath.Join(repoDir, "info")
-	if err := os.MkdirAll(infoDir, 0755); err != nil {
-		return fmt.Errorf("failed to create info directory: %w", err)
-	}
-	excludeContent := `# File patterns to ignore; see 'git help ignore' for more information.
-# Lines that start with '#' are comments.
-`
-	excludeFile := filepath.Join(infoDir, "exclude")
-	if err := os.WriteFile(excludeFile, []byte(excludeContent), 0644); err != nil {
-		return fmt.Errorf("failed to create exclude file: %w", err)
-	}
+	e.updateRepositoryDefaultBranch(repoSlug, defaultBranch)
 
-	// Create empty FETCH_HEAD
-	fetchHeadFile := filepath.Join(repoDir, "FETCH_HEAD")
-	if err := os.WriteFile(fetchHeadFile, []byte(""), 0644); err != nil {
-		return fmt.Errorf("failed to create FETCH_HEAD file: %w", err)
-	}
+	gitURL := fmt.Sprintf("tarball://root/repositories/%s/%s.git", workspace, repoSlug)
+	e.updateRepositoryGitURL(repoSlug, gitURL)
 
+	e.logger.Info("Created empty repository structure")
 	return nil
 }
 
-// createBasicUsers creates a basic set of users when API calls fail
 func (e *Exporter) createBasicUsers(workspace string) []data.User {
-	// Create a single user representing the workspace
 	return []data.User{
 		{
 			Type:      "user",
@@ -441,12 +465,11 @@ func (e *Exporter) createBasicUsers(workspace string) []data.User {
 			Website:   nil,
 			Location:  nil,
 			Emails:    []data.Email{},
-			CreatedAt: time.Now().Format("2006-01-02T15:04:05.000Z"),
+			CreatedAt: formatDateToZ(time.Now().Format(time.RFC3339)),
 		},
 	}
 }
 
-// createOrganizationData creates organization data
 func (e *Exporter) createOrganizationData(workspace string) []data.Organization {
 	return []data.Organization{
 		{
@@ -463,9 +486,8 @@ func (e *Exporter) createOrganizationData(workspace string) []data.Organization 
 	}
 }
 
-// createTeamsData creates team data
 func (e *Exporter) createTeamsData(workspace, repoSlug string) []data.Team {
-	now := time.Now().Format("2006-01-02 15:04:05 -0700")
+	now := formatDateToZ(time.Now().Format(time.RFC3339))
 	description := ""
 	return []data.Team{
 		{
@@ -486,37 +508,128 @@ func (e *Exporter) createTeamsData(workspace, repoSlug string) []data.Team {
 	}
 }
 
-// // createProtectedBranchesData creates protected branches data
-// func (e *Exporter) createProtectedBranchesData(workspace, repoSlug string) []data.ProtectedBranch {
-// 	return []data.ProtectedBranch{
-// 		{
-// 			Type:                                 "protected_branch",
-// 			Name:                                 "main",
-// 			URL:                                  fmt.Sprintf("https://bitbucket.org/%s/%s/protected_branches/main", workspace, repoSlug),
-// 			CreatorURL:                           fmt.Sprintf("https://bitbucket.org/%s", workspace),
-// 			RepositoryURL:                        fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug),
-// 			AdminEnforced:                        true,
-// 			BlockDeletionsEnforcementLevel:       2,
-// 			BlockForcePushesEnforcementLevel:     2,
-// 			DismissStaleReviewsOnPush:            false,
-// 			PullRequestReviewsEnforcementLevel:   "off",
-// 			RequireCodeOwnerReview:               false,
-// 			RequiredStatusChecksEnforcementLevel: "off",
-// 			StrictRequiredStatusChecksPolicy:     false,
-// 			AuthorizedActorsOnly:                 false,
-// 			AuthorizedUserURLs:                   []string{},
-// 			AuthorizedTeamURLs:                   []string{},
-// 			DismissalRestrictedUserURLs:          []string{},
-// 			DismissalRestrictedTeamURLs:          []string{},
-// 			RequiredStatusChecks:                 []string{},
-// 		},
-// 	}
-// }
+func (e *Exporter) createProtectedBranchesData(workspace string, repoSlug string) ([]data.ProtectedBranch, error) {
+	filePath := filepath.Join(e.outputDir, "repositories_000001.json")
+	fileData, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read repositories file: %w", err)
+	}
 
-// Update the createRepositoriesData function to accept labels
+	// Parse repositories JSON - fixing the unmarshaling to use a slice
+	var repositories []data.Repository
+	if err := json.Unmarshal(fileData, &repositories); err != nil {
+		return nil, fmt.Errorf("failed to parse repositories file: %w", err)
+	}
+
+	defaultBranch := "main"
+	for _, repo := range repositories {
+		if repo.Name == repoSlug {
+			defaultBranch = repo.DefaultBranch
+			e.logger.Debug("Found default branch for repository",
+				zap.String("repo", repoSlug),
+				zap.String("branch", defaultBranch))
+			break
+		}
+	}
+
+	restrictions, err := e.client.GetBranchRestrictions(workspace, repoSlug)
+	if err != nil {
+		e.logger.Warn("Failed to fetch branch restrictions",
+			zap.String("repo", repoSlug),
+			zap.Error(err))
+	}
+
+	branchProtections := make(map[string]*data.ProtectedBranch)
+
+	for _, restriction := range restrictions {
+		branchName := restriction.BranchPattern
+		if branchName == "" || branchName == "**" {
+			branchName = defaultBranch
+		}
+
+		if _, exists := branchProtections[branchName]; !exists {
+			branchProtections[branchName] = &data.ProtectedBranch{
+				Type: "protected_branch",
+				Name: branchName,
+				URL: fmt.Sprintf("https://bitbucket.org/%s/%s/protected_branches/%s",
+					workspace, repoSlug, branchName),
+				CreatorURL:                           fmt.Sprintf("https://bitbucket.org/%s", workspace),
+				RepositoryURL:                        fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug),
+				AdminEnforced:                        true,
+				BlockDeletionsEnforcementLevel:       0,
+				BlockForcePushesEnforcementLevel:     0,
+				DismissStaleReviewsOnPush:            false,
+				PullRequestReviewsEnforcementLevel:   "off",
+				RequireCodeOwnerReview:               false,
+				RequiredStatusChecksEnforcementLevel: "off",
+				StrictRequiredStatusChecksPolicy:     false,
+				AuthorizedActorsOnly:                 false,
+				AuthorizedUserURLs:                   []string{},
+				AuthorizedTeamURLs:                   []string{},
+				DismissalRestrictedUserURLs:          []string{},
+				DismissalRestrictedTeamURLs:          []string{},
+				RequiredStatusChecks:                 []string{},
+			}
+		}
+
+		// Update protection based on the restriction type
+		protection := branchProtections[branchName]
+		switch restriction.Type {
+		case "push":
+			protection.AuthorizedActorsOnly = true
+			protection.AuthorizedUserURLs = append(protection.AuthorizedUserURLs, restriction.Users...)
+		case "force_push":
+			protection.BlockForcePushesEnforcementLevel = 2
+		case "delete":
+			protection.BlockDeletionsEnforcementLevel = 2
+		case "require_reviews":
+			protection.PullRequestReviewsEnforcementLevel = "off"
+		case "require_code_owner_review":
+			protection.RequireCodeOwnerReview = true
+		}
+	}
+
+	// Always protect the default branch if no other protections exist
+	if len(branchProtections) == 0 {
+		branchProtections[defaultBranch] = &data.ProtectedBranch{
+			Type: "protected_branch",
+			Name: defaultBranch,
+			URL: fmt.Sprintf("https://bitbucket.org/%s/%s/protected_branches/%s",
+				workspace, repoSlug, defaultBranch),
+			CreatorURL:                           fmt.Sprintf("https://bitbucket.org/%s", workspace),
+			RepositoryURL:                        fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug),
+			AdminEnforced:                        true,
+			BlockDeletionsEnforcementLevel:       2, // Default protection for default branch
+			BlockForcePushesEnforcementLevel:     2, // Default protection for default branch
+			DismissStaleReviewsOnPush:            false,
+			PullRequestReviewsEnforcementLevel:   "off",
+			RequireCodeOwnerReview:               false,
+			RequiredStatusChecksEnforcementLevel: "off",
+			StrictRequiredStatusChecksPolicy:     false,
+			AuthorizedActorsOnly:                 false,
+			AuthorizedUserURLs:                   []string{},
+			AuthorizedTeamURLs:                   []string{},
+			DismissalRestrictedUserURLs:          []string{},
+			DismissalRestrictedTeamURLs:          []string{},
+			RequiredStatusChecks:                 []string{},
+		}
+	}
+
+	// Convert map to slice
+	protectedBranches := make([]data.ProtectedBranch, 0, len(branchProtections))
+	for _, protection := range branchProtections {
+		protectedBranches = append(protectedBranches, *protection)
+	}
+
+	e.logger.Info("Created protected branches data",
+		zap.Int("count", len(protectedBranches)))
+
+	return protectedBranches, nil
+}
+
 func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, workspace string, labels []data.Label) []data.Repository {
-	// Format creation date
-	createdAt := repo.CreatedOn
+	// Format creation date to ISO 8601
+	createdAt := formatDateToZ(repo.CreatedOn)
 
 	// Create repository entry
 	return []data.Repository{
@@ -537,7 +650,7 @@ func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, worksp
 			GitURL:        fmt.Sprintf("tarball://root/repositories/%s/%s.git", workspace, repo.Name),
 			DefaultBranch: "main",
 			PublicKeys:    []interface{}{},
-			WikiURL:       "", // You might need to fetch this from the API
+			WikiURL:       "",
 		},
 	}
 }
@@ -626,4 +739,52 @@ func (e *Exporter) CreateArchive() (string, error) {
 	}
 
 	return archivePath, nil
+}
+
+func (e *Exporter) updateRepositoryGitURL(repoSlug, gitURL string) {
+	// Read the current repositories file
+	filePath := filepath.Join(e.outputDir, "repositories_000001.json")
+	fileData, err := os.ReadFile(filePath)
+	if err != nil {
+		e.logger.Warn("Failed to read repositories file", zap.Error(err))
+		return
+	}
+
+	// Parse the JSON
+	var repositories []data.Repository
+	if err := json.Unmarshal(fileData, &repositories); err != nil {
+		e.logger.Warn("Failed to parse repositories file", zap.Error(err))
+		return
+	}
+
+	// Find and update the repository
+	repoUpdated := false
+	for i, repo := range repositories {
+		if repo.Name == repoSlug {
+			repositories[i].GitURL = gitURL
+			repoUpdated = true
+			break
+		}
+	}
+
+	if !repoUpdated {
+		e.logger.Warn("Repository not found in repositories file",
+			zap.String("repo", repoSlug))
+		return
+	}
+
+	// Write the updated JSON back to the file
+	updatedData, err := json.MarshalIndent(repositories, "", "  ")
+	if err != nil {
+		e.logger.Warn("Failed to marshal updated repositories data", zap.Error(err))
+		return
+	}
+
+	if err := os.WriteFile(filePath, updatedData, 0644); err != nil {
+		e.logger.Warn("Failed to write updated repositories file", zap.Error(err))
+		return
+	}
+
+	e.logger.Info("Updated git_url in repositories file",
+		zap.String("git_url", gitURL))
 }

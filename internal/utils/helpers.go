@@ -11,6 +11,10 @@ import (
 )
 
 func formatDateToZ(inputDate string) string {
+	if inputDate == "" {
+		return ""
+	}
+
 	// Try parsing with various formats
 	formats := []string{
 		"2006-01-02T15:04:05.999999+00:00",
@@ -18,6 +22,9 @@ func formatDateToZ(inputDate string) string {
 		"2006-01-02T15:04:05Z",
 		"2006-01-02T15:04:05.999Z",
 		"2006-01-02 15:04:05 -0700",
+		"2006-01-02T15:04:05.999999Z",
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05",
 	}
 
 	for _, format := range formats {
@@ -26,12 +33,11 @@ func formatDateToZ(inputDate string) string {
 			return t.UTC().Format("2006-01-02T15:04:05Z")
 		}
 	}
-
 	return inputDate
 }
 
 // UpdateRepositoryDefaultBranch updates the default branch in repositories_000001.json
-func (e *Exporter) updateRepositoryDefaultBranch(workspace, repoSlug, defaultBranch string) {
+func (e *Exporter) updateRepositoryDefaultBranch(repoSlug, defaultBranch string) {
 	// Read the current file
 	filePath := filepath.Join(e.outputDir, "repositories_000001.json")
 	fileData, err := os.ReadFile(filePath)

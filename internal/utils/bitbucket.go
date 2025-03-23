@@ -50,7 +50,16 @@ func (c *Client) GetRepository(workspace, repoSlug string) (*data.BitbucketRepos
 	var repo data.BitbucketRepository
 	err := c.makeRequest("GET", endpoint, &repo)
 	if err != nil {
+		c.logger.Error("Failed to fetch repository details",
+			zap.Error(err),
+			zap.String("endpoint", endpoint))
 		return nil, err
+	}
+	if repo.MainBranch != nil {
+		c.logger.Info("Repository main branch",
+			zap.String("branch", repo.MainBranch.Name))
+	} else {
+		c.logger.Info("Repository has no main branch defined")
 	}
 
 	return &repo, nil
@@ -171,21 +180,17 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 
 	var allPRs []data.PullRequest
 
-	// Basic API endpoint
 	baseEndpoint := fmt.Sprintf("repositories/%s/%s/pullrequests", workspace, repoSlug)
 
-	// Add query parameters
 	params := url.Values{}
-	params.Add("state", "all")  // Get all PRs (open, closed, merged)
-	params.Add("pagelen", "50") // Number of results per page
+	params.Add("state", "all")
+	params.Add("pagelen", "50")
 
-	// Build full endpoint with parameters
 	fullEndpoint := baseEndpoint
 	if len(params) > 0 {
 		fullEndpoint = baseEndpoint + "?" + params.Encode()
 	}
 
-	// Add debug logging
 	c.logger.Debug("Initial API request",
 		zap.String("endpoint", fullEndpoint),
 		zap.String("full_url", c.baseURL+"/"+fullEndpoint))
@@ -222,7 +227,6 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 			zap.Int("values_count", len(response.Values)),
 			zap.String("next_url", response.Next))
 
-		// Process pull requests from this page
 		for _, pr := range response.Values {
 			var mergedAt, closedAt *string
 			if pr.State == "MERGED" {
@@ -236,44 +240,46 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 				closedAt = &closedStr
 			}
 
-			prURL := fmt.Sprintf("https://bitbucket.org/%s/%s/pull-requests/%d",
+			// Format PR URL
+			prURL := fmt.Sprintf("https://bitbucket.org/%s/%s/merge_requests/%d",
 				workspace, repoSlug, pr.ID)
 
-			// userHandle := pr.Author.Nickname
-			// if userHandle == "" {
-			// 	if pr.Author.DisplayName != "" {
-			// 		userHandle = strings.ToLower(strings.ReplaceAll(pr.Author.DisplayName, " ", ""))
-			// 	} else {
-			// 		userHandle = pr.Author.UUID
-			// 	}
-			// }
-			userURL := fmt.Sprintf("https://bitbucket.org/%s", pr.Author.UUID)
-			repoURL := fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug)
-			prUser := fmt.Sprintf("https://bitbucket.org/%s", workspace)
-			baseSHA, _ := c.GetCommitSha(workspace, repoSlug, pr.Destination.Commit.Hash)
-			headSHA, _ := c.GetCommitSha(workspace, repoSlug, pr.Source.Commit.Hash)
-
-			var mergeCommitSha *string
-			if pr.MergeCommit != nil && pr.MergeCommit.Hash != "" {
-				hash := pr.MergeCommit.Hash
-				mergeCommitSha = &hash
+			// Prefer nickname over UUID for user URL
+			var userHandle string
+			if pr.Author.Nickname != "" {
+				userHandle = pr.Author.Nickname
+			} else if pr.Author.DisplayName != "" {
+				// Convert display name to a simpler form
+				userHandle = strings.ToLower(strings.ReplaceAll(pr.Author.DisplayName, " ", "-"))
+			} else {
+				// Fall back to uuid but without braces
+				userHandle = strings.Trim(pr.Author.UUID, "{}")
 			}
 
+			userURL := fmt.Sprintf("https://bitbucket.org/%s", userHandle)
+			repoURL := fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug)
+			prUser := fmt.Sprintf("https://bitbucket.org/%s", workspace)
+
+			// Get the full SHAs
+			baseSHA := pr.Destination.Commit.Hash
+			headSHA := pr.Source.Commit.Hash
+			// Format body
 			var body string
 			if pr.Description != nil {
 				body = *pr.Description
 			}
+
+			// Format createdAt date
 			createdAt := formatDateToZ(pr.CreatedOn)
 
-			// Create the pull request with format matching the expected structure
+			// Create the pull request
 			newPR := data.PullRequest{
-				Type:           "pull_request",
-				URL:            prURL,
-				User:           userURL,
-				Repository:     repoURL,
-				Title:          pr.Title,
-				Body:           body,
-				MergeCommitSha: mergeCommitSha,
+				Type:       "pull_request",
+				URL:        prURL,
+				User:       userURL,
+				Repository: repoURL,
+				Title:      pr.Title,
+				Body:       body,
 				Base: data.PRBranch{
 					Ref:  pr.Destination.Branch.Name,
 					Sha:  baseSHA,
@@ -351,15 +357,6 @@ func (c *Client) GetBranches(workspace, repoSlug string) ([]data.Branch, error) 
 	return []data.Branch{}, nil
 }
 
-func (c *Client) GetBranchRestrictions(workspace, repoSlug string) ([]data.BranchRestriction, error) {
-	c.logger.Debug("Fetching branch restrictions",
-		zap.String("workspace", workspace),
-		zap.String("repository", repoSlug))
-
-	// TODO: Implement real API call to fetch branch restrictions
-	return []data.BranchRestriction{}, nil
-}
-
 func (c *Client) GetCommitSha(workspace, repoSlug string, commit string) (string, error) {
 	endpoint := fmt.Sprintf("/repositories/%s/%s/commit/%s", workspace, repoSlug, commit)
 
@@ -376,4 +373,102 @@ func (c *Client) GetCommitSha(workspace, repoSlug string, commit string) (string
 	}
 
 	return response.Hash, nil
+}
+
+func (c *Client) GetBranchRestrictions(workspace, repoSlug string) ([]data.BranchRestriction, error) {
+	c.logger.Debug("Fetching branch restrictions",
+		zap.String("workspace", workspace),
+		zap.String("repository", repoSlug))
+
+	var allRestrictions []data.BranchRestriction
+	page := 1
+	pageLen := 100
+	hasMore := true
+
+	for hasMore {
+		endpoint := fmt.Sprintf("repositories/%s/%s/branch-restrictions?page=%d&pagelen=%d",
+			workspace, repoSlug, page, pageLen)
+
+		var response struct {
+			Values []struct {
+				ID         int    `json:"id"`
+				Kind       string `json:"kind"`
+				Pattern    string `json:"pattern"`
+				Type       string `json:"type"`
+				BranchType string `json:"branch_type"`
+				Users      []struct {
+					DisplayName string `json:"display_name"`
+					UUID        string `json:"uuid"`
+					Links       struct {
+						Self struct {
+							Href string `json:"href"`
+						} `json:"self"`
+					} `json:"links"`
+				} `json:"users"`
+				Groups []struct {
+					Name  string `json:"name"`
+					Links struct {
+						Self struct {
+							Href string `json:"href"`
+						} `json:"self"`
+					} `json:"links"`
+				} `json:"groups"`
+			} `json:"values"`
+			Next string `json:"next"`
+		}
+
+		err := c.makeRequest("GET", endpoint, &response)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch branch restrictions: %w", err)
+		}
+
+		// Convert API response to our data model
+		for _, restriction := range response.Values {
+			branchName := restriction.Pattern
+			// BitBucket uses ** for wildcard patterns like **master**
+			// Remove wildcards to get the actual branch name
+			branchName = strings.Replace(branchName, "**", "", -1)
+
+			// Map restriction kinds to our model
+			restrictionType := ""
+			switch restriction.Kind {
+			case "push":
+				restrictionType = "push"
+			case "force":
+				restrictionType = "force_push"
+			case "delete":
+				restrictionType = "delete"
+			case "require_approvals_to_merge":
+				restrictionType = "require_reviews"
+			case "require_default_reviewer_approvals_to_merge":
+				restrictionType = "require_code_owner_review"
+			}
+
+			// Skip if we don't map this restriction type
+			if restrictionType == "" {
+				continue
+			}
+
+			// Add users who can bypass this restriction
+			authorizedUsers := []string{}
+			for _, user := range restriction.Users {
+				authorizedUsers = append(authorizedUsers, user.Links.Self.Href)
+			}
+
+			allRestrictions = append(allRestrictions, data.BranchRestriction{
+				ID:            restriction.ID,
+				Type:          restrictionType,
+				BranchPattern: branchName,
+				Users:         authorizedUsers,
+			})
+		}
+
+		// Check if there are more pages
+		hasMore = response.Next != ""
+		if hasMore {
+			page++
+		}
+	}
+
+	return allRestrictions, nil
 }
