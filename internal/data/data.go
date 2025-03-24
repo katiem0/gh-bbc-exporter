@@ -112,70 +112,63 @@ type TeamMember struct {
 }
 
 type Repository struct {
-	Type          string        `json:"type"`
-	URL           string        `json:"url"`
-	Owner         string        `json:"owner"`
-	Name          string        `json:"name"`
-	Description   string        `json:"description"`
-	Private       bool          `json:"private"`
-	HasIssues     bool          `json:"has_issues"`
-	HasWiki       bool          `json:"has_wiki"`
-	HasDownloads  bool          `json:"has_downloads"`
-	Labels        []Label       `json:"labels"`
-	Webhooks      []interface{} `json:"webhooks"`
-	Collaborators []interface{} `json:"collaborators"`
-	CreatedAt     string        `json:"created_at"`
-	GitURL        string        `json:"git_url"`
-	DefaultBranch string        `json:"default_branch"`
-	WikiURL       string        `json:"wiki_url"`
-	PublicKeys    []interface{} `json:"public_keys"`
+	Type                   string                 `json:"type"`
+	URL                    string                 `json:"url"`
+	Owner                  string                 `json:"owner"`
+	Name                   string                 `json:"name"`
+	Description            string                 `json:"description"`
+	Private                bool                   `json:"private"`
+	HasIssues              bool                   `json:"has_issues"`
+	HasWiki                bool                   `json:"has_wiki"`
+	HasDownloads           bool                   `json:"has_downloads"`
+	Labels                 []Label                `json:"labels"`
+	Webhooks               []interface{}          `json:"webhooks"`
+	Collaborators          []interface{}          `json:"collaborators"`
+	CreatedAt              string                 `json:"created_at"`
+	GitURL                 string                 `json:"git_url"`
+	DefaultBranch          string                 `json:"default_branch"`
+	WikiURL                string                 `json:"wiki_url"`
+	PublicKeys             []interface{}          `json:"public_keys"`
+	RepositoryTopics       []interface{}          `json:"repository_topics,omitempty"`
+	SecurityAndAnalysis    map[string]interface{} `json:"security_and_analysis,omitempty"`
+	Autolinks              []interface{}          `json:"autolinks"`
+	GeneralSettings        map[string]interface{} `json:"general_settings"`
+	ActionsGeneralSettings map[string]interface{} `json:"actions_general_settings"`
+	Website                *string                `json:"website"`
+	Page                   *string                `json:"page"`
+	IsArchived             bool                   `json:"is_archived"`
 }
 
 type Label struct {
-	Type      string `json:"type"`
-	URL       string `json:"url"`
-	Name      string `json:"name"`
-	Color     string `json:"color"`
-	CreatedAt string `json:"created_at"`
-}
-
-type ProtectedBranch struct {
-	Type                                 string   `json:"type"`
-	Name                                 string   `json:"name"`
-	URL                                  string   `json:"url"`
-	CreatorURL                           string   `json:"creator_url"`
-	RepositoryURL                        string   `json:"repository_url"`
-	AdminEnforced                        bool     `json:"admin_enforced"`
-	BlockDeletionsEnforcementLevel       int      `json:"block_deletions_enforcement_level"`
-	BlockForcePushesEnforcementLevel     int      `json:"block_force_pushes_enforcement_level"`
-	DismissStaleReviewsOnPush            bool     `json:"dismiss_stale_reviews_on_push"`
-	PullRequestReviewsEnforcementLevel   string   `json:"pull_request_reviews_enforcement_level"`
-	RequireCodeOwnerReview               bool     `json:"require_code_owner_review"`
-	RequiredStatusChecksEnforcementLevel string   `json:"required_status_checks_enforcement_level"`
-	StrictRequiredStatusChecksPolicy     bool     `json:"strict_required_status_checks_policy"`
-	AuthorizedActorsOnly                 bool     `json:"authorized_actors_only"`
-	AuthorizedUserURLs                   []string `json:"authorized_user_urls"`
-	AuthorizedTeamURLs                   []string `json:"authorized_team_urls"`
-	DismissalRestrictedUserURLs          []string `json:"dismissal_restricted_user_urls"`
-	DismissalRestrictedTeamURLs          []string `json:"dismissal_restricted_team_urls"`
-	RequiredStatusChecks                 []string `json:"required_status_checks"`
+	Type        string `json:"type,omitempty"`
+	URL         string `json:"url"`
+	Name        string `json:"name"`
+	Color       string `json:"color"`
+	Description string `json:"description,omitempty"`
+	CreatedAt   string `json:"created_at"`
 }
 
 type PullRequest struct {
-	Type       string   `json:"type"`
-	URL        string   `json:"url"`
-	User       string   `json:"user"`
-	Repository string   `json:"repository"`
-	Title      string   `json:"title"`
-	Body       string   `json:"body"`
-	Base       PRBranch `json:"base"`
-	Head       PRBranch `json:"head"`
-	Labels     []string `json:"labels"`
-	MergedAt   *string  `json:"merged_at"`
-	ClosedAt   *string  `json:"closed_at"`
-	CreatedAt  string   `json:"created_at"`
-	Assignee   *string  `json:"assignee"`
-	Milestone  *string  `json:"milestone"`
+	Type                 string   `json:"type"`
+	URL                  string   `json:"url"`
+	User                 string   `json:"user"`
+	Repository           string   `json:"repository"`
+	Title                string   `json:"title"`
+	Body                 string   `json:"body"`
+	Base                 PRBranch `json:"base"`
+	Head                 PRBranch `json:"head"`
+	Labels               []string `json:"labels"`
+	MergedAt             *string  `json:"merged_at"`
+	ClosedAt             *string  `json:"closed_at"`
+	CreatedAt            string   `json:"created_at"`
+	Assignee             *string  `json:"assignee"`
+	Assignees            []string `json:"assignees"`
+	Milestone            *string  `json:"milestone"`
+	Reactions            []string `json:"reactions"`
+	ReviewRequests       []string `json:"review_requests"`
+	CloseIssueReferences []string `json:"close_issue_references"`
+	WorkInProgress       bool     `json:"work_in_progress"`
+	MergeCommitSha       *string  `json:"merge_commit_sha"`
 }
 
 type PRBranch struct {
@@ -200,27 +193,37 @@ type Issue struct {
 }
 
 type IssueComment struct {
-	Type        string `json:"type"`
-	URL         string `json:"url"`
-	User        string `json:"user"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
-	IssueURL    string `json:"issue_url"`
-	Body        string `json:"body"`
-	PullRequest string `json:"pull_request"`
+	Type        string   `json:"type"`
+	URL         string   `json:"url"`
+	User        string   `json:"user"`
+	CreatedAt   string   `json:"created_at"`
+	Formatter   string   `json:"formatter"`
+	Reactions   []string `json:"reactions"`
+	Body        string   `json:"body"`
+	PullRequest string   `json:"pull_request"`
 }
 
 type PullRequestReviewComment struct {
-	Type        string `json:"type"`
-	URL         string `json:"url"`
-	PullRequest string `json:"pull_request"`
-	User        string `json:"user"`
-	CommitID    string `json:"commit_id"`
-	Path        string `json:"path"`
-	Position    int    `json:"position"`
-	Body        string `json:"body"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	Type                    string   `json:"type"`
+	URL                     string   `json:"url"`
+	PullRequest             string   `json:"pull_request"`
+	PullRequestReview       string   `json:"pull_request_review"`
+	PullRequestReviewThread string   `json:"pull_request_review_thread"`
+	Formatter               string   `json:"formatter"`
+	DiffHunk                string   `json:"diff_hunk"`
+	OriginalPosition        int      `json:"original_position"`
+	OriginalCommitId        string   `json:"original_commit_id"`
+	State                   int      `json:"state"`
+	InReplyTo               *string  `json:"in_reply_to"`
+	Reactions               []string `json:"reactions"`
+	SubjectType             string   `json:"subject_type"`
+	User                    string   `json:"user"`
+	CommitID                string   `json:"commit_id"`
+	Path                    string   `json:"path"`
+	Position                int      `json:"position"`
+	Body                    string   `json:"body"`
+	CreatedAt               string   `json:"created_at"`
+	UpdatedAt               string   `json:"updated_at"`
 }
 
 type MigrationArchive struct {

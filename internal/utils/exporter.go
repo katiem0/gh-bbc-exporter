@@ -41,9 +41,13 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	reposDir := filepath.Join(e.outputDir, "repositories", workspace)
+	reposDir := filepath.Join(e.outputDir, "repositories", workspace, repoSlug+".git")
 	if err := os.MkdirAll(reposDir, 0755); err != nil {
 		return fmt.Errorf("failed to create repositories directory: %w", err)
+	}
+
+	if err := e.createRepositoryInfoFiles(workspace, repoSlug); err != nil {
+		return fmt.Errorf("failed to create repository info files: %w", err)
 	}
 
 	repo, err := e.client.GetRepository(workspace, repoSlug)
@@ -52,23 +56,18 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 	}
 
 	schema := data.MigrationArchiveSchema{
-		Version: "1.2.0",
+		Version: "1.0.1",
 	}
 	if err := e.writeJSONFile("schema.json", schema); err != nil {
 		return err
 	}
 
-	// Create urls.json
-	urls := e.createURLsTemplate()
-	if err := e.writeJSONFile("urls.json", urls); err != nil {
-		return err
-	}
-
-	defaultLabels := []data.Label{}
+	defaultLabels := []data.Label{} // Get default labels from repo if available
 	repositories := e.createRepositoriesData(repo, workspace, defaultLabels)
 	if err := e.writeJSONFile("repositories_000001.json", repositories); err != nil {
 		return err
 	}
+
 	cloneURL := fmt.Sprintf("https://%s:%s@bitbucket.org/%s/%s.git",
 		e.client.username, e.client.appPass, workspace, repoSlug)
 	if err := e.CloneRepository(workspace, repoSlug, cloneURL, logger); err != nil {
@@ -89,11 +88,13 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 		return err
 	}
 
+	// Create and write organizations data
 	orgs := e.createOrganizationData(workspace)
 	if err := e.writeJSONFile("organizations_000001.json", orgs); err != nil {
 		return err
 	}
 
+	// Get and write pull requests data
 	prs, err := e.client.GetPullRequests(workspace, repoSlug)
 	if err != nil {
 		e.logger.Warn("Failed to fetch pull requests", zap.Error(err))
@@ -106,8 +107,12 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 	if len(prs) > 0 {
 		for i := range prs {
 			prs[i].Repository = fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug)
+			prs[i].URL = fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%d", workspace, repoSlug, i+1)
+			prs[i].Base.Repo = prs[i].Repository
+			prs[i].Head.Repo = prs[i].Repository
+			prs[i].Base.User = fmt.Sprintf("https://bitbucket.org/%s", workspace)
+			prs[i].Head.User = fmt.Sprintf("https://bitbucket.org/%s", workspace)
 		}
-
 		if err := e.writeJSONFile("pull_requests_000001.json", prs); err != nil {
 			return fmt.Errorf("failed to write pull requests: %w", err)
 		}
@@ -117,7 +122,6 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 	if err != nil {
 		logger.Warn("Failed to fetch pull request comments", zap.Error(err))
 	} else {
-		// Write regular comments if we have them
 		if len(regularComments) > 0 {
 			if err := e.writeJSONFile("issue_comments_000001.json", regularComments); err != nil {
 				logger.Warn("Failed to write issue comments", zap.Error(err))
@@ -126,19 +130,23 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 			}
 		}
 
-		// Write review comments if we have them
 		if len(reviewComments) > 0 {
 			if err := e.writeJSONFile("pull_request_review_comments_000001.json", reviewComments); err != nil {
 				logger.Warn("Failed to write pull request review comments", zap.Error(err))
 			} else {
 				logger.Info("Pull request review comments written", zap.Int("count", len(reviewComments)))
 			}
-		}
-	}
 
-	teams := e.createTeamsData(workspace, repoSlug)
-	if err := e.writeJSONFile("teams_000001.json", teams); err != nil {
-		return err
+			threads := e.createReviewThreads(reviewComments, workspace, repoSlug)
+			if err := e.writeJSONFile("pull_request_review_threads_000001.json", threads); err != nil {
+				logger.Warn("Failed to write review threads", zap.Error(err))
+			}
+
+			reviews := e.createReviews(reviewComments, workspace, repoSlug)
+			if err := e.writeJSONFile("pull_request_reviews_000001.json", reviews); err != nil {
+				logger.Warn("Failed to write reviews", zap.Error(err))
+			}
+		}
 	}
 
 	archivePath, err := e.CreateArchive()
@@ -323,12 +331,10 @@ func (e *Exporter) createEmptyRepository(workspace, repoSlug string) error {
 		}
 	}
 
-	// Create parent directory
 	if err := os.MkdirAll(filepath.Dir(repoDir), 0755); err != nil {
 		return fmt.Errorf("failed to create parent directory: %w", err)
 	}
 
-	// Initialize empty Git repo
 	cmd := exec.Command("git", "init", "--bare", repoDir)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -336,12 +342,10 @@ func (e *Exporter) createEmptyRepository(workspace, repoSlug string) error {
 			zap.String("output", string(output)),
 			zap.Error(err))
 
-		// If git init fails, create directory structure manually
 		if err := os.MkdirAll(repoDir, 0755); err != nil {
 			return fmt.Errorf("failed to create repository directory: %w", err)
 		}
 
-		// Create required directories
 		for _, dir := range []string{
 			filepath.Join(repoDir, "objects", "info"),
 			filepath.Join(repoDir, "objects", "pack"),
@@ -370,14 +374,12 @@ func (e *Exporter) createEmptyRepository(workspace, repoSlug string) error {
 	}
 
 	configFile := filepath.Join(repoDir, "config")
-	configContent := fmt.Sprintf(`[core]
+	configContent := `[core]
 	repositoryformatversion = 0
 	filemode = true
 	bare = true
-[remote "origin"]
-	url = https://bitbucket.org/%s/%s.git
-	fetch = +refs/heads/*:refs/remotes/origin/*
-`, workspace, repoSlug)
+	ignorecase = true
+  precomposeunicode = true`
 	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
 		return fmt.Errorf("failed to create config file: %w", err)
 	}
@@ -428,52 +430,64 @@ func (e *Exporter) createOrganizationData(workspace string) []data.Organization 
 	}
 }
 
-func (e *Exporter) createTeamsData(workspace, repoSlug string) []data.Team {
-	now := formatDateToZ(time.Now().Format(time.RFC3339))
-	description := ""
-	return []data.Team{
-		{
-			Type:         "team",
-			URL:          fmt.Sprintf("https://bitbucket.org/%s/teams/%s-admin-access", workspace, workspace),
-			Organization: fmt.Sprintf("https://bitbucket.org/%s", workspace),
-			Name:         fmt.Sprintf("%s Admin Access", workspace),
-			Description:  &description,
-			Permissions: []data.Permission{
-				{
-					Repository: fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug),
-					Access:     "admin",
-				},
-			},
-			Members:   []data.TeamMember{},
-			CreatedAt: now,
-		},
-	}
-}
-
 func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, workspace string, labels []data.Label) []data.Repository {
-	// Format creation date to ISO 8601
+
 	createdAt := formatDateToZ(repo.CreatedOn)
 
-	// Create repository entry
 	return []data.Repository{
 		{
-			Type:          "repository",
-			URL:           fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repo.Name),
-			Owner:         fmt.Sprintf("https://bitbucket.org/%s", workspace),
-			Name:          repo.Name,
-			Description:   repo.Description,
-			Private:       repo.IsPrivate,
-			HasIssues:     true,
-			HasWiki:       false,
-			HasDownloads:  true,
-			Labels:        labels,
-			Webhooks:      []interface{}{},
-			Collaborators: []interface{}{},
-			CreatedAt:     createdAt,
-			GitURL:        fmt.Sprintf("tarball://root/repositories/%s/%s.git", workspace, repo.Name),
-			DefaultBranch: "main",
-			PublicKeys:    []interface{}{},
-			WikiURL:       "",
+			Type:             "repository",
+			URL:              fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repo.Name),
+			Owner:            fmt.Sprintf("https://bitbucket.org/%s", workspace),
+			Name:             repo.Name,
+			Description:      repo.Description,
+			Private:          repo.IsPrivate,
+			HasIssues:        true,
+			HasWiki:          true,
+			HasDownloads:     true,
+			Labels:           []data.Label{},
+			Webhooks:         []interface{}{},
+			Collaborators:    []interface{}{},
+			CreatedAt:        createdAt,
+			GitURL:           fmt.Sprintf("tarball://root/repositories/%s/%s.git", workspace, repo.Name),
+			DefaultBranch:    "main",
+			PublicKeys:       []interface{}{},
+			Page:             nil,
+			Website:          nil,
+			IsArchived:       false,
+			RepositoryTopics: []interface{}{},
+			SecurityAndAnalysis: map[string]interface{}{
+				"dependency_graph":               false,
+				"vulnerability_alerts":           false,
+				"vulnerability_updates":          false,
+				"advanced_security":              false,
+				"token_scanning":                 false,
+				"token_scanning_push_protection": false,
+			},
+			Autolinks: []interface{}{},
+			GeneralSettings: map[string]interface{}{
+				"template":            false,
+				"allow_forking":       false,
+				"sponsorships":        false,
+				"projects":            true,
+				"discussions":         false,
+				"merge_commit":        true,
+				"squash_merge":        true,
+				"rebase_merge":        true,
+				"auto_merge":          false,
+				"delete_branch_heads": false,
+				"update_branch":       false,
+				"git_lfs_in_archives": false,
+			},
+			ActionsGeneralSettings: map[string]interface{}{
+				"actions_disabled":                 false,
+				"allows_all_actions":               true,
+				"allows_local_actions_only":        false,
+				"allows_github_owned_actions":      false,
+				"allows_verified_actions":          false,
+				"allows_specific_actions_patterns": false,
+				"patterns":                         []interface{}{},
+			},
 		},
 	}
 }

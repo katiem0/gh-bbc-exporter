@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
@@ -104,75 +105,46 @@ func (e *Exporter) writeJSONFile(filename string, data interface{}) error {
 	return nil
 }
 
-func (e *Exporter) createURLsTemplate() data.URLs {
-	return data.URLs{
-		User:                 "{scheme}://{+host}{/segments*}/{user}",
-		Organization:         "{scheme}://{+host}/{organization}",
-		Team:                 "{scheme}://{+host}/{owner}/teams/{team}",
-		Repository:           "{scheme}://{+host}/{owner}/{repository}",
-		ProtectedBranch:      "{scheme}://{+host}/{owner}/{repository}/protected_branches/{protected_branch}",
-		PullRequest:          "{scheme}://{+host}/{owner}/{repository}/merge_requests/{number}",
-		Release:              "{scheme}://{+host}/{owner}/{repository}/tags/{release}",
-		Label:                "{scheme}://{+host}/{owner}/{repository}/labels#/{label}",
-		Issue:                "{scheme}://{+host}/{owner}/{repository}/issues/{issue}",
-		PullRequestReviewCmt: "{scheme}://{+host}/{owner}/{repository}/merge_requests/{pull_request}/diffs#note_{pull_request_review_comment}",
-
-		IssueComment: data.IssueCommentURLs{
-			Issue:       "{scheme}://{+host}/{owner}/{repository}/issues/{issue}#note_{issue_comment}",
-			PullRequest: "{scheme}://{+host}/{owner}/{repository}/merge_requests/{pull_request}#note_{issue_comment}",
-		},
-	}
-}
-
 func (e *Exporter) GetOutputPath() string {
 	return e.outputDir
 }
 
-func formatBitbucketURL(urlType string, workspace, repoSlug string, parts ...string) string {
-	baseURL := fmt.Sprintf("https://bitbucket.org/%s", workspace)
+func (e *Exporter) createRepositoryInfoFiles(workspace, repoSlug string) error {
+	repoPath := filepath.Join(e.outputDir, "repositories", workspace, repoSlug+".git")
 
-	switch urlType {
-	case "repository":
-		return fmt.Sprintf("%s/%s", baseURL, repoSlug)
-	case "pull_request":
-		return fmt.Sprintf("%s/%s/merge_requests/%s", baseURL, repoSlug, parts[0])
-	case "pull_request_comment":
-		return fmt.Sprintf("%s/%s/merge_requests/%s#note_%s", baseURL, repoSlug, parts[0], parts[1])
-	case "pull_request_review_comment":
-		return fmt.Sprintf("%s/%s/merge_requests/%s/diffs#note_%s", baseURL, repoSlug, parts[0], parts[1])
-	case "user":
-		return fmt.Sprintf("%s/%s", baseURL, parts[0])
-	default:
-		return baseURL
+	// Create info directory
+	infoDir := filepath.Join(repoPath, "info")
+	if err := os.MkdirAll(infoDir, 0755); err != nil {
+		return fmt.Errorf("failed to create info directory: %w", err)
 	}
-}
 
-func (c *Client) paginatedRequest(endpoint string, processor func(data json.RawMessage) error) error {
-	page := 1
-	pageLen := 100
-	hasMore := true
+	// Create nwo file (name with owner)
+	nwoContent := fmt.Sprintf("%s/%s\n", workspace, repoSlug)
+	if err := os.WriteFile(filepath.Join(infoDir, "nwo"), []byte(nwoContent), 0644); err != nil {
+		return fmt.Errorf("failed to create nwo file: %w", err)
+	}
 
-	for hasMore {
-		paginatedEndpoint := fmt.Sprintf("%s?page=%d&pagelen=%d", endpoint, page, pageLen)
-
-		var response struct {
-			Values json.RawMessage `json:"values"`
-			Next   string          `json:"next"`
-		}
-
-		if err := c.makeRequest("GET", paginatedEndpoint, &response); err != nil {
-			return err
-		}
-
-		if err := processor(response.Values); err != nil {
-			return err
-		}
-
-		hasMore = response.Next != ""
-		if hasMore {
-			page++
-		}
+	// Create last-sync file with current timestamp
+	syncTime := time.Now().Format("2006-01-02T15:04:05")
+	if err := os.WriteFile(filepath.Join(infoDir, "last-sync"), []byte(syncTime), 0644); err != nil {
+		return fmt.Errorf("failed to create last-sync file: %w", err)
 	}
 
 	return nil
+}
+
+func extractPRNumber(prURL string) string {
+	parts := strings.Split(prURL, "/")
+	if len(parts) > 0 {
+		return parts[len(parts)-1]
+	}
+	return "1"
+}
+
+func extractUsername(userURL string) string {
+	parts := strings.Split(userURL, "/")
+	if len(parts) > 0 {
+		return parts[len(parts)-1]
+	}
+	return "unknown"
 }

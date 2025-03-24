@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -251,35 +250,54 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 		zap.String("workspace", workspace),
 		zap.String("repository", repoSlug))
 
-	var allPRs []data.PullRequest
+	var pullRequests []data.PullRequest
+	page := 1
+	pageLen := 50
+	hasMore := true
 
-	baseEndpoint := fmt.Sprintf("repositories/%s/%s/pullrequests", workspace, repoSlug)
+	// Add a commit SHA cache to avoid redundant API calls
+	commitSHACache := make(map[string]string)
 
-	params := url.Values{}
-	params.Add("state", "all")
-	params.Add("pagelen", "50")
+	// Helper function to get full SHA with caching
+	getFullSHA := func(shortSHA string) string {
+		if len(shortSHA) == 40 {
+			return shortSHA
+		}
 
-	fullEndpoint := baseEndpoint
-	if len(params) > 0 {
-		fullEndpoint = baseEndpoint + "?" + params.Encode()
+		// Check cache first
+		if fullSHA, exists := commitSHACache[shortSHA]; exists {
+			return fullSHA
+		}
+
+		// Make API call if not in cache
+		fullSHA, err := c.GetFullCommitSHA(workspace, repoSlug, shortSHA)
+		if err == nil && len(fullSHA) == 40 {
+			// Cache the result
+			commitSHACache[shortSHA] = fullSHA
+			return fullSHA
+		}
+
+		c.logger.Warn("Failed to get full commit SHA",
+			zap.String("original", shortSHA),
+			zap.Error(err))
+
+		return shortSHA
 	}
 
-	c.logger.Debug("Initial API request",
-		zap.String("endpoint", fullEndpoint),
-		zap.String("full_url", c.baseURL+"/"+fullEndpoint))
+	for hasMore {
+		endpoint := fmt.Sprintf("repositories/%s/%s/pullrequests?page=%d&pagelen=%d&state=ALL",
+			workspace, repoSlug, page, pageLen)
 
-	page := 1
-	for {
 		var response data.BitbucketPRResponse
-
 		var err error
-		for retries := 0; retries < 3; retries++ {
-			// Try to use our standard makeRequest first
-			err = c.makeRequest("GET", fullEndpoint, &response)
 
+		// Retry logic for API requests
+		maxRetries := 3
+		for retries := 0; retries < maxRetries; retries++ {
+			err = c.makeRequest("GET", endpoint, &response)
 			if err != nil {
 				c.logger.Warn("API request error",
-					zap.String("endpoint", fullEndpoint),
+					zap.String("endpoint", endpoint),
 					zap.Int("retry", retries),
 					zap.Error(err))
 
@@ -311,51 +329,46 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 				closedAt = &closedStr
 			}
 
-			prURL := fmt.Sprintf("https://bitbucket.org/%s/%s/merge_requests/%d",
+			// Use GitHub-style URLs for compatibility with GHES format
+			prURL := fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%d",
 				workspace, repoSlug, pr.ID)
 
-			userURL := fmt.Sprintf("https://bitbucket.org/%s", strings.Trim(pr.Author.UUID, "{}"))
+			userURL := fmt.Sprintf("https://bitbucket.org/%s",
+				strings.Trim(pr.Author.UUID, "{}"))
 			repoURL := fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug)
 			prUser := fmt.Sprintf("https://bitbucket.org/%s", workspace)
 
 			baseSHA := pr.Destination.Commit.Hash
 			headSHA := pr.Source.Commit.Hash
 
-			if len(baseSHA) < 40 {
-				fullBaseSHA, err := c.GetFullCommitSHA(workspace, repoSlug, baseSHA)
-				if err == nil {
-					baseSHA = fullBaseSHA
-				} else {
-					c.logger.Warn("Failed to get full base commit SHA",
-						zap.String("original", baseSHA),
-						zap.Error(err))
-				}
-			}
+			// Get full SHA values
+			baseSHA = getFullSHA(baseSHA)
+			headSHA = getFullSHA(headSHA)
 
-			if len(headSHA) < 40 {
-				fullHeadSHA, err := c.GetFullCommitSHA(workspace, repoSlug, headSHA)
-				if err == nil {
-					headSHA = fullHeadSHA
-				} else {
-					c.logger.Warn("Failed to get full head commit SHA",
-						zap.String("original", headSHA),
-						zap.Error(err))
-				}
-			}
-
-			var body string
+			// Extract description or use empty string if nil
+			description := ""
 			if pr.Description != nil {
-				body = *pr.Description
+				description = *pr.Description
 			}
 
-			createdAt := formatDateToZ(pr.CreatedOn)
-			newPR := data.PullRequest{
+			// Format merge commit SHA if available
+			var mergeCommitSha *string
+			if pr.MergeCommit != nil && pr.State == "MERGED" {
+				fullMergeSHA := getFullSHA(pr.MergeCommit.Hash)
+				mergeCommitSha = &fullMergeSHA
+			}
+
+			// Create empty labels for PR
+			labels := []string{}
+
+			// Create the Pull Request with GitHub-compatible structure
+			pullRequest := data.PullRequest{
 				Type:       "pull_request",
 				URL:        prURL,
 				User:       userURL,
 				Repository: repoURL,
 				Title:      pr.Title,
-				Body:       body,
+				Body:       description,
 				Base: data.PRBranch{
 					Ref:  pr.Destination.Branch.Name,
 					Sha:  baseSHA,
@@ -368,51 +381,30 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 					User: prUser,
 					Repo: repoURL,
 				},
-				Labels:    []string{},
-				MergedAt:  mergedAt,
-				ClosedAt:  closedAt,
-				CreatedAt: createdAt,
-				Assignee:  nil,
-				Milestone: nil,
+				Labels:               labels,
+				MergedAt:             mergedAt,
+				ClosedAt:             closedAt,
+				CreatedAt:            formatDateToZ(pr.CreatedOn),
+				Assignee:             nil,
+				Assignees:            []string{},
+				Milestone:            nil,
+				Reactions:            []string{},
+				ReviewRequests:       []string{},
+				CloseIssueReferences: []string{},
+				WorkInProgress:       false,
+				MergeCommitSha:       mergeCommitSha,
 			}
 
-			allPRs = append(allPRs, newPR)
-		}
-		if response.Next == "" {
-			break
-		}
-		nextURL, err := url.Parse(response.Next)
-		if err != nil {
-			c.logger.Warn("Failed to parse next URL", zap.Error(err))
-			break
+			pullRequests = append(pullRequests, pullRequest)
 		}
 
-		fullEndpoint = strings.TrimPrefix(nextURL.Path, "/")
-		if nextURL.RawQuery != "" {
-			fullEndpoint += "?" + nextURL.RawQuery
+		hasMore = response.Next != ""
+		if hasMore {
+			page++
 		}
-
-		baseURLStr, _ := url.Parse(c.baseURL)
-		if baseURLStr != nil && baseURLStr.Path != "" && strings.HasPrefix(fullEndpoint, baseURLStr.Path) {
-			fullEndpoint = strings.TrimPrefix(fullEndpoint, baseURLStr.Path)
-			fullEndpoint = strings.TrimPrefix(fullEndpoint, "/")
-		}
-		page++
-
-		time.Sleep(200 * time.Millisecond)
 	}
 
-	c.logger.Info("Fetched all pull requests", zap.Int("total", len(allPRs)))
-	return allPRs, nil
-}
-
-func (c *Client) GetComments(workspace, repoSlug string) ([]data.IssueComment, error) {
-	c.logger.Debug("Fetching comments",
-		zap.String("workspace", workspace),
-		zap.String("repository", repoSlug))
-
-	// TODO: Implement real API call to fetch comments
-	return []data.IssueComment{}, nil
+	return pullRequests, nil
 }
 
 func (c *Client) GetFullCommitSHA(workspace, repoSlug, commitHash string) (string, error) {
@@ -463,7 +455,8 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string) ([]data.Issu
 			}
 		}
 	}
-	for prID, prURL := range prURLMap {
+
+	for prID, _ := range prURLMap {
 		page := 1
 		pageLen := 100
 		hasMore := true
@@ -483,20 +476,10 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string) ([]data.Issu
 						UUID        string `json:"uuid"`
 						Nickname    string `json:"nickname"`
 						AccountID   string `json:"account_id"`
-						Links       struct {
-							Self struct {
-								Href string `json:"href"`
-							} `json:"self"`
-						} `json:"links"`
 					} `json:"user"`
 					CreatedOn string `json:"created_on"`
 					UpdatedOn string `json:"updated_on"`
-					Links     struct {
-						Self struct {
-							Href string `json:"href"`
-						} `json:"self"`
-					} `json:"links"`
-					Inline *struct {
+					Inline    *struct {
 						From *int   `json:"from"`
 						To   *int   `json:"to"`
 						Path string `json:"path"`
@@ -515,6 +498,7 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string) ([]data.Issu
 			}
 
 			for _, comment := range response.Values {
+				// Format GitHub-style user URL - use UUID as username
 				userURL := fmt.Sprintf("https://bitbucket.org/%s", strings.Trim(comment.User.UUID, "{}"))
 
 				// Format timestamps
@@ -523,6 +507,9 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string) ([]data.Issu
 
 				// Transform PR references in body
 				transformedBody := c.transformCommentBody(comment.Content.Raw, workspace, repoSlug)
+
+				// Extract PR number from URL for reference generation
+				prNumber := fmt.Sprintf("%d", prID)
 
 				// Check if this is an inline comment
 				if comment.Inline != nil && comment.Inline.Path != "" {
@@ -534,32 +521,69 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string) ([]data.Issu
 						lineNumber = *comment.Inline.From
 					}
 
+					// Generate unique IDs for comment and thread
+					commentId := fmt.Sprintf("%d", comment.ID)
+					reviewId := fmt.Sprintf("%d", comment.ID) // Use same ID for review
+					threadId := fmt.Sprintf("%d", comment.ID) // Use same ID for thread
+
+					// Generate GitHub-style URLs
+					commentURL := fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%s/files#r%s",
+						workspace, repoSlug, prNumber, commentId)
+					reviewURL := fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%s/files#pullrequestreview-%s",
+						workspace, repoSlug, prNumber, reviewId)
+					threadURL := fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%s/files#pullrequestreviewthread-%s",
+						workspace, repoSlug, prNumber, threadId)
+					prFullURL := fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%s",
+						workspace, repoSlug, prNumber)
+
+					// Get full commit SHA
+					commitSHA := prCommitMap[prID]
+					if len(commitSHA) < 40 {
+						fullCommitSHA, err := c.GetFullCommitSHA(workspace, repoSlug, commitSHA)
+						if err == nil {
+							commitSHA = fullCommitSHA
+						}
+					}
+
+					// Create diff hunk
+					diffHunk := fmt.Sprintf("@@ -0,0 +1,%d @@\n+%s", lineNumber, transformedBody)
+
 					// Create review comment with correct format
 					reviewComment := data.PullRequestReviewComment{
-						Type:        "pull_request_review_comment",
-						URL:         fmt.Sprintf("%s/diffs#note_%d", prURL, comment.ID),
-						PullRequest: prURL,
-						User:        userURL,
-						CommitID:    prCommitMap[prID], // Use the PR's head commit SHA
-						Path:        comment.Inline.Path,
-						Position:    lineNumber,
-						Body:        transformedBody,
-						CreatedAt:   createdAt,
-						UpdatedAt:   updatedAt,
+						Type:                    "pull_request_review_comment",
+						URL:                     commentURL,
+						PullRequest:             prFullURL,
+						PullRequestReview:       reviewURL,
+						PullRequestReviewThread: threadURL,
+						User:                    userURL,
+						CommitID:                commitSHA,
+						OriginalCommitId:        commitSHA,
+						Path:                    comment.Inline.Path,
+						Position:                lineNumber,
+						OriginalPosition:        lineNumber,
+						Body:                    transformedBody,
+						CreatedAt:               createdAt,
+						UpdatedAt:               updatedAt,
+						Formatter:               "markdown",
+						DiffHunk:                diffHunk,
+						State:                   1, // Active state
+						InReplyTo:               nil,
+						Reactions:               []string{},
+						SubjectType:             "line",
 					}
 
 					reviewComments = append(reviewComments, reviewComment)
 				} else {
-					// This is a regular PR comment
+
 					regularComment := data.IssueComment{
 						Type:        "issue_comment",
-						URL:         fmt.Sprintf("%s#note_%d", prURL, comment.ID),
+						URL:         fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%s#issuecomment-%d", workspace, repoSlug, prNumber, comment.ID),
 						User:        userURL,
-						CreatedAt:   createdAt,
-						UpdatedAt:   updatedAt,
-						IssueURL:    prURL,
 						Body:        transformedBody,
-						PullRequest: prURL,
+						CreatedAt:   createdAt,
+						Formatter:   "markdown",
+						Reactions:   []string{},
+						PullRequest: fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%s", workspace, repoSlug, prNumber),
 					}
 
 					regularComments = append(regularComments, regularComment)
@@ -605,4 +629,80 @@ func (c *Client) transformCommentBody(body, workspace, repoSlug string) string {
 	})
 
 	return transformedBody
+}
+
+func (e *Exporter) createReviewThreads(comments []data.PullRequestReviewComment, workspace, repoSlug string) []map[string]interface{} {
+	var threads []map[string]interface{}
+
+	for _, comment := range comments {
+
+		thread := map[string]interface{}{
+			"type":                  "pull_request_review_thread",
+			"url":                   comment.PullRequestReviewThread,
+			"pull_request":          comment.PullRequest,
+			"pull_request_review":   comment.PullRequestReview,
+			"diff_hunk":             comment.DiffHunk,
+			"path":                  comment.Path,
+			"position":              comment.Position,
+			"original_position":     comment.OriginalPosition,
+			"commit_id":             comment.CommitID,
+			"original_commit_id":    comment.OriginalCommitId,
+			"start_position_offset": nil,
+			"blob_position":         comment.Position - 1,
+			"start_line":            nil,
+			"line":                  comment.Position,
+			"start_side":            nil,
+			"side":                  "right",
+			"original_start_line":   nil,
+			"original_line":         comment.OriginalPosition,
+			"created_at":            comment.CreatedAt,
+			"resolved_at":           nil,
+			"resolver":              nil,
+			"subject_type":          comment.SubjectType,
+			"outdated":              false,
+		}
+
+		threads = append(threads, thread)
+	}
+
+	return threads
+}
+
+func (e *Exporter) createReviews(comments []data.PullRequestReviewComment, workspace, repoSlug string) []map[string]interface{} {
+	// Group comments by PR review URL
+	commentsByReview := make(map[string][]data.PullRequestReviewComment)
+
+	for _, comment := range comments {
+		key := comment.PullRequestReview
+		commentsByReview[key] = append(commentsByReview[key], comment)
+	}
+
+	var reviews []map[string]interface{}
+
+	// Iterate through the map of reviews and their comments
+	for reviewURL, reviewComments := range commentsByReview {
+		if len(reviewComments) == 0 {
+			continue
+		}
+
+		comment := reviewComments[0]
+
+		review := map[string]interface{}{
+			"type":         "pull_request_review",
+			"url":          reviewURL,
+			"pull_request": comment.PullRequest,
+			"user":         comment.User,
+			"body":         nil,
+			"head_sha":     comment.CommitID,
+			"formatter":    "markdown",
+			"state":        comment.State,
+			"reactions":    []interface{}{},
+			"created_at":   comment.CreatedAt,
+			"submitted_at": comment.CreatedAt,
+		}
+
+		reviews = append(reviews, review)
+	}
+
+	return reviews
 }
