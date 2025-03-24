@@ -203,12 +203,12 @@ func (c *Client) GetUsers(workspace, repoSlug string) ([]data.User, error) {
 		for _, member := range response.Values {
 			user := member.User
 
-			profileURL := fmt.Sprintf("https://bitbucket.org/%s", user.DisplayName)
+			profileURL := fmt.Sprintf("https://bitbucket.org/%s", strings.Trim(user.UUID, "{}"))
 
 			newUser := data.User{
 				Type:      "user",
 				URL:       profileURL,
-				Login:     user.DisplayName,
+				Login:     strings.Trim(user.UUID, "{}"),
 				Name:      user.DisplayName,
 				Company:   nil,
 				Website:   nil,
@@ -244,15 +244,6 @@ func (c *Client) GetUsers(workspace, repoSlug string) ([]data.User, error) {
 		zap.Int("count", len(allUsers)))
 
 	return allUsers, nil
-}
-
-func (c *Client) GetIssues(workspace, repoSlug string) ([]data.Issue, error) {
-	c.logger.Debug("Fetching issues",
-		zap.String("workspace", workspace),
-		zap.String("repository", repoSlug))
-
-	// TODO: Implement real API call to fetch issues
-	return []data.Issue{}, nil
 }
 
 func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest, error) {
@@ -323,7 +314,7 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 			prURL := fmt.Sprintf("https://bitbucket.org/%s/%s/merge_requests/%d",
 				workspace, repoSlug, pr.ID)
 
-			userURL := fmt.Sprintf("https://bitbucket.org/%s", pr.Author.DisplayName)
+			userURL := fmt.Sprintf("https://bitbucket.org/%s", strings.Trim(pr.Author.UUID, "{}"))
 			repoURL := fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug)
 			prUser := fmt.Sprintf("https://bitbucket.org/%s", workspace)
 
@@ -422,113 +413,6 @@ func (c *Client) GetComments(workspace, repoSlug string) ([]data.IssueComment, e
 
 	// TODO: Implement real API call to fetch comments
 	return []data.IssueComment{}, nil
-}
-
-func (c *Client) GetBranches(workspace, repoSlug string) ([]data.Branch, error) {
-	c.logger.Debug("Fetching branches",
-		zap.String("workspace", workspace),
-		zap.String("repository", repoSlug))
-
-	// TODO: Implement real API call to fetch branches
-	return []data.Branch{}, nil
-}
-
-func (c *Client) GetBranchRestrictions(workspace, repoSlug string) ([]data.BranchRestriction, error) {
-	c.logger.Debug("Fetching branch restrictions",
-		zap.String("workspace", workspace),
-		zap.String("repository", repoSlug))
-
-	var allRestrictions []data.BranchRestriction
-	page := 1
-	pageLen := 100
-	hasMore := true
-
-	for hasMore {
-		endpoint := fmt.Sprintf("repositories/%s/%s/branch-restrictions?page=%d&pagelen=%d",
-			workspace, repoSlug, page, pageLen)
-
-		var response struct {
-			Values []struct {
-				ID         int    `json:"id"`
-				Kind       string `json:"kind"`
-				Pattern    string `json:"pattern"`
-				Type       string `json:"type"`
-				BranchType string `json:"branch_type"`
-				Users      []struct {
-					DisplayName string `json:"display_name"`
-					UUID        string `json:"uuid"`
-					Links       struct {
-						Self struct {
-							Href string `json:"href"`
-						} `json:"self"`
-					} `json:"links"`
-				} `json:"users"`
-				Groups []struct {
-					Name  string `json:"name"`
-					Links struct {
-						Self struct {
-							Href string `json:"href"`
-						} `json:"self"`
-					} `json:"links"`
-				} `json:"groups"`
-			} `json:"values"`
-			Next string `json:"next"`
-		}
-
-		err := c.makeRequest("GET", endpoint, &response)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch branch restrictions: %w", err)
-		}
-
-		// Convert API response to our data model
-		for _, restriction := range response.Values {
-			branchName := restriction.Pattern
-			// BitBucket uses ** for wildcard patterns like **master**
-			// Remove wildcards to get the actual branch name
-			branchName = strings.Replace(branchName, "**", "", -1)
-
-			// Map restriction kinds to our model
-			restrictionType := ""
-			switch restriction.Kind {
-			case "push":
-				restrictionType = "push"
-			case "force":
-				restrictionType = "force_push"
-			case "delete":
-				restrictionType = "delete"
-			case "require_approvals_to_merge":
-				restrictionType = "require_reviews"
-			case "require_default_reviewer_approvals_to_merge":
-				restrictionType = "require_code_owner_review"
-			}
-
-			// Skip if we don't map this restriction type
-			if restrictionType == "" {
-				continue
-			}
-
-			// Add users who can bypass this restriction
-			authorizedUsers := []string{}
-			for _, user := range restriction.Users {
-				authorizedUsers = append(authorizedUsers, user.Links.Self.Href)
-			}
-
-			allRestrictions = append(allRestrictions, data.BranchRestriction{
-				ID:            restriction.ID,
-				Type:          restrictionType,
-				BranchPattern: branchName,
-				Users:         authorizedUsers,
-			})
-		}
-
-		// Check if there are more pages
-		hasMore = response.Next != ""
-		if hasMore {
-			page++
-		}
-	}
-
-	return allRestrictions, nil
 }
 
 func (c *Client) GetFullCommitSHA(workspace, repoSlug, commitHash string) (string, error) {
@@ -631,18 +515,7 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string) ([]data.Issu
 			}
 
 			for _, comment := range response.Values {
-				// Determine user URL
-				var userHandle string
-				if comment.User.Nickname != "" {
-					userHandle = comment.User.Nickname
-				} else if comment.User.AccountID != "" {
-					userHandle = comment.User.AccountID
-				} else if comment.User.DisplayName != "" {
-					userHandle = strings.ToLower(strings.ReplaceAll(comment.User.DisplayName, " ", "-"))
-				} else {
-					userHandle = strings.Trim(comment.User.UUID, "{}")
-				}
-				userURL := fmt.Sprintf("https://bitbucket.org/%s", userHandle)
+				userURL := fmt.Sprintf("https://bitbucket.org/%s", strings.Trim(comment.User.UUID, "{}"))
 
 				// Format timestamps
 				createdAt := formatDateToZ(comment.CreatedOn)
