@@ -329,14 +329,10 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 				closedAt = &closedStr
 			}
 
-			// Use GitHub-style URLs for compatibility with GHES format
-			prURL := fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%d",
-				workspace, repoSlug, pr.ID)
-
-			userURL := fmt.Sprintf("https://bitbucket.org/%s",
-				strings.Trim(pr.Author.UUID, "{}"))
-			repoURL := fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug)
-			prUser := fmt.Sprintf("https://bitbucket.org/%s", workspace)
+			prURL := formatURL("pr", workspace, repoSlug, pr.ID)
+			userURL := formatURL("user", workspace, "", strings.Trim(pr.Author.UUID, "{}"))
+			repoURL := formatURL("repository", workspace, repoSlug)
+			prUser := formatURL("user", workspace, "")
 
 			baseSHA := pr.Destination.Commit.Hash
 			headSHA := pr.Source.Commit.Hash
@@ -498,9 +494,6 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string) ([]data.Issu
 			}
 
 			for _, comment := range response.Values {
-				// Format GitHub-style user URL - use UUID as username
-				userURL := fmt.Sprintf("https://bitbucket.org/%s", strings.Trim(comment.User.UUID, "{}"))
-
 				// Format timestamps
 				createdAt := formatDateToZ(comment.CreatedOn)
 				updatedAt := formatDateToZ(comment.UpdatedOn)
@@ -526,15 +519,11 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string) ([]data.Issu
 					reviewId := fmt.Sprintf("%d", comment.ID) // Use same ID for review
 					threadId := fmt.Sprintf("%d", comment.ID) // Use same ID for thread
 
-					// Generate GitHub-style URLs
-					commentURL := fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%s/files#r%s",
-						workspace, repoSlug, prNumber, commentId)
-					reviewURL := fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%s/files#pullrequestreview-%s",
-						workspace, repoSlug, prNumber, reviewId)
-					threadURL := fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%s/files#pullrequestreviewthread-%s",
-						workspace, repoSlug, prNumber, threadId)
-					prFullURL := fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%s",
-						workspace, repoSlug, prNumber)
+					commentURL := formatURL("pr_review_comment", workspace, repoSlug, prNumber, commentId)
+					reviewURL := formatURL("pr_review", workspace, repoSlug, prNumber, reviewId)
+					threadURL := formatURL("pr_review_thread", workspace, repoSlug, prNumber, threadId)
+					prFullURL := formatURL("pr", workspace, repoSlug, prNumber)
+					userURL := formatURL("user", workspace, "", strings.Trim(comment.User.UUID, "{}"))
 
 					// Get full commit SHA
 					commitSHA := prCommitMap[prID]
@@ -574,16 +563,19 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string) ([]data.Issu
 
 					reviewComments = append(reviewComments, reviewComment)
 				} else {
+					commentURL := formatURL("issue_comment", workspace, repoSlug, prNumber, comment.ID)
+					prURL := formatURL("pr", workspace, repoSlug, prNumber)
+					userURL := formatURL("user", workspace, "", strings.Trim(comment.User.UUID, "{}"))
 
 					regularComment := data.IssueComment{
 						Type:        "issue_comment",
-						URL:         fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%s#issuecomment-%d", workspace, repoSlug, prNumber, comment.ID),
+						URL:         commentURL,
 						User:        userURL,
 						Body:        transformedBody,
 						CreatedAt:   createdAt,
 						Formatter:   "markdown",
 						Reactions:   []string{},
-						PullRequest: fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%s", workspace, repoSlug, prNumber),
+						PullRequest: prURL,
 					}
 
 					regularComments = append(regularComments, regularComment)

@@ -133,18 +133,58 @@ func (e *Exporter) createRepositoryInfoFiles(workspace, repoSlug string) error {
 	return nil
 }
 
+func formatURL(urlType string, workspace, repoSlug string, id ...interface{}) string {
+	switch urlType {
+	case "repository":
+		return fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug)
+	case "user":
+		userID := workspace
+		if len(id) > 0 && id[0] != nil {
+			userID = fmt.Sprintf("%v", id[0])
+		}
+		return fmt.Sprintf("https://bitbucket.org/%s", userID)
+	case "organization":
+		return fmt.Sprintf("https://bitbucket.org/%s", workspace)
+	case "pr":
+		if len(id) > 0 {
+			return fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%v", workspace, repoSlug, id[0])
+		}
+		return fmt.Sprintf("https://bitbucket.org/%s/%s/pulls", workspace, repoSlug)
+	case "issue_comment":
+		if len(id) > 0 {
+			return fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%v#issuecomment-%v",
+				workspace, repoSlug, extractPRNumber(fmt.Sprintf("%v", id[0])), id[1])
+		}
+		return fmt.Sprintf("https://bitbucket.org/%s/%s/pull/comments", workspace, repoSlug)
+	case "pr_review":
+		if len(id) > 0 {
+			return fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%v/files#pullrequestreview-%v",
+				workspace, repoSlug, id[0], id[1])
+		}
+		return fmt.Sprintf("https://bitbucket.org/%s/%s/pull/reviews", workspace, repoSlug)
+	case "pr_review_comment":
+		if len(id) > 0 {
+			return fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%v/files#r%v",
+				workspace, repoSlug, id[0], id[1])
+		}
+		return fmt.Sprintf("https://bitbucket.org/%s/%s/pull/comments", workspace, repoSlug)
+	case "pr_review_thread":
+		if len(id) > 0 {
+			return fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%v/files#pullrequestreviewthread-%v",
+				workspace, repoSlug, id[0], id[1])
+		}
+		return fmt.Sprintf("https://bitbucket.org/%s/%s/pull/threads", workspace, repoSlug)
+	case "git":
+		return fmt.Sprintf("tarball://root/repositories/%s/%s.git", workspace, repoSlug)
+	default:
+		return fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug)
+	}
+}
+
 func extractPRNumber(prURL string) string {
 	parts := strings.Split(prURL, "/")
 	if len(parts) > 0 {
 		return parts[len(parts)-1]
 	}
 	return "1"
-}
-
-func extractUsername(userURL string) string {
-	parts := strings.Split(userURL, "/")
-	if len(parts) > 0 {
-		return parts[len(parts)-1]
-	}
-	return "unknown"
 }

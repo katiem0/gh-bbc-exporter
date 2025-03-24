@@ -105,14 +105,6 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 	}
 
 	if len(prs) > 0 {
-		for i := range prs {
-			prs[i].Repository = fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug)
-			prs[i].URL = fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%d", workspace, repoSlug, i+1)
-			prs[i].Base.Repo = prs[i].Repository
-			prs[i].Head.Repo = prs[i].Repository
-			prs[i].Base.User = fmt.Sprintf("https://bitbucket.org/%s", workspace)
-			prs[i].Head.User = fmt.Sprintf("https://bitbucket.org/%s", workspace)
-		}
 		if err := e.writeJSONFile("pull_requests_000001.json", prs); err != nil {
 			return fmt.Errorf("failed to write pull requests: %w", err)
 		}
@@ -402,7 +394,7 @@ func (e *Exporter) createBasicUsers(workspace string) []data.User {
 	return []data.User{
 		{
 			Type:      "user",
-			URL:       fmt.Sprintf("https://bitbucket.org/%s", workspace),
+			URL:       formatURL("user", workspace, ""),
 			Login:     workspace,
 			Name:      workspace,
 			Company:   nil,
@@ -418,7 +410,7 @@ func (e *Exporter) createOrganizationData(workspace string) []data.Organization 
 	return []data.Organization{
 		{
 			Type:        "organization",
-			URL:         fmt.Sprintf("https://bitbucket.org/%s", workspace),
+			URL:         formatURL("organization", workspace, ""),
 			Login:       workspace,
 			Name:        workspace,
 			Description: "",
@@ -437,8 +429,8 @@ func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, worksp
 	return []data.Repository{
 		{
 			Type:             "repository",
-			URL:              fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repo.Name),
-			Owner:            fmt.Sprintf("https://bitbucket.org/%s", workspace),
+			URL:              formatURL("repository", workspace, repo.Name),
+			Owner:            formatURL("user", workspace, ""),
 			Name:             repo.Name,
 			Description:      repo.Description,
 			Private:          repo.IsPrivate,
@@ -449,7 +441,7 @@ func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, worksp
 			Webhooks:         []interface{}{},
 			Collaborators:    []interface{}{},
 			CreatedAt:        createdAt,
-			GitURL:           fmt.Sprintf("tarball://root/repositories/%s/%s.git", workspace, repo.Name),
+			GitURL:           formatURL("git", workspace, repo.Name),
 			DefaultBranch:    "main",
 			PublicKeys:       []interface{}{},
 			Page:             nil,
