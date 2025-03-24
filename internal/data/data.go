@@ -1,5 +1,16 @@
 package data
 
+type Config struct {
+	BitbucketToken   string
+	BitbucketUser    string
+	BitbucketAppPass string
+	BitbucketAPIURL  string
+	Repository       string
+	Workspace        string
+	OutputDir        string
+	Debug            bool
+}
+
 type BitbucketRepository struct {
 	Name        string `json:"name"`
 	UUID        string `json:"uuid"`
@@ -95,7 +106,6 @@ type Permission struct {
 	Access     string `json:"access"`
 }
 
-// TeamMember represents a team member
 type TeamMember struct {
 	User string `json:"user"`
 	Role string `json:"role"`
@@ -192,11 +202,25 @@ type Issue struct {
 type IssueComment struct {
 	Type        string `json:"type"`
 	URL         string `json:"url"`
+	User        string `json:"user"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+	IssueURL    string `json:"issue_url"`
+	Body        string `json:"body"`
+	PullRequest string `json:"pull_request"`
+}
+
+type PullRequestReviewComment struct {
+	Type        string `json:"type"`
+	URL         string `json:"url"`
 	PullRequest string `json:"pull_request"`
 	User        string `json:"user"`
+	CommitID    string `json:"commit_id"`
+	Path        string `json:"path"`
+	Position    int    `json:"position"`
 	Body        string `json:"body"`
-	Formatter   string `json:"formatter"`
 	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
 }
 
 type MigrationArchive struct {

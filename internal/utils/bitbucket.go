@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -143,14 +145,89 @@ func (c *Client) makeRequest(method, endpoint string, v interface{}) error {
 }
 
 func (c *Client) GetUsers(workspace, repoSlug string) ([]data.User, error) {
-	c.logger.Debug("Fetching users",
-		zap.String("workspace", workspace),
-		zap.String("repository", repoSlug))
+	c.logger.Info("Fetching workspace members",
+		zap.String("workspace", workspace))
 
-	// TODO: Implement real API call to fetch users
-	// For now, return a basic workspace user
-	return []data.User{
-		{
+	var allUsers []data.User
+	page := 1
+	pageLen := 100
+	hasMore := true
+
+	for hasMore {
+		endpoint := fmt.Sprintf("workspaces/%s/members?page=%d&pagelen=%d",
+			workspace, page, pageLen)
+
+		var response struct {
+			Values []struct {
+				User struct {
+					AccountID   string `json:"account_id"`
+					DisplayName string `json:"display_name"`
+					Nickname    string `json:"nickname"`
+					UUID        string `json:"uuid"`
+					Links       struct {
+						Self struct {
+							Href string `json:"href"`
+						} `json:"self"`
+						HTML struct {
+							Href string `json:"href"`
+						} `json:"html"`
+					} `json:"links"`
+				} `json:"user"`
+				Workspace struct {
+					Slug string `json:"slug"`
+					Name string `json:"name"`
+				} `json:"workspace"`
+			} `json:"values"`
+			Next string `json:"next"`
+		}
+
+		err := c.makeRequest("GET", endpoint, &response)
+		if err != nil {
+			c.logger.Warn("Failed to fetch workspace members, using fallback user",
+				zap.Error(err))
+			return []data.User{
+				{
+					Type:      "user",
+					URL:       fmt.Sprintf("https://bitbucket.org/%s", workspace),
+					Login:     workspace,
+					Name:      workspace,
+					Company:   nil,
+					Website:   nil,
+					Location:  nil,
+					Emails:    nil,
+					CreatedAt: formatDateToZ(time.Now().Format(time.RFC3339)),
+				},
+			}, nil
+		}
+
+		for _, member := range response.Values {
+			user := member.User
+
+			profileURL := fmt.Sprintf("https://bitbucket.org/%s", user.DisplayName)
+
+			newUser := data.User{
+				Type:      "user",
+				URL:       profileURL,
+				Login:     user.DisplayName,
+				Name:      user.DisplayName,
+				Company:   nil,
+				Website:   nil,
+				Location:  nil,
+				Emails:    nil,
+				CreatedAt: formatDateToZ(time.Now().Format(time.RFC3339)),
+			}
+
+			allUsers = append(allUsers, newUser)
+		}
+
+		hasMore = response.Next != ""
+		if hasMore {
+			page++
+		}
+	}
+	if len(allUsers) == 0 {
+		c.logger.Warn("No workspace members found, using fallback user")
+		allUsers = append(allUsers, data.User{
 			Type:      "user",
 			URL:       fmt.Sprintf("https://bitbucket.org/%s", workspace),
 			Login:     workspace,
@@ -158,10 +235,15 @@ func (c *Client) GetUsers(workspace, repoSlug string) ([]data.User, error) {
 			Company:   nil,
 			Website:   nil,
 			Location:  nil,
-			Emails:    []data.Email{},
-			CreatedAt: time.Now().Format("2006-01-02T15:04:05.000Z"),
-		},
-	}, nil
+			Emails:    nil,
+			CreatedAt: formatDateToZ(time.Now().Format(time.RFC3339)),
+		})
+	}
+
+	c.logger.Info("Fetched workspace members",
+		zap.Int("count", len(allUsers)))
+
+	return allUsers, nil
 }
 
 func (c *Client) GetIssues(workspace, repoSlug string) ([]data.Issue, error) {
@@ -221,7 +303,6 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 			return nil, fmt.Errorf("failed to fetch pull requests: %w", err)
 		}
 
-		// Log response details
 		c.logger.Debug("Pull requests response",
 			zap.Int("page", page),
 			zap.Int("values_count", len(response.Values)),
@@ -230,7 +311,6 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 		for _, pr := range response.Values {
 			var mergedAt, closedAt *string
 			if pr.State == "MERGED" {
-				// Format dates in ISO 8601 Z format
 				mergedStr := formatDateToZ(pr.UpdatedOn)
 				mergedAt = &mergedStr
 				closedStr := formatDateToZ(pr.UpdatedOn)
@@ -240,39 +320,44 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 				closedAt = &closedStr
 			}
 
-			// Format PR URL
 			prURL := fmt.Sprintf("https://bitbucket.org/%s/%s/merge_requests/%d",
 				workspace, repoSlug, pr.ID)
 
-			// Prefer nickname over UUID for user URL
-			var userHandle string
-			if pr.Author.Nickname != "" {
-				userHandle = pr.Author.Nickname
-			} else if pr.Author.DisplayName != "" {
-				// Convert display name to a simpler form
-				userHandle = strings.ToLower(strings.ReplaceAll(pr.Author.DisplayName, " ", "-"))
-			} else {
-				// Fall back to uuid but without braces
-				userHandle = strings.Trim(pr.Author.UUID, "{}")
-			}
-
-			userURL := fmt.Sprintf("https://bitbucket.org/%s", userHandle)
+			userURL := fmt.Sprintf("https://bitbucket.org/%s", pr.Author.DisplayName)
 			repoURL := fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug)
 			prUser := fmt.Sprintf("https://bitbucket.org/%s", workspace)
 
-			// Get the full SHAs
 			baseSHA := pr.Destination.Commit.Hash
 			headSHA := pr.Source.Commit.Hash
-			// Format body
+
+			if len(baseSHA) < 40 {
+				fullBaseSHA, err := c.GetFullCommitSHA(workspace, repoSlug, baseSHA)
+				if err == nil {
+					baseSHA = fullBaseSHA
+				} else {
+					c.logger.Warn("Failed to get full base commit SHA",
+						zap.String("original", baseSHA),
+						zap.Error(err))
+				}
+			}
+
+			if len(headSHA) < 40 {
+				fullHeadSHA, err := c.GetFullCommitSHA(workspace, repoSlug, headSHA)
+				if err == nil {
+					headSHA = fullHeadSHA
+				} else {
+					c.logger.Warn("Failed to get full head commit SHA",
+						zap.String("original", headSHA),
+						zap.Error(err))
+				}
+			}
+
 			var body string
 			if pr.Description != nil {
 				body = *pr.Description
 			}
 
-			// Format createdAt date
 			createdAt := formatDateToZ(pr.CreatedOn)
-
-			// Create the pull request
 			newPR := data.PullRequest{
 				Type:       "pull_request",
 				URL:        prURL,
@@ -302,36 +387,27 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 
 			allPRs = append(allPRs, newPR)
 		}
-
-		// Check if there are more pages
 		if response.Next == "" {
 			break
 		}
-
-		// For next page, use the next URL from the response
-		// We need to extract just the path part
 		nextURL, err := url.Parse(response.Next)
 		if err != nil {
 			c.logger.Warn("Failed to parse next URL", zap.Error(err))
 			break
 		}
 
-		// Extract just the path and query string
 		fullEndpoint = strings.TrimPrefix(nextURL.Path, "/")
 		if nextURL.RawQuery != "" {
 			fullEndpoint += "?" + nextURL.RawQuery
 		}
 
-		// If endpoint contains the base URL, strip it out
 		baseURLStr, _ := url.Parse(c.baseURL)
 		if baseURLStr != nil && baseURLStr.Path != "" && strings.HasPrefix(fullEndpoint, baseURLStr.Path) {
 			fullEndpoint = strings.TrimPrefix(fullEndpoint, baseURLStr.Path)
 			fullEndpoint = strings.TrimPrefix(fullEndpoint, "/")
 		}
-
 		page++
 
-		// Add a small delay between pages
 		time.Sleep(200 * time.Millisecond)
 	}
 
@@ -355,24 +431,6 @@ func (c *Client) GetBranches(workspace, repoSlug string) ([]data.Branch, error) 
 
 	// TODO: Implement real API call to fetch branches
 	return []data.Branch{}, nil
-}
-
-func (c *Client) GetCommitSha(workspace, repoSlug string, commit string) (string, error) {
-	endpoint := fmt.Sprintf("/repositories/%s/%s/commit/%s", workspace, repoSlug, commit)
-
-	c.logger.Debug("Fetching commit SHA",
-		zap.String("workspace", workspace),
-		zap.String("repository", repoSlug),
-		zap.String("commit", commit))
-
-	var response data.CommitData
-
-	err := c.makeRequest("GET", endpoint, &response)
-	if err != nil {
-		return "", err
-	}
-
-	return response.Hash, nil
 }
 
 func (c *Client) GetBranchRestrictions(workspace, repoSlug string) ([]data.BranchRestriction, error) {
@@ -471,4 +529,207 @@ func (c *Client) GetBranchRestrictions(workspace, repoSlug string) ([]data.Branc
 	}
 
 	return allRestrictions, nil
+}
+
+func (c *Client) GetFullCommitSHA(workspace, repoSlug, commitHash string) (string, error) {
+	if len(commitHash) == 40 {
+		return commitHash, nil
+	}
+
+	endpoint := fmt.Sprintf("repositories/%s/%s/commit/%s", workspace, repoSlug, commitHash)
+
+	var response struct {
+		Hash string `json:"hash"`
+	}
+
+	err := c.makeRequest("GET", endpoint, &response)
+	if err != nil {
+		return commitHash, fmt.Errorf("failed to fetch full commit SHA: %w", err)
+	}
+
+	if len(response.Hash) == 40 {
+		return response.Hash, nil
+	}
+
+	return commitHash, nil
+}
+
+func (c *Client) GetPullRequestComments(workspace, repoSlug string) ([]data.IssueComment, []data.PullRequestReviewComment, error) {
+	c.logger.Info("Fetching pull request comments",
+		zap.String("workspace", workspace),
+		zap.String("repository", repoSlug))
+
+	var regularComments []data.IssueComment
+	var reviewComments []data.PullRequestReviewComment
+
+	pullRequests, err := c.GetPullRequests(workspace, repoSlug)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to fetch pull requests: %w", err)
+	}
+
+	prURLMap := make(map[int]string)
+	prCommitMap := make(map[int]string)
+	for _, pr := range pullRequests {
+		parts := strings.Split(pr.URL, "/")
+		if len(parts) > 0 {
+			prID, err := strconv.Atoi(parts[len(parts)-1])
+			if err == nil {
+				prURLMap[prID] = pr.URL
+				prCommitMap[prID] = pr.Head.Sha
+			}
+		}
+	}
+	for prID, prURL := range prURLMap {
+		page := 1
+		pageLen := 100
+		hasMore := true
+
+		for hasMore {
+			endpoint := fmt.Sprintf("repositories/%s/%s/pullrequests/%d/comments?page=%d&pagelen=%d",
+				workspace, repoSlug, prID, page, pageLen)
+
+			var response struct {
+				Values []struct {
+					ID      int `json:"id"`
+					Content struct {
+						Raw string `json:"raw"`
+					} `json:"content"`
+					User struct {
+						DisplayName string `json:"display_name"`
+						UUID        string `json:"uuid"`
+						Nickname    string `json:"nickname"`
+						AccountID   string `json:"account_id"`
+						Links       struct {
+							Self struct {
+								Href string `json:"href"`
+							} `json:"self"`
+						} `json:"links"`
+					} `json:"user"`
+					CreatedOn string `json:"created_on"`
+					UpdatedOn string `json:"updated_on"`
+					Links     struct {
+						Self struct {
+							Href string `json:"href"`
+						} `json:"self"`
+					} `json:"links"`
+					Inline *struct {
+						From *int   `json:"from"`
+						To   *int   `json:"to"`
+						Path string `json:"path"`
+					} `json:"inline"`
+					ParentID int `json:"parent,omitempty"`
+				} `json:"values"`
+				Next string `json:"next"`
+			}
+
+			err := c.makeRequest("GET", endpoint, &response)
+			if err != nil {
+				c.logger.Warn("Failed to fetch PR comments",
+					zap.Int("pr_id", prID),
+					zap.Error(err))
+				break
+			}
+
+			for _, comment := range response.Values {
+				// Determine user URL
+				var userHandle string
+				if comment.User.Nickname != "" {
+					userHandle = comment.User.Nickname
+				} else if comment.User.AccountID != "" {
+					userHandle = comment.User.AccountID
+				} else if comment.User.DisplayName != "" {
+					userHandle = strings.ToLower(strings.ReplaceAll(comment.User.DisplayName, " ", "-"))
+				} else {
+					userHandle = strings.Trim(comment.User.UUID, "{}")
+				}
+				userURL := fmt.Sprintf("https://bitbucket.org/%s", userHandle)
+
+				// Format timestamps
+				createdAt := formatDateToZ(comment.CreatedOn)
+				updatedAt := formatDateToZ(comment.UpdatedOn)
+
+				// Transform PR references in body
+				transformedBody := c.transformCommentBody(comment.Content.Raw, workspace, repoSlug)
+
+				// Check if this is an inline comment
+				if comment.Inline != nil && comment.Inline.Path != "" {
+					// This is an inline review comment
+					lineNumber := 1
+					if comment.Inline.To != nil {
+						lineNumber = *comment.Inline.To
+					} else if comment.Inline.From != nil {
+						lineNumber = *comment.Inline.From
+					}
+
+					// Create review comment with correct format
+					reviewComment := data.PullRequestReviewComment{
+						Type:        "pull_request_review_comment",
+						URL:         fmt.Sprintf("%s/diffs#note_%d", prURL, comment.ID),
+						PullRequest: prURL,
+						User:        userURL,
+						CommitID:    prCommitMap[prID], // Use the PR's head commit SHA
+						Path:        comment.Inline.Path,
+						Position:    lineNumber,
+						Body:        transformedBody,
+						CreatedAt:   createdAt,
+						UpdatedAt:   updatedAt,
+					}
+
+					reviewComments = append(reviewComments, reviewComment)
+				} else {
+					// This is a regular PR comment
+					regularComment := data.IssueComment{
+						Type:        "issue_comment",
+						URL:         fmt.Sprintf("%s#note_%d", prURL, comment.ID),
+						User:        userURL,
+						CreatedAt:   createdAt,
+						UpdatedAt:   updatedAt,
+						IssueURL:    prURL,
+						Body:        transformedBody,
+						PullRequest: prURL,
+					}
+
+					regularComments = append(regularComments, regularComment)
+				}
+			}
+
+			// Check for more pages
+			hasMore = response.Next != ""
+			if hasMore {
+				page++
+			}
+		}
+	}
+
+	c.logger.Info("Fetched pull request comments",
+		zap.Int("regular_comments", len(regularComments)),
+		zap.Int("review_comments", len(reviewComments)),
+		zap.String("repository", repoSlug))
+
+	return regularComments, reviewComments, nil
+}
+
+func (c *Client) transformCommentBody(body, workspace, repoSlug string) string {
+	if body == "" {
+		return body
+	}
+
+	pattern := fmt.Sprintf("https://bitbucket.org/%s/%s/pull-requests/(\\d+)",
+		regexp.QuoteMeta(workspace), regexp.QuoteMeta(repoSlug))
+	replacement := fmt.Sprintf("https://bitbucket.org/%s/%s/merge_requests/$1",
+		workspace, repoSlug)
+
+	re := regexp.MustCompile(pattern)
+	transformedBody := re.ReplaceAllString(body, replacement)
+
+	prPattern := fmt.Sprintf(`\b#(\d+)\b`)
+
+	prRe := regexp.MustCompile(prPattern)
+	transformedBody = prRe.ReplaceAllStringFunc(transformedBody, func(match string) string {
+		numStr := match[1:] // Remove the # prefix
+		return fmt.Sprintf("[%s](%s)", match, fmt.Sprintf("https://bitbucket.org/%s/%s/merge_requests/%s",
+			workspace, repoSlug, numStr))
+	})
+
+	return transformedBody
 }

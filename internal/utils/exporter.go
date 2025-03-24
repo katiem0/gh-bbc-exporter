@@ -31,7 +31,6 @@ func NewExporter(client *Client, outputDir string, logger *zap.Logger) *Exporter
 }
 
 func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error {
-	// Create output directory if not specified
 	if e.outputDir == "" {
 		timestamp := time.Now().Format("20060102-150405")
 		e.outputDir = fmt.Sprintf("./bitbucket-export-%s", timestamp)
@@ -42,19 +41,16 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	// Create repositories directory structure
 	reposDir := filepath.Join(e.outputDir, "repositories", workspace)
 	if err := os.MkdirAll(reposDir, 0755); err != nil {
 		return fmt.Errorf("failed to create repositories directory: %w", err)
 	}
 
-	// Fetch repository data
 	repo, err := e.client.GetRepository(workspace, repoSlug)
 	if err != nil {
 		return fmt.Errorf("failed to fetch repository data: %w", err)
 	}
 
-	// Create schema.json
 	schema := data.MigrationArchiveSchema{
 		Version: "1.2.0",
 	}
@@ -98,20 +94,6 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 		return err
 	}
 
-	issues, err := e.client.GetIssues(workspace, repoSlug)
-	if err != nil {
-		e.logger.Warn("Failed to fetch issues", zap.Error(err))
-		issues = []data.Issue{}
-	}
-	if len(issues) > 0 {
-		for i := range issues {
-			issues[i].Repository = fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug)
-		}
-		if err := e.writeJSONFile("issues_000001.json", issues); err != nil {
-			return err
-		}
-	}
-
 	prs, err := e.client.GetPullRequests(workspace, repoSlug)
 	if err != nil {
 		e.logger.Warn("Failed to fetch pull requests", zap.Error(err))
@@ -126,90 +108,50 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 			prs[i].Repository = fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug)
 		}
 
-		// Write pull requests to file
 		if err := e.writeJSONFile("pull_requests_000001.json", prs); err != nil {
 			return fmt.Errorf("failed to write pull requests: %w", err)
 		}
 	}
 
-	// // Fetch issue comments and create issue_comments_000001.json
-	// comments, err := e.client.GetComments(workspace, repoSlug)
-	// if err != nil {
-	// 	e.logger.Warn("Failed to fetch comments", zap.Error(err))
-	// 	// Create empty comments array if API call fails
-	// 	comments = []data.IssueComment{}
-	// }
-	// if len(comments) > 0 {
-	// 	if err := e.writeJSONFile("issue_comments_000001.json", comments); err != nil {
-	// 		return err
-	// 	}
-	// }
+	regularComments, reviewComments, err := e.client.GetPullRequestComments(workspace, repoSlug)
+	if err != nil {
+		logger.Warn("Failed to fetch pull request comments", zap.Error(err))
+	} else {
+		// Write regular comments if we have them
+		if len(regularComments) > 0 {
+			if err := e.writeJSONFile("issue_comments_000001.json", regularComments); err != nil {
+				logger.Warn("Failed to write issue comments", zap.Error(err))
+			} else {
+				logger.Info("Issue comments written", zap.Int("count", len(regularComments)))
+			}
+		}
 
-	// Create teams data
+		// Write review comments if we have them
+		if len(reviewComments) > 0 {
+			if err := e.writeJSONFile("pull_request_review_comments_000001.json", reviewComments); err != nil {
+				logger.Warn("Failed to write pull request review comments", zap.Error(err))
+			} else {
+				logger.Info("Pull request review comments written", zap.Int("count", len(reviewComments)))
+			}
+		}
+	}
+
 	teams := e.createTeamsData(workspace, repoSlug)
 	if err := e.writeJSONFile("teams_000001.json", teams); err != nil {
 		return err
 	}
 
-	protectedBranches, err := e.createProtectedBranchesData(workspace, repoSlug)
-	if err != nil {
-		e.logger.Warn("Failed to create protected branches data", zap.Error(err))
-		// Create empty protected branches array if API call fails
-		protectedBranches = []data.ProtectedBranch{}
-	}
-
-	if len(protectedBranches) > 0 {
-		if err := e.writeJSONFile("protected_branches_000001.json", protectedBranches); err != nil {
-			return err
-		}
-	}
-
 	archivePath, err := e.CreateArchive()
 	if err != nil {
 		e.logger.Warn("Failed to create archive", zap.Error(err))
-		// Continue without creating archive - we still have the directory
 	} else {
 		e.logger.Info("Created archive of export directory",
 			zap.String("archive", archivePath))
-		// Update the output path to point to the archive
 		e.outputDir = archivePath
 	}
 
 	e.logger.Info("Export completed successfully", zap.String("output", e.outputDir))
 	return nil
-}
-
-func (e *Exporter) writeJSONFile(filename string, data interface{}) error {
-	filepath := filepath.Join(e.outputDir, filename)
-	e.logger.Debug("Writing file", zap.String("path", filepath))
-
-	file, err := os.Create(filepath)
-	if err != nil {
-		return fmt.Errorf("failed to create file %s: %w", filename, err)
-	}
-	defer file.Close()
-
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(data); err != nil {
-		return fmt.Errorf("failed to encode data for %s: %w", filename, err)
-	}
-
-	return nil
-}
-
-func (e *Exporter) createURLsTemplate() data.URLs {
-	return data.URLs{
-		User:            "{scheme}://{+host}{/segments*}/{user}",
-		Organization:    "{scheme}://{+host}/{organization}",
-		Team:            "{scheme}://{+host}/{owner}/teams/{team}",
-		Repository:      "{scheme}://{+host}/{owner}/{repository}",
-		ProtectedBranch: "{scheme}://{+host}/{owner}/{repository}/protected_branches/{protected_branch}",
-		PullRequest:     "{scheme}://{+host}/{owner}/{repository}/merge_requests/{number}",
-		CommitComment:   "{scheme}://{+host}/{owner}/{repository}/commit/{commit}#note_{commit_comment}",
-		Release:         "{scheme}://{+host}/{owner}/{repository}/tags/{release}",
-		Label:           "{scheme}://{+host}/{owner}/{repository}/labels#/{label}",
-	}
 }
 
 func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string, logger *zap.Logger) error {
@@ -508,125 +450,6 @@ func (e *Exporter) createTeamsData(workspace, repoSlug string) []data.Team {
 	}
 }
 
-func (e *Exporter) createProtectedBranchesData(workspace string, repoSlug string) ([]data.ProtectedBranch, error) {
-	filePath := filepath.Join(e.outputDir, "repositories_000001.json")
-	fileData, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read repositories file: %w", err)
-	}
-
-	// Parse repositories JSON - fixing the unmarshaling to use a slice
-	var repositories []data.Repository
-	if err := json.Unmarshal(fileData, &repositories); err != nil {
-		return nil, fmt.Errorf("failed to parse repositories file: %w", err)
-	}
-
-	defaultBranch := "main"
-	for _, repo := range repositories {
-		if repo.Name == repoSlug {
-			defaultBranch = repo.DefaultBranch
-			e.logger.Debug("Found default branch for repository",
-				zap.String("repo", repoSlug),
-				zap.String("branch", defaultBranch))
-			break
-		}
-	}
-
-	restrictions, err := e.client.GetBranchRestrictions(workspace, repoSlug)
-	if err != nil {
-		e.logger.Warn("Failed to fetch branch restrictions",
-			zap.String("repo", repoSlug),
-			zap.Error(err))
-	}
-
-	branchProtections := make(map[string]*data.ProtectedBranch)
-
-	for _, restriction := range restrictions {
-		branchName := restriction.BranchPattern
-		if branchName == "" || branchName == "**" {
-			branchName = defaultBranch
-		}
-
-		if _, exists := branchProtections[branchName]; !exists {
-			branchProtections[branchName] = &data.ProtectedBranch{
-				Type: "protected_branch",
-				Name: branchName,
-				URL: fmt.Sprintf("https://bitbucket.org/%s/%s/protected_branches/%s",
-					workspace, repoSlug, branchName),
-				CreatorURL:                           fmt.Sprintf("https://bitbucket.org/%s", workspace),
-				RepositoryURL:                        fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug),
-				AdminEnforced:                        true,
-				BlockDeletionsEnforcementLevel:       0,
-				BlockForcePushesEnforcementLevel:     0,
-				DismissStaleReviewsOnPush:            false,
-				PullRequestReviewsEnforcementLevel:   "off",
-				RequireCodeOwnerReview:               false,
-				RequiredStatusChecksEnforcementLevel: "off",
-				StrictRequiredStatusChecksPolicy:     false,
-				AuthorizedActorsOnly:                 false,
-				AuthorizedUserURLs:                   []string{},
-				AuthorizedTeamURLs:                   []string{},
-				DismissalRestrictedUserURLs:          []string{},
-				DismissalRestrictedTeamURLs:          []string{},
-				RequiredStatusChecks:                 []string{},
-			}
-		}
-
-		// Update protection based on the restriction type
-		protection := branchProtections[branchName]
-		switch restriction.Type {
-		case "push":
-			protection.AuthorizedActorsOnly = true
-			protection.AuthorizedUserURLs = append(protection.AuthorizedUserURLs, restriction.Users...)
-		case "force_push":
-			protection.BlockForcePushesEnforcementLevel = 2
-		case "delete":
-			protection.BlockDeletionsEnforcementLevel = 2
-		case "require_reviews":
-			protection.PullRequestReviewsEnforcementLevel = "off"
-		case "require_code_owner_review":
-			protection.RequireCodeOwnerReview = true
-		}
-	}
-
-	// Always protect the default branch if no other protections exist
-	if len(branchProtections) == 0 {
-		branchProtections[defaultBranch] = &data.ProtectedBranch{
-			Type: "protected_branch",
-			Name: defaultBranch,
-			URL: fmt.Sprintf("https://bitbucket.org/%s/%s/protected_branches/%s",
-				workspace, repoSlug, defaultBranch),
-			CreatorURL:                           fmt.Sprintf("https://bitbucket.org/%s", workspace),
-			RepositoryURL:                        fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repoSlug),
-			AdminEnforced:                        true,
-			BlockDeletionsEnforcementLevel:       2, // Default protection for default branch
-			BlockForcePushesEnforcementLevel:     2, // Default protection for default branch
-			DismissStaleReviewsOnPush:            false,
-			PullRequestReviewsEnforcementLevel:   "off",
-			RequireCodeOwnerReview:               false,
-			RequiredStatusChecksEnforcementLevel: "off",
-			StrictRequiredStatusChecksPolicy:     false,
-			AuthorizedActorsOnly:                 false,
-			AuthorizedUserURLs:                   []string{},
-			AuthorizedTeamURLs:                   []string{},
-			DismissalRestrictedUserURLs:          []string{},
-			DismissalRestrictedTeamURLs:          []string{},
-			RequiredStatusChecks:                 []string{},
-		}
-	}
-
-	// Convert map to slice
-	protectedBranches := make([]data.ProtectedBranch, 0, len(branchProtections))
-	for _, protection := range branchProtections {
-		protectedBranches = append(protectedBranches, *protection)
-	}
-
-	e.logger.Info("Created protected branches data",
-		zap.Int("count", len(protectedBranches)))
-
-	return protectedBranches, nil
-}
-
 func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, workspace string, labels []data.Label) []data.Repository {
 	// Format creation date to ISO 8601
 	createdAt := formatDateToZ(repo.CreatedOn)
@@ -655,70 +478,53 @@ func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, worksp
 	}
 }
 
-func (e *Exporter) GetOutputPath() string {
-	return e.outputDir
-}
-
 func (e *Exporter) CreateArchive() (string, error) {
-	// Get the base directory and export directory name
 	baseDir := filepath.Dir(e.outputDir)
 	exportDirName := filepath.Base(e.outputDir)
 
-	// Create archive name using the export directory name
 	archivePath := filepath.Join(baseDir, exportDirName+".tar.gz")
 
 	e.logger.Info("Creating archive",
 		zap.String("source", e.outputDir),
 		zap.String("archive", archivePath))
 
-	// Create the archive file
 	archiveFile, err := os.Create(archivePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to create archive file: %w", err)
 	}
 	defer archiveFile.Close()
 
-	// Create a gzip writer
 	gzipWriter := gzip.NewWriter(archiveFile)
 	defer gzipWriter.Close()
 
-	// Create a tar writer
 	tarWriter := tar.NewWriter(gzipWriter)
 	defer tarWriter.Close()
 
-	// Walk through all files in the export directory
 	err = filepath.Walk(e.outputDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
-		// Get the relative path from the export directory, not the parent dir
-		// This is crucial for GSM Actions compatibility
 		relPath, err := filepath.Rel(e.outputDir, path)
 		if err != nil {
 			return fmt.Errorf("failed to get relative path: %w", err)
 		}
 
-		// Skip the root directory itself
 		if relPath == "." {
 			return nil
 		}
 
-		// Create header for the file
 		header, err := tar.FileInfoHeader(info, "")
 		if err != nil {
 			return fmt.Errorf("failed to create tar header: %w", err)
 		}
 
-		// Use relative path for the file name
 		header.Name = relPath
 
-		// Write the header to the archive
 		if err := tarWriter.WriteHeader(header); err != nil {
 			return fmt.Errorf("failed to write tar header: %w", err)
 		}
 
-		// If it's a regular file, write its contents
 		if !info.IsDir() {
 			file, err := os.Open(path)
 			if err != nil {

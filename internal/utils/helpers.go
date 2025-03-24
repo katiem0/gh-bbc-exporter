@@ -2,6 +2,7 @@ package utils
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -36,7 +37,6 @@ func formatDateToZ(inputDate string) string {
 	return inputDate
 }
 
-// UpdateRepositoryDefaultBranch updates the default branch in repositories_000001.json
 func (e *Exporter) updateRepositoryDefaultBranch(repoSlug, defaultBranch string) {
 	// Read the current file
 	filePath := filepath.Join(e.outputDir, "repositories_000001.json")
@@ -83,4 +83,96 @@ func (e *Exporter) updateRepositoryDefaultBranch(repoSlug, defaultBranch string)
 
 	e.logger.Info("Updated default branch in repositories file",
 		zap.String("branch", defaultBranch))
+}
+
+func (e *Exporter) writeJSONFile(filename string, data interface{}) error {
+	filepath := filepath.Join(e.outputDir, filename)
+	e.logger.Debug("Writing file", zap.String("path", filepath))
+
+	file, err := os.Create(filepath)
+	if err != nil {
+		return fmt.Errorf("failed to create file %s: %w", filename, err)
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(data); err != nil {
+		return fmt.Errorf("failed to encode data for %s: %w", filename, err)
+	}
+
+	return nil
+}
+
+func (e *Exporter) createURLsTemplate() data.URLs {
+	return data.URLs{
+		User:                 "{scheme}://{+host}{/segments*}/{user}",
+		Organization:         "{scheme}://{+host}/{organization}",
+		Team:                 "{scheme}://{+host}/{owner}/teams/{team}",
+		Repository:           "{scheme}://{+host}/{owner}/{repository}",
+		ProtectedBranch:      "{scheme}://{+host}/{owner}/{repository}/protected_branches/{protected_branch}",
+		PullRequest:          "{scheme}://{+host}/{owner}/{repository}/merge_requests/{number}",
+		Release:              "{scheme}://{+host}/{owner}/{repository}/tags/{release}",
+		Label:                "{scheme}://{+host}/{owner}/{repository}/labels#/{label}",
+		Issue:                "{scheme}://{+host}/{owner}/{repository}/issues/{issue}",
+		PullRequestReviewCmt: "{scheme}://{+host}/{owner}/{repository}/merge_requests/{pull_request}/diffs#note_{pull_request_review_comment}",
+
+		IssueComment: data.IssueCommentURLs{
+			Issue:       "{scheme}://{+host}/{owner}/{repository}/issues/{issue}#note_{issue_comment}",
+			PullRequest: "{scheme}://{+host}/{owner}/{repository}/merge_requests/{pull_request}#note_{issue_comment}",
+		},
+	}
+}
+
+func (e *Exporter) GetOutputPath() string {
+	return e.outputDir
+}
+
+func formatBitbucketURL(urlType string, workspace, repoSlug string, parts ...string) string {
+	baseURL := fmt.Sprintf("https://bitbucket.org/%s", workspace)
+
+	switch urlType {
+	case "repository":
+		return fmt.Sprintf("%s/%s", baseURL, repoSlug)
+	case "pull_request":
+		return fmt.Sprintf("%s/%s/merge_requests/%s", baseURL, repoSlug, parts[0])
+	case "pull_request_comment":
+		return fmt.Sprintf("%s/%s/merge_requests/%s#note_%s", baseURL, repoSlug, parts[0], parts[1])
+	case "pull_request_review_comment":
+		return fmt.Sprintf("%s/%s/merge_requests/%s/diffs#note_%s", baseURL, repoSlug, parts[0], parts[1])
+	case "user":
+		return fmt.Sprintf("%s/%s", baseURL, parts[0])
+	default:
+		return baseURL
+	}
+}
+
+func (c *Client) paginatedRequest(endpoint string, processor func(data json.RawMessage) error) error {
+	page := 1
+	pageLen := 100
+	hasMore := true
+
+	for hasMore {
+		paginatedEndpoint := fmt.Sprintf("%s?page=%d&pagelen=%d", endpoint, page, pageLen)
+
+		var response struct {
+			Values json.RawMessage `json:"values"`
+			Next   string          `json:"next"`
+		}
+
+		if err := c.makeRequest("GET", paginatedEndpoint, &response); err != nil {
+			return err
+		}
+
+		if err := processor(response.Values); err != nil {
+			return err
+		}
+
+		hasMore = response.Next != ""
+		if hasMore {
+			page++
+		}
+	}
+
+	return nil
 }
