@@ -38,54 +38,6 @@ func formatDateToZ(inputDate string) string {
 	return inputDate
 }
 
-func (e *Exporter) updateRepositoryDefaultBranch(repoSlug, defaultBranch string) {
-	// Read the current file
-	filePath := filepath.Join(e.outputDir, "repositories_000001.json")
-	fileData, err := os.ReadFile(filePath)
-	if err != nil {
-		e.logger.Warn("Failed to read repositories file", zap.Error(err))
-		return
-	}
-
-	// Parse the JSON
-	var repositories []data.Repository
-	if err := json.Unmarshal(fileData, &repositories); err != nil {
-		e.logger.Warn("Failed to parse repositories file", zap.Error(err))
-		return
-	}
-
-	// Find the repository and update its default branch
-	repoUpdated := false
-	for i, repo := range repositories {
-		if repo.Name == repoSlug {
-			repositories[i].DefaultBranch = defaultBranch
-			repoUpdated = true
-			break
-		}
-	}
-
-	if !repoUpdated {
-		e.logger.Warn("Repository not found in repositories file",
-			zap.String("repo", repoSlug))
-		return
-	}
-
-	// Write the updated file
-	updatedData, err := json.MarshalIndent(repositories, "", "  ")
-	if err != nil {
-		e.logger.Warn("Failed to encode repositories data", zap.Error(err))
-		return
-	}
-
-	if err := os.WriteFile(filePath, updatedData, 0644); err != nil {
-		e.logger.Warn("Failed to write updated repositories file", zap.Error(err))
-		return
-	}
-
-	e.logger.Info("Updated default branch in repositories file",
-		zap.String("branch", defaultBranch))
-}
-
 func (e *Exporter) writeJSONFile(filename string, data interface{}) error {
 	filepath := filepath.Join(e.outputDir, filename)
 	e.logger.Debug("Writing file", zap.String("path", filepath))
@@ -187,4 +139,83 @@ func extractPRNumber(prURL string) string {
 		return parts[len(parts)-1]
 	}
 	return "1"
+}
+
+func (e *Exporter) updateRepositoryField(repoSlug string, field string, value interface{}) {
+	filePath := filepath.Join(e.outputDir, "repositories_000001.json")
+	fileData, err := os.ReadFile(filePath)
+	if err != nil {
+		e.logger.Warn("Failed to read repositories file", zap.Error(err))
+		return
+	}
+
+	var repositories []data.Repository
+	if err := json.Unmarshal(fileData, &repositories); err != nil {
+		e.logger.Warn("Failed to parse repositories file", zap.Error(err))
+		return
+	}
+
+	repoUpdated := false
+	for i, repo := range repositories {
+		if repo.Name == repoSlug {
+			switch field {
+			case "default_branch":
+				repositories[i].DefaultBranch = value.(string)
+			case "git_url":
+				repositories[i].GitURL = value.(string)
+				// Add other fields as needed
+			}
+			repoUpdated = true
+			break
+		}
+	}
+
+	if !repoUpdated {
+		e.logger.Warn("Repository not found in repositories file",
+			zap.String("repo", repoSlug))
+		return
+	}
+
+	updatedData, err := json.MarshalIndent(repositories, "", "  ")
+	if err != nil {
+		e.logger.Warn("Failed to encode repositories data", zap.Error(err))
+		return
+	}
+
+	if err := os.WriteFile(filePath, updatedData, 0644); err != nil {
+		e.logger.Warn("Failed to write updated repositories file", zap.Error(err))
+		return
+	}
+
+	e.logger.Info(fmt.Sprintf("Updated %s in repositories file", field),
+		zap.String(field, fmt.Sprintf("%v", value)))
+}
+
+func ValidateExportFlags(cmdFlags *data.CmdFlags) error {
+	if cmdFlags.BitbucketToken == "" && (cmdFlags.BitbucketUser == "" || cmdFlags.BitbucketAppPass == "") {
+		return fmt.Errorf("either token or both username and app password must be provided")
+	}
+	return nil
+}
+
+func SetupEnvironmentCredentials(cmdFlags *data.CmdFlags) {
+	// Check environment variables if credentials not provided via flags
+	if cmdFlags.BitbucketUser == "" {
+		cmdFlags.BitbucketUser = os.Getenv("BITBUCKET_USERNAME")
+	}
+	if cmdFlags.BitbucketAppPass == "" {
+		cmdFlags.BitbucketAppPass = os.Getenv("BITBUCKET_APP_PASSWORD")
+	}
+	if cmdFlags.BitbucketToken == "" {
+		cmdFlags.BitbucketToken = os.Getenv("BITBUCKET_TOKEN")
+	}
+}
+
+func PrintSuccessMessage(outputPath string) {
+	if strings.HasSuffix(outputPath, ".tar.gz") {
+		fmt.Printf("\nExport successful!\nArchive created: %s\n", outputPath)
+		fmt.Println("You can use this archive with GitHub's repository importer.")
+	} else {
+		fmt.Printf("\nExport successful!\nOutput directory: %s\n", outputPath)
+	}
 }

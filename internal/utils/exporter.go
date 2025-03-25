@@ -3,7 +3,6 @@ package utils
 import (
 	"archive/tar"
 	"compress/gzip"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -30,7 +29,7 @@ func NewExporter(client *Client, outputDir string, logger *zap.Logger) *Exporter
 	}
 }
 
-func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error {
+func (e *Exporter) Export(workspace, repoSlug string) error {
 	if e.outputDir == "" {
 		timestamp := time.Now().Format("20060102-150405")
 		e.outputDir = fmt.Sprintf("./bitbucket-export-%s", timestamp)
@@ -70,7 +69,7 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 
 	cloneURL := fmt.Sprintf("https://%s:%s@bitbucket.org/%s/%s.git",
 		e.client.username, e.client.appPass, workspace, repoSlug)
-	if err := e.CloneRepository(workspace, repoSlug, cloneURL, logger); err != nil {
+	if err := e.CloneRepository(workspace, repoSlug, cloneURL); err != nil {
 		e.logger.Warn("Failed to clone repository, creating empty repository structure",
 			zap.String("repo", repoSlug),
 			zap.Error(err))
@@ -112,31 +111,31 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 
 	regularComments, reviewComments, err := e.client.GetPullRequestComments(workspace, repoSlug)
 	if err != nil {
-		logger.Warn("Failed to fetch pull request comments", zap.Error(err))
+		e.logger.Warn("Failed to fetch pull request comments", zap.Error(err))
 	} else {
 		if len(regularComments) > 0 {
 			if err := e.writeJSONFile("issue_comments_000001.json", regularComments); err != nil {
-				logger.Warn("Failed to write issue comments", zap.Error(err))
+				e.logger.Warn("Failed to write issue comments", zap.Error(err))
 			} else {
-				logger.Info("Issue comments written", zap.Int("count", len(regularComments)))
+				e.logger.Info("Issue comments written", zap.Int("count", len(regularComments)))
 			}
 		}
 
 		if len(reviewComments) > 0 {
 			if err := e.writeJSONFile("pull_request_review_comments_000001.json", reviewComments); err != nil {
-				logger.Warn("Failed to write pull request review comments", zap.Error(err))
+				e.logger.Warn("Failed to write pull request review comments", zap.Error(err))
 			} else {
-				logger.Info("Pull request review comments written", zap.Int("count", len(reviewComments)))
+				e.logger.Info("Pull request review comments written", zap.Int("count", len(reviewComments)))
 			}
 
 			threads := e.createReviewThreads(reviewComments, workspace, repoSlug)
 			if err := e.writeJSONFile("pull_request_review_threads_000001.json", threads); err != nil {
-				logger.Warn("Failed to write review threads", zap.Error(err))
+				e.logger.Warn("Failed to write review threads", zap.Error(err))
 			}
 
 			reviews := e.createReviews(reviewComments, workspace, repoSlug)
 			if err := e.writeJSONFile("pull_request_reviews_000001.json", reviews); err != nil {
-				logger.Warn("Failed to write reviews", zap.Error(err))
+				e.logger.Warn("Failed to write reviews", zap.Error(err))
 			}
 		}
 	}
@@ -154,23 +153,23 @@ func (e *Exporter) Export(workspace, repoSlug string, logger *zap.Logger) error 
 	return nil
 }
 
-func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string, logger *zap.Logger) error {
+func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string) error {
 	repoDir := filepath.Join(e.outputDir, "repositories", workspace, repoSlug+".git")
 
 	e.logger.Info("Cloning repository",
 		zap.String("repository", repoSlug),
 		zap.String("destination", repoDir))
 
-	logger.Debug("Fetching repository details from BitBucket API")
+	e.logger.Debug("Fetching repository details from BitBucket API")
 	repoDetails, err := e.client.GetRepository(workspace, repoSlug)
 	defaultBranch := "main"
 
 	if err != nil {
-		logger.Warn("Failed to get repository details from API, will use 'main' as default branch",
+		e.logger.Warn("Failed to get repository details from API, will use 'main' as default branch",
 			zap.Error(err))
 	} else if repoDetails != nil && repoDetails.MainBranch != nil && repoDetails.MainBranch.Name != "" {
 		defaultBranch = repoDetails.MainBranch.Name
-		logger.Info("Using mainbranch from BitBucket API",
+		e.logger.Info("Using mainbranch from BitBucket API",
 			zap.String("default_branch", defaultBranch))
 	}
 
@@ -189,7 +188,7 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string, logger 
 	}
 	defer os.RemoveAll(tempDir)
 
-	logger.Debug("Cloning repository to temporary directory first")
+	e.logger.Debug("Cloning repository to temporary directory first")
 	cmd := exec.Command("git", "clone", "--mirror", cloneURL, tempDir)
 	cmd.Env = append(os.Environ(),
 		"GIT_TERMINAL_PROMPT=0",
@@ -200,7 +199,7 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string, logger 
 		return fmt.Errorf("failed to clone repository: %s: %w", string(output), err)
 	}
 
-	logger.Debug("Clone to temporary directory successful",
+	e.logger.Debug("Clone to temporary directory successful",
 		zap.String("output", string(output)))
 	if _, err := os.Stat(repoDir); err == nil {
 		if err := os.RemoveAll(repoDir); err != nil {
@@ -212,24 +211,24 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string, logger 
 		return fmt.Errorf("failed to move repository from temp dir: %w", err)
 	}
 
-	logger.Debug("Updating remote URL")
+	e.logger.Debug("Updating remote URL")
 	cmd = exec.Command("git", "remote", "set-url", "origin",
 		fmt.Sprintf("https://bitbucket.org/%s/%s.git", workspace, repoSlug))
 	cmd.Dir = repoDir
 	if err := cmd.Run(); err != nil {
-		logger.Warn("Failed to update remote URL", zap.Error(err))
+		e.logger.Warn("Failed to update remote URL", zap.Error(err))
 	}
-	logger.Debug("Verifying default branch exists",
+	e.logger.Debug("Verifying default branch exists",
 		zap.String("branch", defaultBranch))
 
 	cmd = exec.Command("git", "rev-parse", "--verify", fmt.Sprintf("refs/heads/%s", defaultBranch))
 	cmd.Dir = repoDir
 	if err := cmd.Run(); err != nil {
-		logger.Warn("Default branch not found in repository, will attempt fallback methods",
+		e.logger.Warn("Default branch not found in repository, will attempt fallback methods",
 			zap.String("expected_branch", defaultBranch),
 			zap.Error(err))
 
-		logger.Debug("Looking for most recent branch")
+		e.logger.Debug("Looking for most recent branch")
 		cmd = exec.Command("git", "for-each-ref", "--sort=-committerdate", "refs/heads/", "--format=%(refname:short)", "--count=1")
 		cmd.Dir = repoDir
 		branchOutput, err := cmd.Output()
@@ -237,7 +236,7 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string, logger 
 			mostRecentBranch := strings.TrimSpace(string(branchOutput))
 			if mostRecentBranch != "" {
 				defaultBranch = mostRecentBranch
-				logger.Info("Found default branch by commit date",
+				e.logger.Info("Found default branch by commit date",
 					zap.String("branch", defaultBranch))
 			}
 		} else {
@@ -246,25 +245,25 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string, logger 
 				cmd.Dir = repoDir
 				if err := cmd.Run(); err == nil {
 					defaultBranch = branch
-					logger.Info("Found default branch from common names",
+					e.logger.Info("Found default branch from common names",
 						zap.String("branch", defaultBranch))
 					break
 				}
 			}
 		}
 	} else {
-		logger.Info("Verified default branch exists",
+		e.logger.Info("Verified default branch exists",
 			zap.String("branch", defaultBranch))
 	}
 
 	headFile := filepath.Join(repoDir, "HEAD")
 	headContent := fmt.Sprintf("ref: refs/heads/%s\n", defaultBranch)
 
-	logger.Info("Setting HEAD file to point to default branch",
+	e.logger.Info("Setting HEAD file to point to default branch",
 		zap.String("branch", defaultBranch))
 
 	if err := os.WriteFile(headFile, []byte(headContent), 0644); err != nil {
-		logger.Error("Failed to update HEAD file",
+		e.logger.Error("Failed to update HEAD file",
 			zap.Error(err),
 			zap.String("path", headFile))
 		return fmt.Errorf("failed to update HEAD file: %w", err)
@@ -273,37 +272,35 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string, logger 
 	refsHeadsDir := filepath.Join(repoDir, "refs", "heads")
 	if _, err := os.Stat(refsHeadsDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(refsHeadsDir, 0755); err != nil {
-			logger.Warn("Failed to create refs/heads directory", zap.Error(err))
+			e.logger.Warn("Failed to create refs/heads directory", zap.Error(err))
 		}
 	}
 
 	defaultBranchRef := filepath.Join(refsHeadsDir, defaultBranch)
 	if _, err := os.Stat(defaultBranchRef); os.IsNotExist(err) {
-		logger.Warn("Default branch reference file doesn't exist",
+		e.logger.Warn("Default branch reference file doesn't exist",
 			zap.String("path", defaultBranchRef))
 
 		cmd = exec.Command("git", "rev-parse", "HEAD")
 		cmd.Dir = repoDir
 		commitID, err := cmd.Output()
 		if err == nil {
-			logger.Info("Creating reference file for default branch",
+			e.logger.Info("Creating reference file for default branch",
 				zap.String("branch", defaultBranch),
 				zap.String("commit", strings.TrimSpace(string(commitID))))
 
 			if err := os.WriteFile(defaultBranchRef, []byte(strings.TrimSpace(string(commitID))), 0644); err != nil {
-				logger.Warn("Failed to create default branch reference", zap.Error(err))
+				e.logger.Warn("Failed to create default branch reference", zap.Error(err))
 			}
 		}
 	}
 
-	// Step 9: Update repositories_000001.json with correct default branch and git URL
-	logger.Debug("Updating repositories_000001.json")
-	e.updateRepositoryDefaultBranch(repoSlug, defaultBranch)
-
+	e.logger.Debug("Updating repositories_000001.json")
 	gitURL := fmt.Sprintf("tarball://root/repositories/%s/%s.git", workspace, repoSlug)
-	e.updateRepositoryGitURL(repoSlug, gitURL)
+	e.updateRepositoryField(repoSlug, "default_branch", defaultBranch)
+	e.updateRepositoryField(repoSlug, "git_url", gitURL)
 
-	logger.Info("Repository clone and setup complete",
+	e.logger.Info("Repository clone and setup complete",
 		zap.String("default_branch", defaultBranch))
 
 	return nil
@@ -381,10 +378,9 @@ func (e *Exporter) createEmptyRepository(workspace, repoSlug string) error {
 		return fmt.Errorf("failed to create description file: %w", err)
 	}
 
-	e.updateRepositoryDefaultBranch(repoSlug, defaultBranch)
-
 	gitURL := fmt.Sprintf("tarball://root/repositories/%s/%s.git", workspace, repoSlug)
-	e.updateRepositoryGitURL(repoSlug, gitURL)
+	e.updateRepositoryField(repoSlug, "default_branch", defaultBranch)
+	e.updateRepositoryField(repoSlug, "git_url", gitURL)
 
 	e.logger.Info("Created empty repository structure")
 	return nil
@@ -484,10 +480,85 @@ func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, worksp
 	}
 }
 
+func (e *Exporter) createReviewThreads(comments []data.PullRequestReviewComment, workspace, repoSlug string) []map[string]interface{} {
+	var threads []map[string]interface{}
+
+	for _, comment := range comments {
+
+		thread := map[string]interface{}{
+			"type":                  "pull_request_review_thread",
+			"url":                   comment.PullRequestReviewThread,
+			"pull_request":          comment.PullRequest,
+			"pull_request_review":   comment.PullRequestReview,
+			"diff_hunk":             comment.DiffHunk,
+			"path":                  comment.Path,
+			"position":              comment.Position,
+			"original_position":     comment.OriginalPosition,
+			"commit_id":             comment.CommitID,
+			"original_commit_id":    comment.OriginalCommitId,
+			"start_position_offset": nil,
+			"blob_position":         comment.Position - 1,
+			"start_line":            nil,
+			"line":                  comment.Position,
+			"start_side":            nil,
+			"side":                  "right",
+			"original_start_line":   nil,
+			"original_line":         comment.OriginalPosition,
+			"created_at":            comment.CreatedAt,
+			"resolved_at":           nil,
+			"resolver":              nil,
+			"subject_type":          comment.SubjectType,
+			"outdated":              false,
+		}
+
+		threads = append(threads, thread)
+	}
+
+	return threads
+}
+
+func (e *Exporter) createReviews(comments []data.PullRequestReviewComment, workspace, repoSlug string) []map[string]interface{} {
+	// Group comments by PR review URL
+	commentsByReview := make(map[string][]data.PullRequestReviewComment)
+
+	for _, comment := range comments {
+		key := comment.PullRequestReview
+		commentsByReview[key] = append(commentsByReview[key], comment)
+	}
+
+	var reviews []map[string]interface{}
+
+	// Iterate through the map of reviews and their comments
+	for reviewURL, reviewComments := range commentsByReview {
+		if len(reviewComments) == 0 {
+			continue
+		}
+
+		comment := reviewComments[0]
+
+		review := map[string]interface{}{
+			"type":         "pull_request_review",
+			"url":          reviewURL,
+			"pull_request": comment.PullRequest,
+			"user":         comment.User,
+			"body":         nil,
+			"head_sha":     comment.CommitID,
+			"formatter":    "markdown",
+			"state":        comment.State,
+			"reactions":    []interface{}{},
+			"created_at":   comment.CreatedAt,
+			"submitted_at": comment.CreatedAt,
+		}
+
+		reviews = append(reviews, review)
+	}
+
+	return reviews
+}
+
 func (e *Exporter) CreateArchive() (string, error) {
 	baseDir := filepath.Dir(e.outputDir)
 	exportDirName := filepath.Base(e.outputDir)
-
 	archivePath := filepath.Join(baseDir, exportDirName+".tar.gz")
 
 	e.logger.Info("Creating archive",
@@ -506,12 +577,20 @@ func (e *Exporter) CreateArchive() (string, error) {
 	tarWriter := tar.NewWriter(gzipWriter)
 	defer tarWriter.Close()
 
-	err = filepath.Walk(e.outputDir, func(path string, info os.FileInfo, err error) error {
+	if err := e.archiveDirectory(e.outputDir, tarWriter); err != nil {
+		return "", fmt.Errorf("failed to build archive: %w", err)
+	}
+
+	return archivePath, nil
+}
+
+func (e *Exporter) archiveDirectory(sourceDir string, tarWriter *tar.Writer) error {
+	return filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
-		relPath, err := filepath.Rel(e.outputDir, path)
+		relPath, err := filepath.Rel(sourceDir, path)
 		if err != nil {
 			return fmt.Errorf("failed to get relative path: %w", err)
 		}
@@ -520,83 +599,33 @@ func (e *Exporter) CreateArchive() (string, error) {
 			return nil
 		}
 
-		header, err := tar.FileInfoHeader(info, "")
-		if err != nil {
-			return fmt.Errorf("failed to create tar header: %w", err)
-		}
-
-		header.Name = relPath
-
-		if err := tarWriter.WriteHeader(header); err != nil {
-			return fmt.Errorf("failed to write tar header: %w", err)
-		}
-
-		if !info.IsDir() {
-			file, err := os.Open(path)
-			if err != nil {
-				return fmt.Errorf("failed to open file %s: %w", path, err)
-			}
-			defer file.Close()
-
-			if _, err := io.Copy(tarWriter, file); err != nil {
-				return fmt.Errorf("failed to copy file contents: %w", err)
-			}
-		}
-
-		return nil
+		return e.addFileToArchive(tarWriter, path, relPath, info)
 	})
-
-	if err != nil {
-		return "", fmt.Errorf("failed to build archive: %w", err)
-	}
-
-	return archivePath, nil
 }
 
-func (e *Exporter) updateRepositoryGitURL(repoSlug, gitURL string) {
-	// Read the current repositories file
-	filePath := filepath.Join(e.outputDir, "repositories_000001.json")
-	fileData, err := os.ReadFile(filePath)
+func (e *Exporter) addFileToArchive(tarWriter *tar.Writer, path, relPath string, info os.FileInfo) error {
+	header, err := tar.FileInfoHeader(info, "")
 	if err != nil {
-		e.logger.Warn("Failed to read repositories file", zap.Error(err))
-		return
+		return fmt.Errorf("failed to create tar header: %w", err)
 	}
 
-	// Parse the JSON
-	var repositories []data.Repository
-	if err := json.Unmarshal(fileData, &repositories); err != nil {
-		e.logger.Warn("Failed to parse repositories file", zap.Error(err))
-		return
+	header.Name = relPath
+
+	if err := tarWriter.WriteHeader(header); err != nil {
+		return fmt.Errorf("failed to write tar header: %w", err)
 	}
 
-	// Find and update the repository
-	repoUpdated := false
-	for i, repo := range repositories {
-		if repo.Name == repoSlug {
-			repositories[i].GitURL = gitURL
-			repoUpdated = true
-			break
+	if !info.IsDir() {
+		file, err := os.Open(path)
+		if err != nil {
+			return fmt.Errorf("failed to open file %s: %w", path, err)
+		}
+		defer file.Close()
+
+		if _, err := io.Copy(tarWriter, file); err != nil {
+			return fmt.Errorf("failed to copy file contents: %w", err)
 		}
 	}
 
-	if !repoUpdated {
-		e.logger.Warn("Repository not found in repositories file",
-			zap.String("repo", repoSlug))
-		return
-	}
-
-	// Write the updated JSON back to the file
-	updatedData, err := json.MarshalIndent(repositories, "", "  ")
-	if err != nil {
-		e.logger.Warn("Failed to marshal updated repositories data", zap.Error(err))
-		return
-	}
-
-	if err := os.WriteFile(filePath, updatedData, 0644); err != nil {
-		e.logger.Warn("Failed to write updated repositories file", zap.Error(err))
-		return
-	}
-
-	e.logger.Info("Updated git_url in repositories file",
-		zap.String("git_url", gitURL))
+	return nil
 }

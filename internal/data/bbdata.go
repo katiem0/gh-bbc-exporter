@@ -1,6 +1,6 @@
 package data
 
-type Config struct {
+type CmdFlags struct {
 	BitbucketToken   string
 	BitbucketUser    string
 	BitbucketAppPass string

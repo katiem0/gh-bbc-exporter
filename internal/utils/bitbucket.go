@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -124,14 +125,29 @@ func (c *Client) makeRequest(method, endpoint string, v interface{}) error {
 		zap.Int("status", resp.StatusCode),
 		zap.String("status_text", resp.Status))
 
-	// Handle rate limiting
 	if resp.StatusCode == 429 {
-		// Read the response body to get any rate limit information
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		rateLimitReset := resp.Header.Get("X-RateLimit-Reset")
+		resetHeader := resp.Header.Get("X-RateLimit-Reset")
+		resetTime, err := strconv.ParseInt(resetHeader, 10, 64)
+		if err == nil && resetTime > 0 {
+			waitTime := time.Unix(resetTime, 0).Sub(time.Now())
+			if waitTime > 0 {
+				c.logger.Warn("Rate limit hit - waiting for reset",
+					zap.Duration("wait_time", waitTime))
 
-		return fmt.Errorf("rate limit exceeded (429): reset at %s: %s",
-			rateLimitReset, string(bodyBytes))
+				// Wait for reset, up to 2 minutes max
+				if waitTime > 2*time.Minute {
+					waitTime = 2 * time.Minute
+				}
+				time.Sleep(waitTime)
+
+				// Retry immediately after waiting
+				return c.makeRequest(method, endpoint, v)
+			}
+		}
+
+		// If we can't parse the reset time or it's in the past, use default backoff
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("rate limit exceeded (429): %s", string(bodyBytes))
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -605,7 +621,7 @@ func (c *Client) transformCommentBody(body, workspace, repoSlug string) string {
 
 	pattern := fmt.Sprintf("https://bitbucket.org/%s/%s/pull-requests/(\\d+)",
 		regexp.QuoteMeta(workspace), regexp.QuoteMeta(repoSlug))
-	replacement := fmt.Sprintf("https://bitbucket.org/%s/%s/merge_requests/$1",
+	replacement := fmt.Sprintf("https://bitbucket.org/%s/%s/pull/$1",
 		workspace, repoSlug)
 
 	re := regexp.MustCompile(pattern)
@@ -616,85 +632,49 @@ func (c *Client) transformCommentBody(body, workspace, repoSlug string) string {
 	prRe := regexp.MustCompile(prPattern)
 	transformedBody = prRe.ReplaceAllStringFunc(transformedBody, func(match string) string {
 		numStr := match[1:] // Remove the # prefix
-		return fmt.Sprintf("[%s](%s)", match, fmt.Sprintf("https://bitbucket.org/%s/%s/merge_requests/%s",
+		return fmt.Sprintf("[%s](%s)", match, fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%s",
 			workspace, repoSlug, numStr))
 	})
 
 	return transformedBody
 }
 
-func (e *Exporter) createReviewThreads(comments []data.PullRequestReviewComment, workspace, repoSlug string) []map[string]interface{} {
-	var threads []map[string]interface{}
+func (c *Client) makeRequestWithRetry(method, endpoint string, v interface{}) error {
+	maxRetries := 5
+	initialBackoff := 1000 // ms
+	maxBackoff := 60000    // ms (1 minute max)
 
-	for _, comment := range comments {
+	var err error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		err = c.makeRequest(method, endpoint, v)
 
-		thread := map[string]interface{}{
-			"type":                  "pull_request_review_thread",
-			"url":                   comment.PullRequestReviewThread,
-			"pull_request":          comment.PullRequest,
-			"pull_request_review":   comment.PullRequestReview,
-			"diff_hunk":             comment.DiffHunk,
-			"path":                  comment.Path,
-			"position":              comment.Position,
-			"original_position":     comment.OriginalPosition,
-			"commit_id":             comment.CommitID,
-			"original_commit_id":    comment.OriginalCommitId,
-			"start_position_offset": nil,
-			"blob_position":         comment.Position - 1,
-			"start_line":            nil,
-			"line":                  comment.Position,
-			"start_side":            nil,
-			"side":                  "right",
-			"original_start_line":   nil,
-			"original_line":         comment.OriginalPosition,
-			"created_at":            comment.CreatedAt,
-			"resolved_at":           nil,
-			"resolver":              nil,
-			"subject_type":          comment.SubjectType,
-			"outdated":              false,
+		// If successful or not a rate limit error, return result
+		if err == nil || !isRateLimitError(err) {
+			return err
 		}
 
-		threads = append(threads, thread)
+		// Calculate backoff with exponential increase and jitter
+		backoff := initialBackoff * (1 << attempt) // 1s, 2s, 4s, 8s, 16s
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
+
+		// Add jitter (±20%)
+		jitter := float64(backoff) * (0.8 + 0.4*rand.Float64())
+		sleepTime := time.Duration(jitter) * time.Millisecond
+
+		c.logger.Warn("Rate limit encountered, backing off",
+			zap.Int("attempt", attempt+1),
+			zap.Int("max_attempts", maxRetries),
+			zap.Duration("backoff", sleepTime),
+			zap.Error(err))
+
+		time.Sleep(sleepTime)
 	}
 
-	return threads
+	return fmt.Errorf("request failed after %d attempts: %w", maxRetries, err)
 }
 
-func (e *Exporter) createReviews(comments []data.PullRequestReviewComment, workspace, repoSlug string) []map[string]interface{} {
-	// Group comments by PR review URL
-	commentsByReview := make(map[string][]data.PullRequestReviewComment)
-
-	for _, comment := range comments {
-		key := comment.PullRequestReview
-		commentsByReview[key] = append(commentsByReview[key], comment)
-	}
-
-	var reviews []map[string]interface{}
-
-	// Iterate through the map of reviews and their comments
-	for reviewURL, reviewComments := range commentsByReview {
-		if len(reviewComments) == 0 {
-			continue
-		}
-
-		comment := reviewComments[0]
-
-		review := map[string]interface{}{
-			"type":         "pull_request_review",
-			"url":          reviewURL,
-			"pull_request": comment.PullRequest,
-			"user":         comment.User,
-			"body":         nil,
-			"head_sha":     comment.CommitID,
-			"formatter":    "markdown",
-			"state":        comment.State,
-			"reactions":    []interface{}{},
-			"created_at":   comment.CreatedAt,
-			"submitted_at": comment.CreatedAt,
-		}
-
-		reviews = append(reviews, review)
-	}
-
-	return reviews
+func isRateLimitError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "rate limit exceeded")
 }
