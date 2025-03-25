@@ -59,9 +59,3 @@ jobs:
           
           # Continue to next step without failing
           exit 0
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./coverage.txt
-          fail_ci_if_error: false

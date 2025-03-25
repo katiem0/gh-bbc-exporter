@@ -51,19 +51,22 @@ func TestCreateOrganizationData(t *testing.T) {
 }
 
 func TestWriteJSONFile(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "exporter-test-")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir) // Clean up at the end of test
+
 	logger, _ := zap.NewDevelopment()
 	client := &Client{}
-	exporter := NewExporter(client, "output", logger)
+	exporter := NewExporter(client, tempDir, logger)
 
 	testData := []data.User{{
 		Type:  "user",
 		Login: "testuser",
 	}}
 
-	err := exporter.writeJSONFile("test.json", testData)
+	err = exporter.writeJSONFile("test.json", testData)
 	assert.NoError(t, err)
 
-	// Verify the file was created and contains the correct data
 	filePath := filepath.Join(exporter.outputDir, "test.json")
 	file, err := os.Open(filePath)
 	assert.NoError(t, err)
@@ -77,35 +80,34 @@ func TestWriteJSONFile(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, testData, readData)
 
-	// Clean up the test file
-	os.Remove(filePath)
 }
 
 func TestCreateArchive(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "exporter-test-")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
 	logger, _ := zap.NewDevelopment()
 	client := &Client{}
-	exporter := NewExporter(client, "output", logger)
+	exporter := NewExporter(client, tempDir, logger)
 
-	// Create a dummy file in the output directory
 	dummyFilePath := filepath.Join(exporter.outputDir, "dummy.txt")
-	err := os.WriteFile(dummyFilePath, []byte("test data"), 0644)
+	err = os.WriteFile(dummyFilePath, []byte("test data"), 0644)
 	assert.NoError(t, err)
 
 	archivePath, err := exporter.CreateArchive()
 	assert.NoError(t, err)
 	assert.NotEmpty(t, archivePath)
 
-	// Verify that the archive file exists
 	_, err = os.Stat(archivePath)
 	assert.NoError(t, err)
-
-	// Clean up the test file and archive
-	os.Remove(dummyFilePath)
-	os.Remove(archivePath)
 }
 
 func TestExport(t *testing.T) {
-	// Create a mock HTTP server
+	tempDir, err := os.MkdirTemp("", "exporter-test-")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir) // Clean up at the end of test
+
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		if strings.Contains(r.URL.Path, "pullrequests") {
@@ -127,11 +129,8 @@ func TestExport(t *testing.T) {
 		logger:         logger,
 		commitSHACache: make(map[string]string),
 	}
-	exporter := NewExporter(client, "output", logger)
+	exporter := NewExporter(client, tempDir, logger)
 
-	err := exporter.Export("workspace", "repo")
+	err = exporter.Export("workspace", "repo")
 	assert.NoError(t, err)
-
-	// Clean up the test files and archive
-	os.RemoveAll(exporter.outputDir)
 }
