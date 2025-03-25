@@ -187,7 +187,7 @@ func (e *Exporter) updateRepositoryField(repoSlug string, field string, value in
 		return
 	}
 
-	e.logger.Info(fmt.Sprintf("Updated %s in repositories file", field),
+	e.logger.Debug(fmt.Sprintf("Updated %s in repositories file", field),
 		zap.String(field, fmt.Sprintf("%v", value)))
 }
 

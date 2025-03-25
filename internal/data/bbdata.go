@@ -50,7 +50,7 @@ type BitbucketPR struct {
 	Source            BitbucketPREndpoint `json:"source"`
 	Destination       BitbucketPREndpoint `json:"destination"`
 	MergeCommit       *BitbucketCommit    `json:"merge_commit"`
-	Author            BitbucketUser       `json:"author"`
+	Author            BitbucketPRUser     `json:"author"`
 }
 
 type BitbucketPREndpoint struct {
@@ -69,9 +69,57 @@ type BitbucketCommit struct {
 	Hash string `json:"hash"`
 }
 
-type BitbucketUser struct {
+type BitbucketPRUser struct {
 	DisplayName string `json:"display_name"`
 	UUID        string `json:"uuid"`
 	Nickname    string `json:"nickname"`
 	AccountID   string `json:"account_id"`
+}
+
+type BitbucketUserResponse struct {
+	Values []struct {
+		User struct {
+			AccountID   string `json:"account_id"`
+			DisplayName string `json:"display_name"`
+			Nickname    string `json:"nickname"`
+			UUID        string `json:"uuid"`
+			Links       struct {
+				Self struct {
+					Href string `json:"href"`
+				} `json:"self"`
+				HTML struct {
+					Href string `json:"href"`
+				} `json:"html"`
+			} `json:"links"`
+		} `json:"user"`
+		Workspace struct {
+			Slug string `json:"slug"`
+			Name string `json:"name"`
+		} `json:"workspace"`
+	} `json:"values"`
+	Next string `json:"next"`
+}
+
+type BitBucketCommentResponse struct {
+	Values []struct {
+		ID      int `json:"id"`
+		Content struct {
+			Raw string `json:"raw"`
+		} `json:"content"`
+		User struct {
+			DisplayName string `json:"display_name"`
+			UUID        string `json:"uuid"`
+			Nickname    string `json:"nickname"`
+			AccountID   string `json:"account_id"`
+		} `json:"user"`
+		CreatedOn string `json:"created_on"`
+		UpdatedOn string `json:"updated_on"`
+		Inline    *struct {
+			From *int   `json:"from"`
+			To   *int   `json:"to"`
+			Path string `json:"path"`
+		} `json:"inline"`
+		ParentID int `json:"parent,omitempty"`
+	} `json:"values"`
+	Next string `json:"next"`
 }

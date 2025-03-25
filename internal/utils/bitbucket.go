@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand/v2"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -16,12 +15,13 @@ import (
 )
 
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
-	token      string
-	username   string
-	appPass    string
-	logger     *zap.Logger
+	baseURL        string
+	httpClient     *http.Client
+	token          string
+	username       string
+	appPass        string
+	logger         *zap.Logger
+	commitSHACache map[string]string
 }
 
 func NewClient(baseURL, token, username, appPass string, logger *zap.Logger) *Client {
@@ -31,14 +31,15 @@ func NewClient(baseURL, token, username, appPass string, logger *zap.Logger) *Cl
 		baseURL = baseURL + "/2.0"
 	}
 
-	logger.Info("Creating Bitbucket client", zap.String("baseURL", baseURL))
+	logger.Debug("Creating Bitbucket client", zap.String("baseURL", baseURL))
 	return &Client{
-		baseURL:    baseURL,
-		httpClient: &http.Client{},
-		token:      token,
-		username:   username,
-		appPass:    appPass,
-		logger:     logger,
+		baseURL:        baseURL,
+		httpClient:     &http.Client{},
+		token:          token,
+		username:       username,
+		appPass:        appPass,
+		logger:         logger,
+		commitSHACache: make(map[string]string), // Initialize commit cache
 	}
 }
 
@@ -58,10 +59,10 @@ func (c *Client) GetRepository(workspace, repoSlug string) (*data.BitbucketRepos
 		return nil, err
 	}
 	if repo.MainBranch != nil {
-		c.logger.Info("Repository main branch",
+		c.logger.Debug("Repository main branch",
 			zap.String("branch", repo.MainBranch.Name))
 	} else {
-		c.logger.Info("Repository has no main branch defined")
+		c.logger.Debug("Repository has no main branch defined")
 	}
 
 	return &repo, nil
@@ -69,99 +70,100 @@ func (c *Client) GetRepository(workspace, repoSlug string) (*data.BitbucketRepos
 
 func (c *Client) makeRequest(method, endpoint string, v interface{}) error {
 	var fullURL string
+	maxRetries := 5
+	baseDelay := 1 * time.Second
 
-	// Check if the endpoint already has the base URL
-	if strings.HasPrefix(endpoint, c.baseURL) {
-		fullURL = endpoint
-	} else {
-		// Handle endpoints with query parameters
-		endpointPath := endpoint
-		queryParams := ""
-
-		if strings.Contains(endpoint, "?") {
-			parts := strings.SplitN(endpoint, "?", 2)
-			endpointPath = parts[0]
-			queryParams = parts[1]
-		}
-
-		// Make sure there are no double slashes between baseURL and endpoint
-		baseURL := strings.TrimSuffix(c.baseURL, "/")
-		endpointPath = strings.TrimPrefix(endpointPath, "/")
-
-		// Build the full URL
-		if queryParams != "" {
-			fullURL = fmt.Sprintf("%s/%s?%s", baseURL, endpointPath, queryParams)
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if strings.HasPrefix(endpoint, c.baseURL) {
+			fullURL = endpoint
 		} else {
-			fullURL = fmt.Sprintf("%s/%s", baseURL, endpointPath)
-		}
-	}
+			endpointPath := endpoint
+			queryParams := ""
 
-	c.logger.Debug("Making API request",
-		zap.String("method", method),
-		zap.String("url", fullURL))
+			if strings.Contains(endpoint, "?") {
+				parts := strings.SplitN(endpoint, "?", 2)
+				endpointPath = parts[0]
+				queryParams = parts[1]
+			}
 
-	req, err := http.NewRequest(method, fullURL, nil)
-	if err != nil {
-		return err
-	}
+			baseURL := strings.TrimSuffix(c.baseURL, "/")
+			endpointPath = strings.TrimPrefix(endpointPath, "/")
 
-	// Set authentication headers
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	} else if c.username != "" && c.appPass != "" {
-		req.SetBasicAuth(c.username, c.appPass)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	// Log the response status
-	c.logger.Debug("API response",
-		zap.Int("status", resp.StatusCode),
-		zap.String("status_text", resp.Status))
-
-	if resp.StatusCode == 429 {
-		resetHeader := resp.Header.Get("X-RateLimit-Reset")
-		resetTime, err := strconv.ParseInt(resetHeader, 10, 64)
-		if err == nil && resetTime > 0 {
-			waitTime := time.Unix(resetTime, 0).Sub(time.Now())
-			if waitTime > 0 {
-				c.logger.Warn("Rate limit hit - waiting for reset",
-					zap.Duration("wait_time", waitTime))
-
-				// Wait for reset, up to 2 minutes max
-				if waitTime > 2*time.Minute {
-					waitTime = 2 * time.Minute
-				}
-				time.Sleep(waitTime)
-
-				// Retry immediately after waiting
-				return c.makeRequest(method, endpoint, v)
+			// Build the full URL
+			if queryParams != "" {
+				fullURL = fmt.Sprintf("%s/%s?%s", baseURL, endpointPath, queryParams)
+			} else {
+				fullURL = fmt.Sprintf("%s/%s", baseURL, endpointPath)
 			}
 		}
 
-		// If we can't parse the reset time or it's in the past, use default backoff
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("rate limit exceeded (429): %s", string(bodyBytes))
-	}
+		c.logger.Debug("Making API request",
+			zap.String("method", method),
+			zap.String("url", fullURL))
 
-	if resp.StatusCode != http.StatusOK {
+		req, err := http.NewRequest(method, fullURL, nil)
+		if err != nil {
+			return err
+		}
+
+		// Set authentication headers
+		if c.token != "" {
+			req.Header.Set("Authorization", "Bearer "+c.token)
+		} else if c.username != "" && c.appPass != "" {
+			req.SetBasicAuth(c.username, c.appPass)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		remaining := resp.Header.Get("X-RateLimit-Remaining")
+		limit := resp.Header.Get("X-RateLimit-Limit")
+		c.logger.Debug("Rate limit status",
+			zap.String("remaining", remaining),
+			zap.String("limit", limit))
+
+		// Log the response status
+		c.logger.Debug("API response",
+			zap.Int("status", resp.StatusCode),
+			zap.String("status_text", resp.Status))
+
+		if resp.StatusCode == 429 {
+			delay := baseDelay * time.Duration(1<<attempt) // Exponential backoff
+			if delay > 5*time.Minute {
+				delay = 5 * time.Minute // Max delay
+			}
+
+			c.logger.Warn("Rate limit hit - waiting before retrying",
+				zap.Duration("delay", delay),
+				zap.Int("attempt", attempt+1),
+				zap.Int("max_retries", maxRetries))
+
+			time.Sleep(delay)
+			continue // Retry the request
+		}
+
+		// If the request was successful, break out of the retry loop
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return json.NewDecoder(resp.Body).Decode(v)
+		}
+
+		// Handle other errors
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s: %s",
+		err = fmt.Errorf("API request failed with status %d: %s: %s",
 			resp.StatusCode, resp.Status, string(bodyBytes))
+		c.logger.Error("API request failed", zap.Error(err))
+		return err
 	}
 
-	return json.NewDecoder(resp.Body).Decode(v)
+	return fmt.Errorf("API request failed after %d retries", maxRetries)
 }
 
 func (c *Client) GetUsers(workspace, repoSlug string) ([]data.User, error) {
-	c.logger.Info("Fetching workspace members",
-		zap.String("workspace", workspace))
+	c.logger.Info("Fetching workspace members")
 
 	var allUsers []data.User
 	page := 1
@@ -172,29 +174,7 @@ func (c *Client) GetUsers(workspace, repoSlug string) ([]data.User, error) {
 		endpoint := fmt.Sprintf("workspaces/%s/members?page=%d&pagelen=%d",
 			workspace, page, pageLen)
 
-		var response struct {
-			Values []struct {
-				User struct {
-					AccountID   string `json:"account_id"`
-					DisplayName string `json:"display_name"`
-					Nickname    string `json:"nickname"`
-					UUID        string `json:"uuid"`
-					Links       struct {
-						Self struct {
-							Href string `json:"href"`
-						} `json:"self"`
-						HTML struct {
-							Href string `json:"href"`
-						} `json:"html"`
-					} `json:"links"`
-				} `json:"user"`
-				Workspace struct {
-					Slug string `json:"slug"`
-					Name string `json:"name"`
-				} `json:"workspace"`
-			} `json:"values"`
-			Next string `json:"next"`
-		}
+		var response data.BitbucketUserResponse
 
 		err := c.makeRequest("GET", endpoint, &response)
 		if err != nil {
@@ -255,41 +235,32 @@ func (c *Client) GetUsers(workspace, repoSlug string) ([]data.User, error) {
 		})
 	}
 
-	c.logger.Info("Fetched workspace members",
+	c.logger.Debug("Fetched workspace members",
 		zap.Int("count", len(allUsers)))
 
 	return allUsers, nil
 }
 
 func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest, error) {
-	c.logger.Info("Fetching pull requests",
-		zap.String("workspace", workspace),
-		zap.String("repository", repoSlug))
+	c.logger.Info("Fetching pull requests")
 
 	var pullRequests []data.PullRequest
 	page := 1
 	pageLen := 50
 	hasMore := true
 
-	// Add a commit SHA cache to avoid redundant API calls
-	commitSHACache := make(map[string]string)
-
-	// Helper function to get full SHA with caching
 	getFullSHA := func(shortSHA string) string {
 		if len(shortSHA) == 40 {
 			return shortSHA
 		}
 
-		// Check cache first
-		if fullSHA, exists := commitSHACache[shortSHA]; exists {
+		if fullSHA, exists := c.commitSHACache[shortSHA]; exists {
 			return fullSHA
 		}
 
-		// Make API call if not in cache
 		fullSHA, err := c.GetFullCommitSHA(workspace, repoSlug, shortSHA)
 		if err == nil && len(fullSHA) == 40 {
-			// Cache the result
-			commitSHACache[shortSHA] = fullSHA
+			c.commitSHACache[shortSHA] = fullSHA
 			return fullSHA
 		}
 
@@ -307,7 +278,6 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 		var response data.BitbucketPRResponse
 		var err error
 
-		// Retry logic for API requests
 		maxRetries := 3
 		for retries := 0; retries < maxRetries; retries++ {
 			err = c.makeRequest("GET", endpoint, &response)
@@ -316,8 +286,6 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 					zap.String("endpoint", endpoint),
 					zap.Int("retry", retries),
 					zap.Error(err))
-
-				// Sleep before retry
 				time.Sleep(time.Duration(500*(retries+1)) * time.Millisecond)
 				continue
 			}
@@ -325,7 +293,8 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 		}
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch pull requests: %w", err)
+			c.logger.Error("failed to fetch pull requests", zap.Error(err))
+			return nil, err
 		}
 
 		c.logger.Debug("Pull requests response",
@@ -353,11 +322,9 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 			baseSHA := pr.Destination.Commit.Hash
 			headSHA := pr.Source.Commit.Hash
 
-			// Get full SHA values
 			baseSHA = getFullSHA(baseSHA)
 			headSHA = getFullSHA(headSHA)
 
-			// Extract description or use empty string if nil
 			description := ""
 			if pr.Description != nil {
 				description = *pr.Description
@@ -442,18 +409,11 @@ func (c *Client) GetFullCommitSHA(workspace, repoSlug, commitHash string) (strin
 	return commitHash, nil
 }
 
-func (c *Client) GetPullRequestComments(workspace, repoSlug string) ([]data.IssueComment, []data.PullRequestReviewComment, error) {
-	c.logger.Info("Fetching pull request comments",
-		zap.String("workspace", workspace),
-		zap.String("repository", repoSlug))
+func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests []data.PullRequest) ([]data.IssueComment, []data.PullRequestReviewComment, error) {
+	c.logger.Info("Fetching pull request comments")
 
 	var regularComments []data.IssueComment
 	var reviewComments []data.PullRequestReviewComment
-
-	pullRequests, err := c.GetPullRequests(workspace, repoSlug)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to fetch pull requests: %w", err)
-	}
 
 	prURLMap := make(map[int]string)
 	prCommitMap := make(map[int]string)
@@ -468,6 +428,33 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string) ([]data.Issu
 		}
 	}
 
+	getFullSHA := func(shortSHA string) string {
+		if len(shortSHA) == 40 {
+			return shortSHA
+		}
+
+		if fullSHA, exists := c.commitSHACache[shortSHA]; exists {
+			return fullSHA
+		}
+
+		fullSHA, err := c.GetFullCommitSHA(workspace, repoSlug, shortSHA)
+		if err == nil && len(fullSHA) == 40 {
+			c.commitSHACache[shortSHA] = fullSHA
+			return fullSHA
+		}
+
+		c.logger.Warn("Failed to get full commit SHA",
+			zap.String("original", shortSHA),
+			zap.Error(err))
+
+		return shortSHA
+	}
+
+	// Fetch full SHAs for all PRs before processing comments
+	for prID, shortSHA := range prCommitMap {
+		prCommitMap[prID] = getFullSHA(shortSHA)
+	}
+
 	for prID, _ := range prURLMap {
 		page := 1
 		pageLen := 100
@@ -477,29 +464,7 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string) ([]data.Issu
 			endpoint := fmt.Sprintf("repositories/%s/%s/pullrequests/%d/comments?page=%d&pagelen=%d",
 				workspace, repoSlug, prID, page, pageLen)
 
-			var response struct {
-				Values []struct {
-					ID      int `json:"id"`
-					Content struct {
-						Raw string `json:"raw"`
-					} `json:"content"`
-					User struct {
-						DisplayName string `json:"display_name"`
-						UUID        string `json:"uuid"`
-						Nickname    string `json:"nickname"`
-						AccountID   string `json:"account_id"`
-					} `json:"user"`
-					CreatedOn string `json:"created_on"`
-					UpdatedOn string `json:"updated_on"`
-					Inline    *struct {
-						From *int   `json:"from"`
-						To   *int   `json:"to"`
-						Path string `json:"path"`
-					} `json:"inline"`
-					ParentID int `json:"parent,omitempty"`
-				} `json:"values"`
-				Next string `json:"next"`
-			}
+			var response data.BitBucketCommentResponse
 
 			err := c.makeRequest("GET", endpoint, &response)
 			if err != nil {
@@ -510,14 +475,9 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string) ([]data.Issu
 			}
 
 			for _, comment := range response.Values {
-				// Format timestamps
 				createdAt := formatDateToZ(comment.CreatedOn)
 				updatedAt := formatDateToZ(comment.UpdatedOn)
-
-				// Transform PR references in body
 				transformedBody := c.transformCommentBody(comment.Content.Raw, workspace, repoSlug)
-
-				// Extract PR number from URL for reference generation
 				prNumber := fmt.Sprintf("%d", prID)
 
 				// Check if this is an inline comment
@@ -530,25 +490,16 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string) ([]data.Issu
 						lineNumber = *comment.Inline.From
 					}
 
-					// Generate unique IDs for comment and thread
 					commentId := fmt.Sprintf("%d", comment.ID)
-					reviewId := fmt.Sprintf("%d", comment.ID) // Use same ID for review
-					threadId := fmt.Sprintf("%d", comment.ID) // Use same ID for thread
+					reviewId := fmt.Sprintf("%d", comment.ID)
+					threadId := fmt.Sprintf("%d", comment.ID)
 
 					commentURL := formatURL("pr_review_comment", workspace, repoSlug, prNumber, commentId)
 					reviewURL := formatURL("pr_review", workspace, repoSlug, prNumber, reviewId)
 					threadURL := formatURL("pr_review_thread", workspace, repoSlug, prNumber, threadId)
 					prFullURL := formatURL("pr", workspace, repoSlug, prNumber)
 					userURL := formatURL("user", workspace, "", strings.Trim(comment.User.UUID, "{}"))
-
-					// Get full commit SHA
 					commitSHA := prCommitMap[prID]
-					if len(commitSHA) < 40 {
-						fullCommitSHA, err := c.GetFullCommitSHA(workspace, repoSlug, commitSHA)
-						if err == nil {
-							commitSHA = fullCommitSHA
-						}
-					}
 
 					// Create diff hunk
 					diffHunk := fmt.Sprintf("@@ -0,0 +1,%d @@\n+%s", lineNumber, transformedBody)
@@ -571,7 +522,7 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string) ([]data.Issu
 						UpdatedAt:               updatedAt,
 						Formatter:               "markdown",
 						DiffHunk:                diffHunk,
-						State:                   1, // Active state
+						State:                   1,
 						InReplyTo:               nil,
 						Reactions:               []string{},
 						SubjectType:             "line",
@@ -606,7 +557,7 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string) ([]data.Issu
 		}
 	}
 
-	c.logger.Info("Fetched pull request comments",
+	c.logger.Debug("Fetched pull request comments",
 		zap.Int("regular_comments", len(regularComments)),
 		zap.Int("review_comments", len(reviewComments)),
 		zap.String("repository", repoSlug))
@@ -637,44 +588,4 @@ func (c *Client) transformCommentBody(body, workspace, repoSlug string) string {
 	})
 
 	return transformedBody
-}
-
-func (c *Client) makeRequestWithRetry(method, endpoint string, v interface{}) error {
-	maxRetries := 5
-	initialBackoff := 1000 // ms
-	maxBackoff := 60000    // ms (1 minute max)
-
-	var err error
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		err = c.makeRequest(method, endpoint, v)
-
-		// If successful or not a rate limit error, return result
-		if err == nil || !isRateLimitError(err) {
-			return err
-		}
-
-		// Calculate backoff with exponential increase and jitter
-		backoff := initialBackoff * (1 << attempt) // 1s, 2s, 4s, 8s, 16s
-		if backoff > maxBackoff {
-			backoff = maxBackoff
-		}
-
-		// Add jitter (±20%)
-		jitter := float64(backoff) * (0.8 + 0.4*rand.Float64())
-		sleepTime := time.Duration(jitter) * time.Millisecond
-
-		c.logger.Warn("Rate limit encountered, backing off",
-			zap.Int("attempt", attempt+1),
-			zap.Int("max_attempts", maxRetries),
-			zap.Duration("backoff", sleepTime),
-			zap.Error(err))
-
-		time.Sleep(sleepTime)
-	}
-
-	return fmt.Errorf("request failed after %d attempts: %w", maxRetries, err)
-}
-
-func isRateLimitError(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "rate limit exceeded")
 }

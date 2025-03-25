@@ -35,7 +35,7 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 		e.outputDir = fmt.Sprintf("./bitbucket-export-%s", timestamp)
 	}
 
-	e.logger.Info("Creating output directory", zap.String("path", e.outputDir))
+	e.logger.Debug("Creating output directory", zap.String("path", e.outputDir))
 	if err := os.MkdirAll(e.outputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
@@ -61,7 +61,7 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 		return err
 	}
 
-	defaultLabels := []data.Label{} // Get default labels from repo if available
+	defaultLabels := []data.Label{}
 	repositories := e.createRepositoriesData(repo, workspace, defaultLabels)
 	if err := e.writeJSONFile("repositories_000001.json", repositories); err != nil {
 		return err
@@ -87,13 +87,11 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 		return err
 	}
 
-	// Create and write organizations data
 	orgs := e.createOrganizationData(workspace)
 	if err := e.writeJSONFile("organizations_000001.json", orgs); err != nil {
 		return err
 	}
 
-	// Get and write pull requests data
 	prs, err := e.client.GetPullRequests(workspace, repoSlug)
 	if err != nil {
 		e.logger.Warn("Failed to fetch pull requests", zap.Error(err))
@@ -109,7 +107,7 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 		}
 	}
 
-	regularComments, reviewComments, err := e.client.GetPullRequestComments(workspace, repoSlug)
+	regularComments, reviewComments, err := e.client.GetPullRequestComments(workspace, repoSlug, prs)
 	if err != nil {
 		e.logger.Warn("Failed to fetch pull request comments", zap.Error(err))
 	} else {
@@ -117,7 +115,7 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 			if err := e.writeJSONFile("issue_comments_000001.json", regularComments); err != nil {
 				e.logger.Warn("Failed to write issue comments", zap.Error(err))
 			} else {
-				e.logger.Info("Issue comments written", zap.Int("count", len(regularComments)))
+				e.logger.Debug("Issue comments written", zap.Int("count", len(regularComments)))
 			}
 		}
 
@@ -125,15 +123,15 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 			if err := e.writeJSONFile("pull_request_review_comments_000001.json", reviewComments); err != nil {
 				e.logger.Warn("Failed to write pull request review comments", zap.Error(err))
 			} else {
-				e.logger.Info("Pull request review comments written", zap.Int("count", len(reviewComments)))
+				e.logger.Debug("Pull request review comments written", zap.Int("count", len(reviewComments)))
 			}
 
-			threads := e.createReviewThreads(reviewComments, workspace, repoSlug)
+			threads := e.createReviewThreads(reviewComments)
 			if err := e.writeJSONFile("pull_request_review_threads_000001.json", threads); err != nil {
 				e.logger.Warn("Failed to write review threads", zap.Error(err))
 			}
 
-			reviews := e.createReviews(reviewComments, workspace, repoSlug)
+			reviews := e.createReviews(reviewComments)
 			if err := e.writeJSONFile("pull_request_reviews_000001.json", reviews); err != nil {
 				e.logger.Warn("Failed to write reviews", zap.Error(err))
 			}
@@ -144,7 +142,7 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 	if err != nil {
 		e.logger.Warn("Failed to create archive", zap.Error(err))
 	} else {
-		e.logger.Info("Created archive of export directory",
+		e.logger.Debug("Created archive of export directory",
 			zap.String("archive", archivePath))
 		e.outputDir = archivePath
 	}
@@ -169,7 +167,7 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string) error {
 			zap.Error(err))
 	} else if repoDetails != nil && repoDetails.MainBranch != nil && repoDetails.MainBranch.Name != "" {
 		defaultBranch = repoDetails.MainBranch.Name
-		e.logger.Info("Using mainbranch from BitBucket API",
+		e.logger.Debug("Using mainbranch from BitBucket API",
 			zap.String("default_branch", defaultBranch))
 	}
 
@@ -236,7 +234,7 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string) error {
 			mostRecentBranch := strings.TrimSpace(string(branchOutput))
 			if mostRecentBranch != "" {
 				defaultBranch = mostRecentBranch
-				e.logger.Info("Found default branch by commit date",
+				e.logger.Debug("Found default branch by commit date",
 					zap.String("branch", defaultBranch))
 			}
 		} else {
@@ -245,21 +243,21 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string) error {
 				cmd.Dir = repoDir
 				if err := cmd.Run(); err == nil {
 					defaultBranch = branch
-					e.logger.Info("Found default branch from common names",
+					e.logger.Debug("Found default branch from common names",
 						zap.String("branch", defaultBranch))
 					break
 				}
 			}
 		}
 	} else {
-		e.logger.Info("Verified default branch exists",
+		e.logger.Debug("Verified default branch exists",
 			zap.String("branch", defaultBranch))
 	}
 
 	headFile := filepath.Join(repoDir, "HEAD")
 	headContent := fmt.Sprintf("ref: refs/heads/%s\n", defaultBranch)
 
-	e.logger.Info("Setting HEAD file to point to default branch",
+	e.logger.Debug("Setting HEAD file to point to default branch",
 		zap.String("branch", defaultBranch))
 
 	if err := os.WriteFile(headFile, []byte(headContent), 0644); err != nil {
@@ -309,7 +307,7 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string) error {
 func (e *Exporter) createEmptyRepository(workspace, repoSlug string) error {
 	repoDir := filepath.Join(e.outputDir, "repositories", workspace, repoSlug+".git")
 
-	e.logger.Info("Creating empty repository structure",
+	e.logger.Debug("Creating empty repository structure",
 		zap.String("repository", repoSlug),
 		zap.String("path", repoDir))
 
@@ -382,7 +380,7 @@ func (e *Exporter) createEmptyRepository(workspace, repoSlug string) error {
 	e.updateRepositoryField(repoSlug, "default_branch", defaultBranch)
 	e.updateRepositoryField(repoSlug, "git_url", gitURL)
 
-	e.logger.Info("Created empty repository structure")
+	e.logger.Debug("Created empty repository structure")
 	return nil
 }
 
@@ -480,7 +478,7 @@ func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, worksp
 	}
 }
 
-func (e *Exporter) createReviewThreads(comments []data.PullRequestReviewComment, workspace, repoSlug string) []map[string]interface{} {
+func (e *Exporter) createReviewThreads(comments []data.PullRequestReviewComment) []map[string]interface{} {
 	var threads []map[string]interface{}
 
 	for _, comment := range comments {
@@ -517,7 +515,7 @@ func (e *Exporter) createReviewThreads(comments []data.PullRequestReviewComment,
 	return threads
 }
 
-func (e *Exporter) createReviews(comments []data.PullRequestReviewComment, workspace, repoSlug string) []map[string]interface{} {
+func (e *Exporter) createReviews(comments []data.PullRequestReviewComment) []map[string]interface{} {
 	// Group comments by PR review URL
 	commentsByReview := make(map[string][]data.PullRequestReviewComment)
 
@@ -561,7 +559,7 @@ func (e *Exporter) CreateArchive() (string, error) {
 	exportDirName := filepath.Base(e.outputDir)
 	archivePath := filepath.Join(baseDir, exportDirName+".tar.gz")
 
-	e.logger.Info("Creating archive",
+	e.logger.Debug("Creating archive",
 		zap.String("source", e.outputDir),
 		zap.String("archive", archivePath))
 
