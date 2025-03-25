@@ -158,7 +158,7 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string) error {
 		zap.String("repository", repoSlug),
 		zap.String("destination", repoDir))
 
-	e.logger.Debug("Fetching repository details from BitBucket API")
+	e.logger.Debug("Fetching repository details from Bitbucket API")
 	repoDetails, err := e.client.GetRepository(workspace, repoSlug)
 	defaultBranch := "main"
 
@@ -167,7 +167,7 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string) error {
 			zap.Error(err))
 	} else if repoDetails != nil && repoDetails.MainBranch != nil && repoDetails.MainBranch.Name != "" {
 		defaultBranch = repoDetails.MainBranch.Name
-		e.logger.Debug("Using mainbranch from BitBucket API",
+		e.logger.Debug("Using mainbranch from Bitbucket API",
 			zap.String("default_branch", defaultBranch))
 	}
 
@@ -184,7 +184,14 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create temporary directory: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	// Change this line
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			e.logger.Warn("Failed to remove temporary directory",
+				zap.String("path", tempDir),
+				zap.Error(err))
+		}
+	}()
 
 	e.logger.Debug("Cloning repository to temporary directory first")
 	cmd := exec.Command("git", "clone", "--mirror", cloneURL, tempDir)

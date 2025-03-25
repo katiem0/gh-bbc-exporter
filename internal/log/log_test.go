@@ -14,13 +14,23 @@ func TestNewLogger(t *testing.T) {
 	logger, err := NewLogger(true)
 	assert.NoError(t, err)
 	assert.NotNil(t, logger)
-	defer logger.Sync()
+	defer func() {
+		err := logger.Sync()
+		if err != nil {
+			t.Logf("Warning: logger.Sync() error: %v", err)
+		}
+	}()
 
 	// Test case 2: Info level
 	logger, err = NewLogger(false)
 	assert.NoError(t, err)
 	assert.NotNil(t, logger)
-	defer logger.Sync()
+	defer func() {
+		err := logger.Sync()
+		if err != nil {
+			t.Logf("Warning: logger.Sync() error: %v", err)
+		}
+	}()
 }
 
 func TestLogOutputs(t *testing.T) {

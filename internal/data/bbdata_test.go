@@ -164,12 +164,12 @@ func TestBitbucketUserResponseJSON(t *testing.T) {
 	assert.Equal(t, "{test-uuid}", unmarshaledResponse.Values[0].User.UUID)
 }
 
-func TestBitBucketCommentResponseJSON(t *testing.T) {
+func TestBitbucketCommentResponseJSON(t *testing.T) {
 	// Create a to pointer for inline comments
 	toValue := 10
 
-	response := BitBucketCommentResponse{
-		Values: []BitBucketComment{
+	response := BitbucketCommentResponse{
+		Values: []BitbucketComment{
 			{
 				ID:        1,
 				CreatedOn: "2023-01-01T00:00:00Z",
@@ -195,7 +195,7 @@ func TestBitBucketCommentResponseJSON(t *testing.T) {
 	jsonData, err := json.Marshal(response)
 	assert.NoError(t, err)
 
-	var unmarshaledResponse BitBucketCommentResponse
+	var unmarshaledResponse BitbucketCommentResponse
 	err = json.Unmarshal(jsonData, &unmarshaledResponse)
 	assert.NoError(t, err)
 

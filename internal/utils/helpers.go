@@ -193,14 +193,21 @@ func (e *Exporter) updateRepositoryField(repoSlug string, field string, value in
 }
 
 func ValidateExportFlags(cmdFlags *data.CmdFlags) error {
-	if cmdFlags.BitbucketToken == "" && (cmdFlags.BitbucketUser == "" || cmdFlags.BitbucketAppPass == "") {
-		return fmt.Errorf("either token or both username and app password must be provided")
+	hasToken := cmdFlags.BitbucketToken != ""
+	hasBasicAuth := cmdFlags.BitbucketUser != "" && cmdFlags.BitbucketAppPass != ""
+
+	if !hasToken && !hasBasicAuth {
+		return fmt.Errorf("authentication credentials required: either provide an access token with --token or both username (--user) and app password (--app-password)")
 	}
+
+	if hasToken && (cmdFlags.BitbucketUser != "" || cmdFlags.BitbucketAppPass != "") {
+		return fmt.Errorf("mixed authentication methods: provide either token OR username/app-password, not both")
+	}
+
 	return nil
 }
 
 func SetupEnvironmentCredentials(cmdFlags *data.CmdFlags) {
-	// Check environment variables if credentials not provided via flags
 	if cmdFlags.BitbucketUser == "" {
 		cmdFlags.BitbucketUser = os.Getenv("BITBUCKET_USERNAME")
 	}
@@ -209,6 +216,10 @@ func SetupEnvironmentCredentials(cmdFlags *data.CmdFlags) {
 	}
 	if cmdFlags.BitbucketToken == "" {
 		cmdFlags.BitbucketToken = os.Getenv("BITBUCKET_TOKEN")
+	}
+
+	if cmdFlags.BitbucketToken != "" && cmdFlags.BitbucketUser != "" && cmdFlags.BitbucketAppPass != "" {
+		fmt.Fprintf(os.Stderr, "Warning: Both token and username/password are set. Token authentication will be used.\n")
 	}
 }
 

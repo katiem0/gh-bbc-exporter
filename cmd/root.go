@@ -1,6 +1,10 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
+	"os"
+
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
 	"github.com/katiem0/gh-bbc-exporter/internal/log"
 	"github.com/katiem0/gh-bbc-exporter/internal/utils"
@@ -13,35 +17,50 @@ func NewCmdRoot() *cobra.Command {
 
 	exportCmd := &cobra.Command{
 		Use:   "bbc-exporter [flags]",
-		Short: "Export repository and metadata from BitBucket Cloud",
-		Long:  "Export repository and metadata from BitBucket Cloud for GitHub Cloud import.",
+		Short: "Export repository and metadata from Bitbucket Cloud",
+		Long:  "Export repository and metadata from Bitbucket Cloud for GitHub Cloud import.",
+		PreRunE: func(exportCmd *cobra.Command, args []string) error {
+			if len(cmdFlags.Workspace) == 0 {
+				return errors.New("a Bitbucket Workspace must be specified")
+			}
+			if len(cmdFlags.Repository) == 0 {
+				return errors.New("a Bitbucket repository must be specified")
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			logger, _ := log.NewLogger(cmdFlags.Debug)
-			defer logger.Sync()
+			logger, err := log.NewLogger(cmdFlags.Debug)
+			if err != nil {
+				return fmt.Errorf("failed to initialize logger: %w", err)
+			}
+			defer func() {
+				err := logger.Sync()
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error syncing logger: %v\n", err)
+				}
+			}()
 			zap.ReplaceGlobals(logger)
-
 			return runCmdExport(&cmdFlags, logger)
 		},
 	}
 
 	// Configure flags for command
-	exportCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketToken, "token", "t", "", "BitBucket access token for authentication")
-	exportCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketUser, "user", "u", "", "BitBucket username for basic authentication")
-	exportCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketAppPass, "app-password", "p", "", "BitBucket app password for basic authentication")
-	exportCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketAPIURL, "bbc-api-url", "a", "https://api.bitbucket.org/2.0", "BitBucket API to use")
-	exportCmd.PersistentFlags().StringVarP(&cmdFlags.Repository, "repo", "r", "", "Name of the repository to export from BitBucket Cloud")
-	exportCmd.PersistentFlags().StringVarP(&cmdFlags.Workspace, "workspace", "w", "", "BitBucket workspace (or username for personal accounts)")
+	exportCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketToken, "token", "t", "", "Bitbucket access token for authentication")
+	exportCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketUser, "user", "u", "", "Bitbucket username for basic authentication")
+	exportCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketAppPass, "app-password", "p", "", "Bitbucket app password for basic authentication")
+	exportCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketAPIURL, "bbc-api-url", "a", "https://api.bitbucket.org/2.0", "Bitbucket API to use")
+	exportCmd.PersistentFlags().StringVarP(&cmdFlags.Repository, "repo", "r", "", "Name of the repository to export from Bitbucket Cloud")
+	exportCmd.PersistentFlags().StringVarP(&cmdFlags.Workspace, "workspace", "w", "", "Bitbucket workspace (or username for personal accounts)")
 	exportCmd.PersistentFlags().StringVarP(&cmdFlags.OutputDir, "output", "o", "", "Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)")
 	exportCmd.PersistentFlags().BoolVarP(&cmdFlags.Debug, "debug", "d", false, "Enable debug logging")
 	// Mark required flags
 	exportCmd.MarkPersistentFlagRequired("workspace")
 	exportCmd.MarkPersistentFlagRequired("repository")
-
 	return exportCmd
 }
 
 func runCmdExport(cmdFlags *data.CmdFlags, logger *zap.Logger) error {
-	logger.Info("Starting BitBucket Cloud export",
+	logger.Info("Starting Bitbucket Cloud export",
 		zap.String("workspace", cmdFlags.Workspace),
 		zap.String("repository", cmdFlags.Repository))
 
@@ -52,7 +71,14 @@ func runCmdExport(cmdFlags *data.CmdFlags, logger *zap.Logger) error {
 
 	utils.SetupEnvironmentCredentials(cmdFlags)
 
-	// Create BitBucket client and exporter
+	if cmdFlags.BitbucketToken != "" {
+		logger.Info("Using token authentication")
+	} else if cmdFlags.BitbucketUser != "" && cmdFlags.BitbucketAppPass != "" {
+		logger.Info("Using basic authentication",
+			zap.String("username", cmdFlags.BitbucketUser))
+	}
+
+	// Create Bitbucket client and exporter
 	client := utils.NewClient(
 		cmdFlags.BitbucketAPIURL,
 		cmdFlags.BitbucketToken,

@@ -27,7 +27,10 @@ func TestMakeRequest(t *testing.T) {
 	// Test case 1: Successful request
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"message": "success"}`))
+		_, err := w.Write([]byte(`{"message": "success"}`))
+		if err != nil {
+			t.Fatalf("Failed to write test response: %v", err)
+		}
 	}))
 	defer testServer.Close()
 
@@ -47,7 +50,10 @@ func TestMakeRequest(t *testing.T) {
 	// Test case 2: API returns an error
 	testServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"error": "internal server error"}`))
+		_, err := w.Write([]byte(`{"error": "internal server error"}`))
+		if err != nil {
+			t.Fatalf("Failed to write test response: %v", err)
+		}
 	}))
 	defer testServer.Close()
 
@@ -62,10 +68,12 @@ func TestMakeRequest(t *testing.T) {
 		w.WriteHeader(http.StatusTooManyRequests)
 		w.Header().Set("X-RateLimit-Remaining", "0")
 		w.Header().Set("X-RateLimit-Limit", "100")
-		w.Write([]byte(`{"message": "rate limited"}`))
+		_, err := w.Write([]byte(`{"message": "rate limited"}`))
+		if err != nil {
+			t.Fatalf("Failed to write test response: %v", err)
+		}
 	}))
 	defer testServer.Close()
-
 	client.baseURL = testServer.URL
 	err = client.makeRequest("GET", "/", &result)
 

@@ -102,12 +102,12 @@ type BitbucketUserResponse struct {
 	Next string `json:"next"`
 }
 
-type BitBucketCommentResponse struct {
-	Values []BitBucketComment `json:"values"`
+type BitbucketCommentResponse struct {
+	Values []BitbucketComment `json:"values"`
 	Next   string             `json:"next"`
 }
 
-type BitBucketComment struct {
+type BitbucketComment struct {
 	ID      int `json:"id"`
 	Content struct {
 		Raw string `json:"raw"`

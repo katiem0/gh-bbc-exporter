@@ -31,6 +31,17 @@ func NewClient(baseURL, token, username, appPass string, logger *zap.Logger) *Cl
 		baseURL = baseURL + "/2.0"
 	}
 
+	if token != "" {
+		logger.Debug("Creating Bitbucket client with token authentication",
+			zap.String("baseURL", baseURL))
+	} else if username != "" && appPass != "" {
+		logger.Debug("Creating Bitbucket client with basic authentication",
+			zap.String("baseURL", baseURL),
+			zap.String("username", username))
+	} else {
+		logger.Warn("Creating Bitbucket client without authentication credentials")
+	}
+
 	logger.Debug("Creating Bitbucket client", zap.String("baseURL", baseURL))
 	return &Client{
 		baseURL:        baseURL,
@@ -106,11 +117,14 @@ func (c *Client) makeRequest(method, endpoint string, v interface{}) error {
 			return err
 		}
 
-		// Set authentication headers
 		if c.token != "" {
+			c.logger.Debug("Using token authentication")
 			req.Header.Set("Authorization", "Bearer "+c.token)
 		} else if c.username != "" && c.appPass != "" {
+			c.logger.Debug("Using basic authentication")
 			req.SetBasicAuth(c.username, c.appPass)
+		} else {
+			c.logger.Warn("No authentication credentials provided")
 		}
 
 		req.Header.Set("Content-Type", "application/json")
@@ -119,7 +133,12 @@ func (c *Client) makeRequest(method, endpoint string, v interface{}) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() {
+			err := resp.Body.Close()
+			if err != nil {
+				c.logger.Warn("Error closing response body", zap.Error(err))
+			}
+		}()
 		remaining := resp.Header.Get("X-RateLimit-Remaining")
 		limit := resp.Header.Get("X-RateLimit-Limit")
 		c.logger.Debug("Rate limit status",
@@ -465,7 +484,7 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 			endpoint := fmt.Sprintf("repositories/%s/%s/pullrequests/%d/comments?page=%d&pagelen=%d",
 				workspace, repoSlug, prID, page, pageLen)
 
-			var response data.BitBucketCommentResponse
+			var response data.BitbucketCommentResponse
 
 			err := c.makeRequest("GET", endpoint, &response)
 			if err != nil {
