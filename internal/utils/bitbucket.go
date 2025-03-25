@@ -417,6 +417,7 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 
 	prURLMap := make(map[int]string)
 	prCommitMap := make(map[int]string)
+
 	for _, pr := range pullRequests {
 		parts := strings.Split(pr.URL, "/")
 		if len(parts) > 0 {

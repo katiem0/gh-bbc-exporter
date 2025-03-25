@@ -1,6 +1,6 @@
-# BitBucket Cloud Exporter
+# gh-bbc-exporter
 
-A GitHub CLI extension for exporting BitBucket Cloud repositories into a format compatible with GitHub Enterprise migrations.
+A GitHub `gh` [CLI](https://cli.github.com/) extension for exporting BitBucket Cloud repositories into a format compatible with GitHub Enterprise migrations.
 
 ## Overview
 
@@ -13,13 +13,17 @@ The exporter creates a complete migration archive containing:
 - Pull requests with comments
 - Pull request reviews
 - User information
-- Organization data
 
 ## Installation
 
-```sh
-gh extension install katiem0/gh-bbc-exporter
-```
+1. Install the `gh` CLI - see the [installation](https://github.com/cli/cli#installation) instructions.
+2. Install the extension:
+    ```sh
+    gh extension install katiem0/gh-bbc-exporter
+    ```
+
+For more information: [`gh extension install`](https://cli.github.com/manual/gh_extension_install).
+
 
 ## Prerequisites
 
@@ -29,11 +33,33 @@ gh extension install katiem0/gh-bbc-exporter
 
 ## Usage
 
+The `gh-bbc-exporter` extension only supports the retrievable of repositories from BitBucket Cloud:
 
-## Export Format 
+```sh
+gh bbc-exporter -h
+Export repository and metadata from BitBucket Cloud for GitHub Cloud import.
+
+Usage:
+  bbc-exporter [flags]
+
+Flags:
+  -p, --app-password string   BitBucket app password for basic authentication
+  -a, --bbc-api-url string    BitBucket API to use (default "https://api.bitbucket.org/2.0")
+  -d, --debug                 Enable debug logging
+  -h, --help                  help for bbc-exporter
+  -o, --output string         Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)
+  -r, --repo string           Name of the repository to export from BitBucket Cloud
+  -t, --token string          BitBucket access token for authentication
+  -u, --user string           BitBucket username for basic authentication
+  -w, --workspace string      BitBucket workspace (or username for personal accounts)
+```
+
+
+For migrations from BitBucket Data Center or Server, please see [GitHub's Official Documentation](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/about-migrations-from-bitbucket-server-to-github-enterprise-cloud).
+
+### Export Format 
 
 The exporter creates a directory or archive with the following structure:
-
 
 ```
 bitbucket-export-YYYYMMDD-HHMMSS/
@@ -59,7 +85,7 @@ bitbucket-export-YYYYMMDD-HHMMSS/
 
 ## Importing to GitHub Enterprise CLoud
 
-After generating the migration archive, you can import it to GitHub Enterprise Cloud:
+After generating the migration archive, you can import it to GitHub Enterprise Cloud using GitHub owned storage and GEI.
 
 ## Limitations
 

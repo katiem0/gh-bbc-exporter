@@ -1,5 +1,5 @@
 /gh-bbc-exporter
 /gh-bbc-exporter.exe
 bitbucket-*
-
+output/
 .DS_Store

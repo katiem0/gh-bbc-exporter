@@ -46,11 +46,13 @@ type BitbucketPR struct {
 	State             string              `json:"state"`
 	CreatedOn         string              `json:"created_on"`
 	UpdatedOn         string              `json:"updated_on"`
+	CommentCount      int                 `json:"comment_count"`
 	CloseSourceBranch bool                `json:"close_source_branch"`
 	Source            BitbucketPREndpoint `json:"source"`
 	Destination       BitbucketPREndpoint `json:"destination"`
 	MergeCommit       *BitbucketCommit    `json:"merge_commit"`
 	Author            BitbucketPRUser     `json:"author"`
+	ClosedBy          *BitbucketPRUser    `json:"closed_by"`
 }
 
 type BitbucketPREndpoint struct {
@@ -101,25 +103,24 @@ type BitbucketUserResponse struct {
 }
 
 type BitBucketCommentResponse struct {
-	Values []struct {
-		ID      int `json:"id"`
-		Content struct {
-			Raw string `json:"raw"`
-		} `json:"content"`
-		User struct {
-			DisplayName string `json:"display_name"`
-			UUID        string `json:"uuid"`
-			Nickname    string `json:"nickname"`
-			AccountID   string `json:"account_id"`
-		} `json:"user"`
-		CreatedOn string `json:"created_on"`
-		UpdatedOn string `json:"updated_on"`
-		Inline    *struct {
-			From *int   `json:"from"`
-			To   *int   `json:"to"`
-			Path string `json:"path"`
-		} `json:"inline"`
-		ParentID int `json:"parent,omitempty"`
-	} `json:"values"`
-	Next string `json:"next"`
+	Values []BitBucketComment `json:"values"`
+	Next   string             `json:"next"`
+}
+
+type BitBucketComment struct {
+	ID      int `json:"id"`
+	Content struct {
+		Raw string `json:"raw"`
+	} `json:"content"`
+	User      BitbucketPRUser `json:"user"`
+	CreatedOn string          `json:"created_on"`
+	UpdatedOn string          `json:"updated_on"`
+	Inline    *Inline         `json:"inline"`
+	ParentID  int             `json:"parent,omitempty"`
+}
+
+type Inline struct {
+	From *int   `json:"from"`
+	To   *int   `json:"to"`
+	Path string `json:"path"`
 }

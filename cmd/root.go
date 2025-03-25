@@ -12,7 +12,7 @@ func NewCmdRoot() *cobra.Command {
 	cmdFlags := data.CmdFlags{}
 
 	exportCmd := &cobra.Command{
-		Use:   "bbc-exporter",
+		Use:   "bbc-exporter [flags]",
 		Short: "Export repository and metadata from BitBucket Cloud",
 		Long:  "Export repository and metadata from BitBucket Cloud for GitHub Cloud import.",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -33,7 +33,6 @@ func NewCmdRoot() *cobra.Command {
 	exportCmd.PersistentFlags().StringVarP(&cmdFlags.Workspace, "workspace", "w", "", "BitBucket workspace (or username for personal accounts)")
 	exportCmd.PersistentFlags().StringVarP(&cmdFlags.OutputDir, "output", "o", "", "Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)")
 	exportCmd.PersistentFlags().BoolVarP(&cmdFlags.Debug, "debug", "d", false, "Enable debug logging")
-
 	// Mark required flags
 	exportCmd.MarkPersistentFlagRequired("workspace")
 	exportCmd.MarkPersistentFlagRequired("repository")

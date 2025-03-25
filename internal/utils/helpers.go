@@ -27,6 +27,7 @@ func formatDateToZ(inputDate string) string {
 		"2006-01-02T15:04:05.999999Z",
 		"2006-01-02T15:04:05",
 		"2006-01-02 15:04:05",
+		"2006/01/02 15:04:05",
 	}
 
 	for _, format := range formats {
