@@ -49,7 +49,7 @@ Flags:
   -r, --repo string           Name of the repository to export from Bitbucket Cloud
   -t, --token string          Bitbucket access token for authentication
   -u, --user string           Bitbucket username for basic authentication
-  -w, --workspace string      Bitbucket workspace (or username for personal accounts)
+  -w, --workspace string      Bitbucket workspace
 ```
 
 
