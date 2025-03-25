@@ -31,8 +31,7 @@ For more information: [`gh extension install`](https://cli.github.com/manual/gh_
 
 ## Usage
 
-The `gh-bbc-exporter` extension only supports the retrievable of repositories from Bitbucket Cloud:
-
+The `gh-bbc-exporter` extension only supports the retrieval of repositories from Bitbucket Cloud:
 ```sh
 gh bbc-exporter -h
 Export repository and metadata from Bitbucket Cloud for GitHub Cloud import.
