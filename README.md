@@ -83,7 +83,7 @@ bitbucket-export-YYYYMMDD-HHMMSS/
 
 ## Importing to GitHub Enterprise CLoud
 
-After generating the migration archive, you can import it to GitHub Enterprise Cloud using GitHub owned storage and GEI.
+After generating the migration archive, you can import it to GitHub Enterprise Cloud using GitHub owned storage and GEI. Detailed documentation can be found in [Importing Bitbucket Cloud Archive to GitHub Enterprise Cloud](./docs/GHImport.md).
 
 ## Limitations
 
