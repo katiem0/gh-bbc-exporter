@@ -1,10 +1,10 @@
 # gh-bbc-exporter
 
-A GitHub `gh` [CLI](https://cli.github.com/) extension for exporting BitBucket Cloud repositories into a format compatible with GitHub Enterprise migrations.
+A GitHub `gh` [CLI](https://cli.github.com/) extension for exporting Bitbucket Cloud repositories into a format compatible with GitHub Enterprise migrations.
 
 ## Overview
 
-This extension helps you migrate repositories from BitBucket Cloud to GitHub Enterprise Cloud by creating an export archive that matches the format expected by GHE migration tools.
+This extension helps you migrate repositories from Bitbucket Cloud to GitHub Enterprise Cloud by creating an export archive that matches the format expected by GHE migration tools.
 
 The exporter creates a complete migration archive containing:
 
@@ -16,11 +16,9 @@ The exporter creates a complete migration archive containing:
 
 ## Installation
 
-1. Install the `gh` CLI - see the [installation](https://github.com/cli/cli#installation) instructions.
-2. Install the extension:
-    ```sh
-    gh extension install katiem0/gh-bbc-exporter
-    ```
+```sh
+gh extension install katiem0/gh-bbc-exporter
+```
 
 For more information: [`gh extension install`](https://cli.github.com/manual/gh_extension_install).
 
@@ -28,30 +26,29 @@ For more information: [`gh extension install`](https://cli.github.com/manual/gh_
 ## Prerequisites
 
 - [GitHub CLI](https://cli.github.com/) installed and authenticated
-- BitBucket Cloud username and [app password](https://support.atlassian.com/bitbucket-cloud/docs/app-passwords/) with repository read access
+- Bitbucket Cloud username and [app password](https://support.atlassian.com/bitbucket-cloud/docs/app-passwords/), or [Access Token](https://support.atlassian.com/bitbucket-cloud/docs/access-tokens/) with workspace administration access
 - Go 1.19 or higher (if building from source)
 
 ## Usage
 
-The `gh-bbc-exporter` extension only supports the retrievable of repositories from BitBucket Cloud:
-
+The `gh-bbc-exporter` extension only supports the retrieval of repositories from Bitbucket Cloud:
 ```sh
 gh bbc-exporter -h
-Export repository and metadata from BitBucket Cloud for GitHub Cloud import.
+Export repository and metadata from Bitbucket Cloud for GitHub Cloud import.
 
 Usage:
   bbc-exporter [flags]
 
 Flags:
-  -p, --app-password string   BitBucket app password for basic authentication
-  -a, --bbc-api-url string    BitBucket API to use (default "https://api.bitbucket.org/2.0")
+  -p, --app-password string   Bitbucket app password for basic authentication
+  -a, --bbc-api-url string    Bitbucket API to use (default "https://api.bitbucket.org/2.0")
   -d, --debug                 Enable debug logging
   -h, --help                  help for bbc-exporter
   -o, --output string         Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)
-  -r, --repo string           Name of the repository to export from BitBucket Cloud
-  -t, --token string          BitBucket access token for authentication
-  -u, --user string           BitBucket username for basic authentication
-  -w, --workspace string      BitBucket workspace (or username for personal accounts)
+  -r, --repo string           Name of the repository to export from Bitbucket Cloud
+  -t, --token string          Bitbucket access token for authentication
+  -u, --user string           Bitbucket username for basic authentication
+  -w, --workspace string      Bitbucket workspace
 ```
 
 
