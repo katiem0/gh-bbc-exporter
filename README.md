@@ -82,23 +82,23 @@ bitbucket-export-YYYYMMDD-HHMMSS/
 
 ## Importing to GitHub Enterprise CLoud
 
-After generating the migration archive, you can import it to GitHub Enterprise Cloud using GitHub owned storage and GEI.
+After generating the migration archive, you can import it to GitHub Enterprise Cloud using GitHub owned storage and GEI. Detailed documentation can be found in [Importing Bitbucket Cloud Archive to GitHub Enterprise Cloud](./docs/GHImport.md).
 
 ## Limitations
 
 - Wiki content is not included in the export
-- Issues are not exported (BitBucket issues have a different structure from GitHub issues)
-- Labels in repositories are set to an empty array for compatibility
-- User information is limited to what's available from BitBucket API
+- Issues are not exported (Bitbucket issues have a different structure from GitHub issues)
+- Repository and Pull request labels have not been implemented
+- User information is limited to what's available from Bitbucket API
 
 ## Troubleshooting
 
 ### Common Issues
 
 1. **Authentication Errors**
-   Make sure your BitBucket app password has the necessary permissions to access repositories.
+   Make sure your Bitbucket app password has the necessary permissions to access repositories.
 2. **Export Fails with Network Errors**
-   BitBucket API may have rate limits. Try running the export with the `--debug` flag to see detailed error messages.
+   Bitbucket API may have rate limits. Try running the export with the `--debug` flag to see detailed error messages.
 3. **Empty Repository Export**
    If the repository can't be cloned, the exporter creates an empty repository structure. Check that the repository exists and is accessible.
 
