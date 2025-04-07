@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
 	"github.com/katiem0/gh-bbc-exporter/internal/log"
@@ -34,10 +33,7 @@ func NewCmdRoot() *cobra.Command {
 				return fmt.Errorf("failed to initialize logger: %w", err)
 			}
 			defer func() {
-				err := logger.Sync()
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error syncing logger: %v\n", err)
-				}
+				_ = logger.Sync()
 			}()
 			zap.ReplaceGlobals(logger)
 			return runCmdExport(&cmdFlags, logger)

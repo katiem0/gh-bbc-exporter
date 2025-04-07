@@ -26,8 +26,46 @@ For more information: [`gh extension install`](https://cli.github.com/manual/gh_
 ## Prerequisites
 
 - [GitHub CLI](https://cli.github.com/) installed and authenticated
-- Bitbucket Cloud username and [app password](https://support.atlassian.com/bitbucket-cloud/docs/app-passwords/), or [Access Token](https://support.atlassian.com/bitbucket-cloud/docs/access-tokens/) with workspace administration access
+- Bitbucket Cloud workspace administration access
 - Go 1.19 or higher (if building from source)
+
+### Bitbucket Authentication Options 
+
+Bitbucket Cloud provides two authentication methods for their API:
+- Basic Authentication
+- Access Token (premium membership)
+
+#### Basic Authentication
+
+For basic authentication with this tool your account username and an app password are needed. Your Bitbucket username can be found by following:
+
+1. On the sidebar, click on the Profile picture
+2. Select View profile
+3. Click on "Settings"
+4. Find Username under **Bitbucket profile settings**
+
+To [create an app password](https://support.atlassian.com/bitbucket-cloud/docs/create-an-app-password/):
+
+1. Under Personal settings, select Personal Bitbucket settings.
+2. On the left sidebar, select App passwords.
+3. Select Create app password.
+4. Give the App password a name.
+5. Select the following permissions:
+   - `Account: Read`
+   - `Workspace Membership: Read`
+   - `Repositories: Read`
+   - `Pull Requests: Read`
+6. Select the Create button. The page will display the New app password dialog.
+
+#### Workspace Access Token
+
+A workspace-level access token is required to ensure a list of users is retrieved to be able to associate metadata with their GitHub account. 
+
+The access token will require the following permissions:
+
+   - `Account: Read`
+   - `Repositories: Read`
+   - `Pull Requests: Read`
 
 ## Usage
 
