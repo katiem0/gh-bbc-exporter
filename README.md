@@ -26,14 +26,14 @@ For more information: [`gh extension install`](https://cli.github.com/manual/gh_
 ## Prerequisites
 
 - [GitHub CLI](https://cli.github.com/) installed and authenticated
-- Bitbucket Cloud username and [app password](https://support.atlassian.com/bitbucket-cloud/docs/app-passwords/), or [Access Token](https://support.atlassian.com/bitbucket-cloud/docs/access-tokens/) with workspace administration access
+- Bitbucket Cloud workspace administration access
 - Go 1.19 or higher (if building from source)
 
-### Required Access
+### Bitbucket Authentication Options 
 
 Bitbucket Cloud provides two authentication methods for their API:
 - Basic Authentication
-- Access Token
+- Access Token (premium membership)
 
 #### Basic Authentication
 
@@ -57,7 +57,7 @@ To [create an app password](https://support.atlassian.com/bitbucket-cloud/docs/c
    - `Pull Requests: Read`
 6. Select the Create button. The page will display the New app password dialog.
 
-#### Access Token Authentication
+#### Workspace Access Token
 
 
 
