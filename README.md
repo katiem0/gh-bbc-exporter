@@ -29,6 +29,38 @@ For more information: [`gh extension install`](https://cli.github.com/manual/gh_
 - Bitbucket Cloud username and [app password](https://support.atlassian.com/bitbucket-cloud/docs/app-passwords/), or [Access Token](https://support.atlassian.com/bitbucket-cloud/docs/access-tokens/) with workspace administration access
 - Go 1.19 or higher (if building from source)
 
+### Required Access
+
+Bitbucket Cloud provides two authentication methods for their API:
+- Basic Authentication
+- Access Token
+
+#### Basic Authentication
+
+For basic authentication with this tool your account username and an app password are needed. Your Bitbucket usename can be found by following:
+
+1. On the sidebar, click on the Profile picture
+2. Select View profile
+3. Click on "Settings"
+4. Find Username under **Bitbucket profile settings**
+
+To [create an app password](https://support.atlassian.com/bitbucket-cloud/docs/create-an-app-password/):
+
+1. Under Personal settings, select Personal Bitbucket settings.
+2. On the left sidebar, select App passwords.
+3. Select Create app password.
+4. Give the App password a name.
+5. Select the following permissions:
+   - `Account: Read`
+   - `Workspace Memebership: Read`
+   - `Repositories: Read`
+   - `Pull Requests: Read`
+6. Select the Create button. The page will display the New app password dialog.
+
+#### Access Token Authentication
+
+
+
 ## Usage
 
 The `gh-bbc-exporter` extension only supports the retrieval of repositories from Bitbucket Cloud:
