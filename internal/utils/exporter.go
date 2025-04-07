@@ -67,8 +67,14 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 		return err
 	}
 
-	cloneURL := fmt.Sprintf("https://%s:%s@bitbucket.org/%s/%s.git",
-		e.client.username, e.client.appPass, workspace, repoSlug)
+	var cloneURL string
+	if e.client.token != "" {
+		cloneURL = fmt.Sprintf("https://x-token-auth:%s@bitbucket.org/%s/%s.git",
+			e.client.token, workspace, repoSlug)
+	} else {
+		cloneURL = fmt.Sprintf("https://%s:%s@bitbucket.org/%s/%s.git",
+			e.client.username, e.client.appPass, workspace, repoSlug)
+	}
 	if err := e.CloneRepository(workspace, repoSlug, cloneURL); err != nil {
 		e.logger.Warn("Failed to clone repository, creating empty repository structure",
 			zap.String("repo", repoSlug),

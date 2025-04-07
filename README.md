@@ -37,7 +37,7 @@ Bitbucket Cloud provides two authentication methods for their API:
 
 #### Basic Authentication
 
-For basic authentication with this tool your account username and an app password are needed. Your Bitbucket usename can be found by following:
+For basic authentication with this tool your account username and an app password are needed. Your Bitbucket username can be found by following:
 
 1. On the sidebar, click on the Profile picture
 2. Select View profile
@@ -52,14 +52,20 @@ To [create an app password](https://support.atlassian.com/bitbucket-cloud/docs/c
 4. Give the App password a name.
 5. Select the following permissions:
    - `Account: Read`
-   - `Workspace Memebership: Read`
+   - `Workspace Membership: Read`
    - `Repositories: Read`
    - `Pull Requests: Read`
 6. Select the Create button. The page will display the New app password dialog.
 
 #### Workspace Access Token
 
+A workspace-level access token is required to ensure a list of users is retrieved to be able to associate metadata with their GitHub account. 
 
+The access token will require the following permissions:
+
+   - `Account: Read`
+   - `Repositories: Read`
+   - `Pull Requests: Read`
 
 ## Usage
 
