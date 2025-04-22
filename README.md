@@ -6,7 +6,6 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/katiem0/gh-bbc-exporter)](https://goreportcard.com/report/github.com/katiem0/gh-bbc-exporter)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/katiem0/gh-bbc-exporter)](https://go.dev/)
 
-
 A GitHub `gh` [CLI](https://cli.github.com/) extension for exporting Bitbucket Cloud
 repositories into a format compatible with GitHub Enterprise migrations.
 
