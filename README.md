@@ -1,10 +1,12 @@
 # gh-bbc-exporter
 
-A GitHub `gh` [CLI](https://cli.github.com/) extension for exporting Bitbucket Cloud repositories into a format compatible with GitHub Enterprise migrations.
+A GitHub `gh` [CLI](https://cli.github.com/) extension for exporting Bitbucket Cloud
+repositories into a format compatible with GitHub Enterprise migrations.
 
 ## Overview
 
-This extension helps you migrate repositories from Bitbucket Cloud to GitHub Enterprise Cloud by creating an export archive that matches the format expected by GHE migration tools.
+This extension helps you migrate repositories from Bitbucket Cloud to GitHub Enterprise Cloud
+by creating an export archive that matches the format expected by GHE migration tools.
 
 The exporter creates a complete migration archive containing:
 
@@ -22,22 +24,23 @@ gh extension install katiem0/gh-bbc-exporter
 
 For more information: [`gh extension install`](https://cli.github.com/manual/gh_extension_install).
 
-
 ## Prerequisites
 
 - [GitHub CLI](https://cli.github.com/) installed and authenticated
 - Bitbucket Cloud workspace administration access
 - Go 1.19 or higher (if building from source)
 
-### Bitbucket Authentication Options 
+### Bitbucket Authentication Options
 
 Bitbucket Cloud provides two authentication methods for their API:
+
 - Basic Authentication
 - Access Token (premium membership)
 
 #### Basic Authentication
 
-For basic authentication with this tool your account username and an app password are needed. Your Bitbucket username can be found by following:
+For basic authentication with this tool your account username and an app password
+are needed. Your Bitbucket username can be found by following:
 
 1. On the sidebar, click on the Profile picture
 2. Select View profile
@@ -59,17 +62,19 @@ To [create an app password](https://support.atlassian.com/bitbucket-cloud/docs/c
 
 #### Workspace Access Token
 
-A workspace-level access token is required to ensure a list of users is retrieved to be able to associate metadata with their GitHub account. 
+A workspace-level access token is required to ensure a list of users is retrieved
+to be able to associate metadata with their GitHub account.
 
 The access token will require the following permissions:
 
-   - `Account: Read`
-   - `Repositories: Read`
-   - `Pull Requests: Read`
+- `Account: Read`
+- `Repositories: Read`
+- `Pull Requests: Read`
 
 ## Usage
 
 The `gh-bbc-exporter` extension only supports the retrieval of repositories from Bitbucket Cloud:
+
 ```sh
 gh bbc-exporter -h
 Export repository and metadata from Bitbucket Cloud for GitHub Cloud import.
@@ -89,14 +94,13 @@ Flags:
   -w, --workspace string      Bitbucket workspace
 ```
 
-
 For migrations from BitBucket Data Center or Server, please see [GitHub's Official Documentation](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/about-migrations-from-bitbucket-server-to-github-enterprise-cloud).
 
-### Export Format 
+### Export Format
 
 The exporter creates a directory or archive with the following structure:
 
-```
+```text
 bitbucket-export-YYYYMMDD-HHMMSS/
 ├── schema.json
 ├── repositories_000001.json
@@ -117,10 +121,11 @@ bitbucket-export-YYYYMMDD-HHMMSS/
                 └── last-sync
 ```
 
-
 ## Importing to GitHub Enterprise CLoud
 
-After generating the migration archive, you can import it to GitHub Enterprise Cloud using GitHub owned storage and GEI. Detailed documentation can be found in [Importing Bitbucket Cloud Archive to GitHub Enterprise Cloud](./docs/GHImport.md).
+After generating the migration archive, you can import it to GitHub Enterprise Cloud
+using GitHub owned storage and GEI. Detailed documentation can be found in
+[Importing Bitbucket Cloud Archive to GitHub Enterprise Cloud](./docs/GHImport.md).
 
 ## Limitations
 
@@ -136,25 +141,31 @@ After generating the migration archive, you can import it to GitHub Enterprise C
 1. **Authentication Errors**
    Make sure your Bitbucket app password has the necessary permissions to access repositories.
 2. **Export Fails with Network Errors**
-   Bitbucket API may have rate limits. Try running the export with the `--debug` flag to see detailed error messages.
+   Bitbucket API may have rate limits. Try running the export with the `--debug` flag to see
+   detailed error messages.
 3. **Empty Repository Export**
-   If the repository can't be cloned, the exporter creates an empty repository structure. Check that the repository exists and is accessible.
-
+   If the repository can't be cloned, the exporter creates an empty repository structure.
+   Check that the repository exists and is accessible.
 
 ## Development
 
 ### Building from Source
 
 1. Clone the repository:
+
    ```sh
    git clone https://github.com/katiem0/gh-bbc-exporter.git
    cd gh-bbc-exporter
    ```
+
 2. Build the extension:
+
    ```sh
    go build -o gh-bbc-exporter
    ```
+
 3. Install locally for testing:
+
    ```sh
    gh extension install .
    ```

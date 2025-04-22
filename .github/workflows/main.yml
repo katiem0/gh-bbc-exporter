@@ -90,9 +90,4 @@ jobs:
           markdownlint '**/*.md' \
             --ignore node_modules \
             --ignore '**/output/**' \
-            --config '{
-              "default": true,
-              "line-length": false,
-              "no-trailing-punctuation": false,
-              "no-inline-html": false
-            }'
+            --config .markdownlint.yaml

@@ -47,9 +47,12 @@ func TestSetupEnvironmentCredentials(t *testing.T) {
 	cmdFlags := &data.CmdFlags{}
 
 	// Set environment variables
-	os.Setenv("BITBUCKET_USERNAME", "envuser")
-	os.Setenv("BITBUCKET_APP_PASSWORD", "envpass")
-	os.Setenv("BITBUCKET_TOKEN", "envtoken")
+	err := os.Setenv("BITBUCKET_USERNAME", "envuser")
+	assert.NoError(t, err)
+	err = os.Setenv("BITBUCKET_APP_PASSWORD", "envpass")
+	assert.NoError(t, err)
+	err = os.Setenv("BITBUCKET_TOKEN", "envtoken")
+	assert.NoError(t, err)
 
 	// Call the function
 	SetupEnvironmentCredentials(cmdFlags)
@@ -60,9 +63,12 @@ func TestSetupEnvironmentCredentials(t *testing.T) {
 	assert.Equal(t, "envtoken", cmdFlags.BitbucketToken, "Expected token to be set from environment")
 
 	// Clean up environment variables
-	os.Unsetenv("BITBUCKET_USERNAME")
-	os.Unsetenv("BITBUCKET_APP_PASSWORD")
-	os.Unsetenv("BITBUCKET_TOKEN")
+	err = os.Unsetenv("BITBUCKET_USERNAME")
+	assert.NoError(t, err)
+	err = os.Unsetenv("BITBUCKET_APP_PASSWORD")
+	assert.NoError(t, err)
+	err = os.Unsetenv("BITBUCKET_TOKEN")
+	assert.NoError(t, err)
 }
 
 func TestFormatDateToZ(t *testing.T) {

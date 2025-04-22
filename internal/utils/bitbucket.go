@@ -323,12 +323,13 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 
 		for _, pr := range response.Values {
 			var mergedAt, closedAt *string
-			if pr.State == "MERGED" {
+			switch pr.State {
+			case "MERGED":
 				mergedStr := formatDateToZ(pr.UpdatedOn)
 				mergedAt = &mergedStr
 				closedStr := formatDateToZ(pr.UpdatedOn)
 				closedAt = &closedStr
-			} else if pr.State == "DECLINED" {
+			case "DECLINED":
 				closedStr := formatDateToZ(pr.UpdatedOn)
 				closedAt = &closedStr
 			}
@@ -475,7 +476,7 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 		prCommitMap[prID] = getFullSHA(shortSHA)
 	}
 
-	for prID, _ := range prURLMap {
+	for prID := range prURLMap {
 		page := 1
 		pageLen := 100
 		hasMore := true

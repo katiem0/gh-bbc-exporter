@@ -580,13 +580,25 @@ func (e *Exporter) CreateArchive() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create archive file: %w", err)
 	}
-	defer archiveFile.Close()
+	defer func() {
+		if err := archiveFile.Close(); err != nil {
+			e.logger.Warn("Failed to close archive file", zap.Error(err))
+		}
+	}()
 
 	gzipWriter := gzip.NewWriter(archiveFile)
-	defer gzipWriter.Close()
+	defer func() {
+		if err := gzipWriter.Close(); err != nil {
+			e.logger.Warn("Failed to close gzip writer", zap.Error(err))
+		}
+	}()
 
 	tarWriter := tar.NewWriter(gzipWriter)
-	defer tarWriter.Close()
+	defer func() {
+		if err := tarWriter.Close(); err != nil {
+			e.logger.Warn("Failed to close tar writer", zap.Error(err))
+		}
+	}()
 
 	if err := e.archiveDirectory(e.outputDir, tarWriter); err != nil {
 		return "", fmt.Errorf("failed to build archive: %w", err)
