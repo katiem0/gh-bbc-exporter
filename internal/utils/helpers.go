@@ -47,8 +47,11 @@ func (e *Exporter) writeJSONFile(filename string, data interface{}) error {
 	if err != nil {
 		return fmt.Errorf("failed to create file %s: %w", filename, err)
 	}
-	defer file.Close()
-
+	defer func() {
+		if err := file.Close(); err != nil {
+			e.logger.Warn("Failed to close file", zap.String("file", filepath), zap.Error(err))
+		}
+	}()
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(data); err != nil {

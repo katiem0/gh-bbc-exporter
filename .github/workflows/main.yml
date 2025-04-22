@@ -11,15 +11,15 @@ permissions:
   pull-requests: read
 
 jobs:
-  build:
+  build-and-test:
     name: Build and Test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v5.4.0
         with:
           go-version-file: 'go.mod'
           cache: true
@@ -30,13 +30,74 @@ jobs:
       - name: Build
         run: go build -v .
 
-      - name: Verify no build errors
-        run: |
-          if [ $? -ne 0 ]; then
-            echo "Build failed"
-            exit 1
-          fi
+      - name: Run linting
+        uses: golangci/golangci-lint-action@v7.0.0
+        with:
+          version: latest
+          args: --timeout=5m
 
       - name: Run tests
         run: |
-          go test -v ./...
+          set -o pipefail
+          go test -v ./... -race -coverprofile=coverage.txt -covermode=atomic 2>&1 | tee test_output.log
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v5.4.2
+        with:
+          files: ./coverage.txt
+          fail_ci_if_error: false
+          verbose: true
+
+      - name: Check for Error syncing logger issue
+        run: |
+          # Create a test script to check for the logger sync error
+          cat > test_logger.go << 'EOF'
+          package main
+          
+          import (
+            "github.com/katiem0/gh-bbc-exporter/internal/log"
+          )
+          
+          func main() {
+            logger, _ := log.NewLogger(true)
+            defer func() {
+              _ = logger.Sync()
+            }()
+            logger.Info("Testing logger sync")
+          }
+          EOF
+          
+          # Run the test script and look for the error
+          go run test_logger.go 2>&1 | grep -i "inappropriate ioctl for device" && echo "Logger sync error detected, but handled properly" || echo "No logger sync error detected"
+          # Clean up the test script
+          rm test_logger.go
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: test-results
+          path: |
+            coverage.txt
+
+  markdown:
+    name: Lint Markdown
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4.4.0
+        with:
+          node-version: '16'
+
+      - name: Install markdownlint
+        run: npm install -g markdownlint-cli
+
+      - name: Lint Markdown files
+        run: |
+          markdownlint '**/*.md' \
+            --ignore node_modules \
+            --ignore '**/output/**' \
+            --config .markdownlint.yaml

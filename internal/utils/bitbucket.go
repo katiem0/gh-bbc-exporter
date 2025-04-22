@@ -323,12 +323,13 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 
 		for _, pr := range response.Values {
 			var mergedAt, closedAt *string
-			if pr.State == "MERGED" {
+			switch pr.State {
+			case "MERGED":
 				mergedStr := formatDateToZ(pr.UpdatedOn)
 				mergedAt = &mergedStr
 				closedStr := formatDateToZ(pr.UpdatedOn)
 				closedAt = &closedStr
-			} else if pr.State == "DECLINED" {
+			case "DECLINED":
 				closedStr := formatDateToZ(pr.UpdatedOn)
 				closedAt = &closedStr
 			}
@@ -475,7 +476,7 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 		prCommitMap[prID] = getFullSHA(shortSHA)
 	}
 
-	for prID, _ := range prURLMap {
+	for prID := range prURLMap {
 		page := 1
 		pageLen := 100
 		hasMore := true
@@ -598,7 +599,7 @@ func (c *Client) transformCommentBody(body, workspace, repoSlug string) string {
 	re := regexp.MustCompile(pattern)
 	transformedBody := re.ReplaceAllString(body, replacement)
 
-	prPattern := fmt.Sprintf(`\b#(\d+)\b`)
+	prPattern := `\b#(\d+)\b`
 
 	prRe := regexp.MustCompile(prPattern)
 	transformedBody = prRe.ReplaceAllStringFunc(transformedBody, func(match string) string {

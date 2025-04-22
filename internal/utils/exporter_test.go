@@ -53,7 +53,11 @@ func TestCreateOrganizationData(t *testing.T) {
 func TestWriteJSONFile(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "exporter-test-")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir) // Clean up at the end of test
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	logger, _ := zap.NewDevelopment()
 	client := &Client{}
@@ -70,7 +74,11 @@ func TestWriteJSONFile(t *testing.T) {
 	filePath := filepath.Join(exporter.outputDir, "test.json")
 	file, err := os.Open(filePath)
 	assert.NoError(t, err)
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			t.Logf("Warning: Failed to close file: %v", err)
+		}
+	}()
 
 	fileContent, err := io.ReadAll(file)
 	assert.NoError(t, err)
@@ -85,7 +93,11 @@ func TestWriteJSONFile(t *testing.T) {
 func TestCreateArchive(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "exporter-test-")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	logger, _ := zap.NewDevelopment()
 	client := &Client{}
@@ -106,18 +118,22 @@ func TestCreateArchive(t *testing.T) {
 func TestExport(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "exporter-test-")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir) // Clean up at the end of test
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		if strings.Contains(r.URL.Path, "pullrequests") {
-			w.Write([]byte(`{"values": [], "next": null}`)) // Mock pull requests
+			writeResponse(t, w, []byte(`{"values": [], "next": null}`)) // Mock pull requests
 		} else if strings.Contains(r.URL.Path, "comments") {
-			w.Write([]byte(`{"values": [], "next": null}`)) // Mock comments
+			writeResponse(t, w, []byte(`{"values": [], "next": null}`)) // Mock comments
 		} else if strings.Contains(r.URL.Path, "members") {
-			w.Write([]byte(`{"values": [], "next": null}`)) // Mock users
+			writeResponse(t, w, []byte(`{"values": [], "next": null}`)) // Mock users
 		} else {
-			w.Write([]byte(`{"name": "Test Repo", "mainbranch": {"name": "main"}}`)) // Mock repository
+			writeResponse(t, w, []byte(`{"name": "Test Repo", "mainbranch": {"name": "main"}}`)) // Mock repository
 		}
 	}))
 	defer testServer.Close()

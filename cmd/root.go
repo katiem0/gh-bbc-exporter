@@ -50,8 +50,12 @@ func NewCmdRoot() *cobra.Command {
 	exportCmd.PersistentFlags().StringVarP(&cmdFlags.OutputDir, "output", "o", "", "Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)")
 	exportCmd.PersistentFlags().BoolVarP(&cmdFlags.Debug, "debug", "d", false, "Enable debug logging")
 	// Mark required flags
-	exportCmd.MarkPersistentFlagRequired("workspace")
-	exportCmd.MarkPersistentFlagRequired("repository")
+	if err := exportCmd.MarkPersistentFlagRequired("workspace"); err != nil {
+		fmt.Printf("Error marking workspace flag as required: %v\n", err)
+	}
+	if err := exportCmd.MarkPersistentFlagRequired("repo"); err != nil {
+		fmt.Printf("Error marking repository flag as required: %v\n", err)
+	}
 	return exportCmd
 }
 

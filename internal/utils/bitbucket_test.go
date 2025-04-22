@@ -10,6 +10,14 @@ import (
 	"go.uber.org/zap"
 )
 
+// Helper function to safely write to response
+func writeResponse(t *testing.T, w http.ResponseWriter, data []byte) {
+	_, err := w.Write(data)
+	if err != nil {
+		t.Fatalf("Failed to write test response: %v", err)
+	}
+}
+
 func TestNewClient(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	client := NewClient("https://example.com", "token", "user", "pass", logger)
@@ -27,10 +35,7 @@ func TestMakeRequest(t *testing.T) {
 	// Test case 1: Successful request
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, err := w.Write([]byte(`{"message": "success"}`))
-		if err != nil {
-			t.Fatalf("Failed to write test response: %v", err)
-		}
+		writeResponse(t, w, []byte(`{"message": "success"}`))
 	}))
 	defer testServer.Close()
 
@@ -50,10 +55,7 @@ func TestMakeRequest(t *testing.T) {
 	// Test case 2: API returns an error
 	testServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		_, err := w.Write([]byte(`{"error": "internal server error"}`))
-		if err != nil {
-			t.Fatalf("Failed to write test response: %v", err)
-		}
+		writeResponse(t, w, []byte(`{"error": "internal server error"}`))
 	}))
 	defer testServer.Close()
 
@@ -68,10 +70,7 @@ func TestMakeRequest(t *testing.T) {
 		w.WriteHeader(http.StatusTooManyRequests)
 		w.Header().Set("X-RateLimit-Remaining", "0")
 		w.Header().Set("X-RateLimit-Limit", "100")
-		_, err := w.Write([]byte(`{"message": "rate limited"}`))
-		if err != nil {
-			t.Fatalf("Failed to write test response: %v", err)
-		}
+		writeResponse(t, w, []byte(`{"message": "rate limited"}`))
 	}))
 	defer testServer.Close()
 	client.baseURL = testServer.URL
@@ -85,7 +84,7 @@ func TestGetFullCommitSHA(t *testing.T) {
 	// Test case 1: Successful request
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"hash": "1234567890123456789012345678901234567890"}`))
+		writeResponse(t, w, []byte(`{"hash": "1234567890123456789012345678901234567890"}`))
 	}))
 	defer testServer.Close()
 
@@ -104,7 +103,7 @@ func TestGetFullCommitSHA(t *testing.T) {
 	// Test case 2: API returns an error
 	testServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"error": "internal server error"}`))
+		writeResponse(t, w, []byte(`{"error": "internal server error"}`))
 	}))
 	defer testServer.Close()
 
@@ -120,7 +119,7 @@ func TestGetPullRequests(t *testing.T) {
 	// Test case 1: Successful request with no pull requests
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"values": [], "next": null}`))
+		writeResponse(t, w, []byte(`{"values": [], "next": null}`))
 	}))
 	defer testServer.Close()
 
@@ -140,7 +139,7 @@ func TestGetPullRequests(t *testing.T) {
 	// Test case 2: Successful request with pull requests
 	testServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"values": [{"id": 1, "title": "Test PR"}], "next": null}`))
+		writeResponse(t, w, []byte(`{"values": [{"id": 1, "title": "Test PR"}], "next": null}`))
 	}))
 	defer testServer.Close()
 
@@ -155,7 +154,7 @@ func TestGetPullRequests(t *testing.T) {
 	// Test case 3: API returns an error
 	testServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"error": "internal server error"}`))
+		writeResponse(t, w, []byte(`{"error": "internal server error"}`))
 	}))
 	defer testServer.Close()
 
@@ -170,7 +169,7 @@ func TestGetPullRequestComments(t *testing.T) {
 	// Test case 1: Successful request with no comments
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"values": [], "next": null}`))
+		writeResponse(t, w, []byte(`{"values": [], "next": null}`))
 	}))
 	defer testServer.Close()
 
@@ -192,7 +191,7 @@ func TestGetPullRequestComments(t *testing.T) {
 	// Test case 2: API returns an error
 	testServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"error": "internal server error"}`))
+		writeResponse(t, w, []byte(`{"error": "internal server error"}`))
 	}))
 	defer testServer.Close()
 
@@ -208,7 +207,7 @@ func TestGetUsers(t *testing.T) {
 	// Test case 1: Successful request with no users
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"values": [], "next": null}`))
+		writeResponse(t, w, []byte(`{"values": [], "next": null}`))
 	}))
 	defer testServer.Close()
 
@@ -228,7 +227,7 @@ func TestGetUsers(t *testing.T) {
 	// Test case 2: Successful request with users
 	testServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"values": [{"user": {"display_name": "Test User", "uuid": "{test-uuid}"}}], "next": null}`))
+		writeResponse(t, w, []byte(`{"values": [{"user": {"display_name": "Test User", "uuid": "{test-uuid}"}}], "next": null}`))
 	}))
 	defer testServer.Close()
 
@@ -242,7 +241,7 @@ func TestGetUsers(t *testing.T) {
 	// Test case 3: API returns an error
 	testServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"error": "internal server error"}`))
+		writeResponse(t, w, []byte(`{"error": "internal server error"}`))
 	}))
 	defer testServer.Close()
 
@@ -257,7 +256,7 @@ func TestGetRepository(t *testing.T) {
 	// Test case 1: Successful request
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"name": "Test Repo", "mainbranch": {"name": "main"}}`))
+		writeResponse(t, w, []byte(`{"name": "Test Repo", "mainbranch": {"name": "main"}}`))
 	}))
 	defer testServer.Close()
 
@@ -278,7 +277,7 @@ func TestGetRepository(t *testing.T) {
 	// Test case 2: API returns an error
 	testServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"error": "internal server error"}`))
+		writeResponse(t, w, []byte(`{"error": "internal server error"}`))
 	}))
 	defer testServer.Close()
 
