@@ -643,7 +643,11 @@ func (e *Exporter) addFileToArchive(tarWriter *tar.Writer, path, relPath string,
 		if err != nil {
 			return fmt.Errorf("failed to open file %s: %w", path, err)
 		}
-		defer file.Close()
+		defer func() {
+			if err := file.Close(); err != nil {
+				e.logger.Warn("Failed to close file", zap.String("path", path), zap.Error(err))
+			}
+		}()
 
 		if _, err := io.Copy(tarWriter, file); err != nil {
 			return fmt.Errorf("failed to copy file contents: %w", err)
