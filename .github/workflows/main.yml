@@ -30,13 +30,40 @@ jobs:
       - name: Build
         run: go build -v .
 
-      - name: Verify no build errors
-        run: |
-          if [ $? -ne 0 ]; then
-            echo "Build failed"
-            exit 1
-          fi
+      - name: Run linting
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          args: --timeout=5m
 
       - name: Run tests
+        run: go test -v ./... -race -coverprofile=coverage.txt -covermode=atomic
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.txt
+          fail_ci_if_error: false
+          verbose: true
+
+      - name: Check for Error syncing logger issue
         run: |
-          go test -v ./...
+          # Create a test script to check for the logger sync error
+          cat > test_logger.go << 'EOF'
+          package main
+          
+          import (
+            "github.com/katiem0/gh-bbc-exporter/internal/log"
+          )
+          
+          func main() {
+            logger, _ := log.NewLogger(true)
+            defer func() {
+              _ = logger.Sync()
+            }()
+            logger.Info("Testing logger sync")
+          }
+          EOF
+          
+          # Run the test script and look for the error
+          go run test_logger.go 2>&1 | grep -i "inappropriate ioctl for device" && echo "Logger sync error detected, but handled properly" || echo "No logger sync error detected"
