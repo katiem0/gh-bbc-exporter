@@ -1,16 +1,14 @@
 name: PR Checks
 
-on:
+on: 
   push:
-    branches: [ main ]
-    paths-ignore:
-      - '**.md'
-      - '.github/workflows/release.yml'
+    branches:
+      - main
   pull_request:
-    branches: [ main ]
-    paths-ignore:
-      - '**.md'
-      - '.github/workflows/release.yml'
+
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
   build:
