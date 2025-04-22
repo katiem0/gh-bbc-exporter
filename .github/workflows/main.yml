@@ -41,12 +41,6 @@ jobs:
           set -o pipefail
           go test -v ./... -race -coverprofile=coverage.txt -covermode=atomic 2>&1 | tee test_output.log
 
-      - name: Annotate tests
-        if: always()
-        uses: guyarb/golang-test-annotations@v0.7.0
-        with:
-          test-results: test_output.log
-
       - name: Upload coverage report
         uses: codecov/codecov-action@v5.4.2
         with:
@@ -84,7 +78,6 @@ jobs:
         with:
           name: test-results
           path: |
-            test_output.log
             coverage.txt
 
   markdown:
