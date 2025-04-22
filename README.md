@@ -1,5 +1,12 @@
 # gh-bbc-exporter
 
+[![GitHub Release](https://img.shields.io/github/v/release/katiem0/gh-bbc-exporter?style=flat&logo=github)](https://github.com/katiem0/gh-bbc-exporter/releases)
+[![PR Checks](https://github.com/katiem0/gh-bbc-exporter/actions/workflows/main.yml/badge.svg)](https://github.com/katiem0/gh-bbc-exporter/actions/workflows/main.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Go Report Card](https://goreportcard.com/badge/github.com/katiem0/gh-bbc-exporter)](https://goreportcard.com/report/github.com/katiem0/gh-bbc-exporter)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/katiem0/gh-bbc-exporter)](https://go.dev/)
+
+
 A GitHub `gh` [CLI](https://cli.github.com/) extension for exporting Bitbucket Cloud
 repositories into a format compatible with GitHub Enterprise migrations.
 

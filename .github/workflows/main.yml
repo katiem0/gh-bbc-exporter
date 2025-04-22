@@ -37,7 +37,15 @@ jobs:
           args: --timeout=5m
 
       - name: Run tests
-        run: go test -v ./... -race -coverprofile=coverage.txt -covermode=atomic
+        run: |
+          set -o pipefail
+          go test -v ./... -race -coverprofile=coverage.txt -covermode=atomic 2>&1 | tee test_output.log
+
+      - name: Annotate tests
+        if: always()
+        uses: guyarb/golang-test-annotations@v0.7.0
+        with:
+          test-results: test_output.log
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v5.4.2
@@ -69,6 +77,15 @@ jobs:
           go run test_logger.go 2>&1 | grep -i "inappropriate ioctl for device" && echo "Logger sync error detected, but handled properly" || echo "No logger sync error detected"
           # Clean up the test script
           rm test_logger.go
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: |
+            test_output.log
+            coverage.txt
 
   markdown:
     name: Lint Markdown
