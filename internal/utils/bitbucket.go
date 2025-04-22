@@ -598,7 +598,7 @@ func (c *Client) transformCommentBody(body, workspace, repoSlug string) string {
 	re := regexp.MustCompile(pattern)
 	transformedBody := re.ReplaceAllString(body, replacement)
 
-	prPattern := fmt.Sprintf(`\b#(\d+)\b`)
+	prPattern := `\b#(\d+)\b`
 
 	prRe := regexp.MustCompile(prPattern)
 	transformedBody = prRe.ReplaceAllStringFunc(transformedBody, func(match string) string {

@@ -11,15 +11,15 @@ permissions:
   pull-requests: read
 
 jobs:
-  build:
+  build-and-test:
     name: Build and Test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v5.4.0
         with:
           go-version-file: 'go.mod'
           cache: true
@@ -31,7 +31,7 @@ jobs:
         run: go build -v .
 
       - name: Run linting
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v7.0.0
         with:
           version: latest
           args: --timeout=5m
@@ -40,9 +40,9 @@ jobs:
         run: go test -v ./... -race -coverprofile=coverage.txt -covermode=atomic
 
       - name: Upload coverage report
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5.4.2
         with:
-          file: ./coverage.txt
+          files: ./coverage.txt
           fail_ci_if_error: false
           verbose: true
 
@@ -67,3 +67,32 @@ jobs:
           
           # Run the test script and look for the error
           go run test_logger.go 2>&1 | grep -i "inappropriate ioctl for device" && echo "Logger sync error detected, but handled properly" || echo "No logger sync error detected"
+          # Clean up the test script
+          rm test_logger.go
+
+  markdown:
+    name: Lint Markdown
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4.4.0
+        with:
+          node-version: '16'
+
+      - name: Install markdownlint
+        run: npm install -g markdownlint-cli
+
+      - name: Lint Markdown files
+        run: |
+          markdownlint '**/*.md' \
+            --ignore node_modules \
+            --ignore '**/output/**' \
+            --config '{
+              "default": true,
+              "line-length": false,
+              "no-trailing-punctuation": false,
+              "no-inline-html": false
+            }'

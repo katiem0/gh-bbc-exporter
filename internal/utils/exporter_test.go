@@ -111,13 +111,13 @@ func TestExport(t *testing.T) {
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		if strings.Contains(r.URL.Path, "pullrequests") {
-			w.Write([]byte(`{"values": [], "next": null}`)) // Mock pull requests
+			writeResponse(t, w, []byte(`{"values": [], "next": null}`)) // Mock pull requests
 		} else if strings.Contains(r.URL.Path, "comments") {
-			w.Write([]byte(`{"values": [], "next": null}`)) // Mock comments
+			writeResponse(t, w, []byte(`{"values": [], "next": null}`)) // Mock comments
 		} else if strings.Contains(r.URL.Path, "members") {
-			w.Write([]byte(`{"values": [], "next": null}`)) // Mock users
+			writeResponse(t, w, []byte(`{"values": [], "next": null}`)) // Mock users
 		} else {
-			w.Write([]byte(`{"name": "Test Repo", "mainbranch": {"name": "main"}}`)) // Mock repository
+			writeResponse(t, w, []byte(`{"name": "Test Repo", "mainbranch": {"name": "main"}}`)) // Mock repository
 		}
 	}))
 	defer testServer.Close()
