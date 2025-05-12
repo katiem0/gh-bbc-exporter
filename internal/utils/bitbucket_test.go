@@ -294,14 +294,33 @@ func TestGetPullRequestsWithStateFilter(t *testing.T) {
 
 	// Test with openPRsOnly = true
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify the endpoint contains state=OPEN
-		if !strings.Contains(r.URL.String(), "state=OPEN") {
-			t.Errorf("Expected URL to contain state=OPEN when openPRsOnly is true, but got: %s", r.URL.String())
-			w.WriteHeader(http.StatusBadRequest)
-			return
+		// Check if this is a request for pull requests (not for commit SHA)
+		if strings.Contains(r.URL.String(), "/pullrequests") {
+			// Verify the endpoint contains state=OPEN
+			if !strings.Contains(r.URL.String(), "state=OPEN") {
+				t.Errorf("Expected URL to contain state=OPEN when openPRsOnly is true, but got: %s", r.URL.String())
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{
+                "values": [
+                    {
+                        "id": 1, 
+                        "title": "Open PR", 
+                        "state": "OPEN",
+                        "author": {"uuid": "{test-uuid}"},
+                        "source": {"branch": {"name": "feature"}, "commit": {"hash": "1234567890123456789012345678901234567890"}},
+                        "destination": {"branch": {"name": "main"}, "commit": {"hash": "0987654321098765432109876543210987654321"}}
+                    }
+                ], 
+                "next": null
+            }`))
+		} else {
+			// For any other requests like commit SHA lookups, return success
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{"hash": "1234567890123456789012345678901234567890"}`))
 		}
-		w.WriteHeader(http.StatusOK)
-		writeResponse(t, w, []byte(`{"values": [{"id": 1, "title": "Open PR", "state": "OPEN"}], "next": null}`))
 	}))
 	defer testServer.Close()
 
@@ -319,14 +338,41 @@ func TestGetPullRequestsWithStateFilter(t *testing.T) {
 
 	// Test with openPRsOnly = false
 	testServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify the endpoint contains state=ALL
-		if !strings.Contains(r.URL.String(), "state=ALL") {
-			t.Errorf("Expected URL to contain state=ALL when openPRsOnly is false, but got: %s", r.URL.String())
-			w.WriteHeader(http.StatusBadRequest)
-			return
+		// Check if this is a request for pull requests (not for commit SHA)
+		if strings.Contains(r.URL.String(), "/pullrequests") {
+			// Verify the endpoint contains state=ALL
+			if !strings.Contains(r.URL.String(), "state=ALL") {
+				t.Errorf("Expected URL to contain state=ALL when openPRsOnly is false, but got: %s", r.URL.String())
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{
+                "values": [
+                    {
+                        "id": 1, 
+                        "title": "Any PR", 
+                        "state": "OPEN",
+                        "author": {"uuid": "{test-uuid}"},
+                        "source": {"branch": {"name": "feature"}, "commit": {"hash": "1234567890123456789012345678901234567890"}},
+                        "destination": {"branch": {"name": "main"}, "commit": {"hash": "0987654321098765432109876543210987654321"}}
+                    }, 
+                    {
+                        "id": 2, 
+                        "title": "Closed PR", 
+                        "state": "DECLINED",
+                        "author": {"uuid": "{test-uuid}"},
+                        "source": {"branch": {"name": "bugfix"}, "commit": {"hash": "abcdef1234567890abcdef1234567890abcdef12"}},
+                        "destination": {"branch": {"name": "main"}, "commit": {"hash": "fedcba0987654321fedcba0987654321fedcba09"}}
+                    }
+                ], 
+                "next": null
+            }`))
+		} else {
+			// For any other requests like commit SHA lookups, return success
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{"hash": "1234567890123456789012345678901234567890"}`))
 		}
-		w.WriteHeader(http.StatusOK)
-		writeResponse(t, w, []byte(`{"values": [{"id": 1, "title": "Any PR", "state": "OPEN"}, {"id": 2, "title": "Closed PR", "state": "DECLINED"}], "next": null}`))
 	}))
 	defer testServer.Close()
 
