@@ -18,7 +18,7 @@ import (
 func TestNewExporter(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	client := &Client{}
-	exporter := NewExporter(client, "output", logger)
+	exporter := NewExporter(client, "output", logger, false)
 
 	assert.NotNil(t, exporter)
 	assert.Equal(t, client, exporter.client)
@@ -29,7 +29,7 @@ func TestNewExporter(t *testing.T) {
 func TestCreateBasicUsers(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	client := &Client{}
-	exporter := NewExporter(client, "output", logger)
+	exporter := NewExporter(client, "output", logger, false)
 
 	users := exporter.createBasicUsers("testworkspace")
 
@@ -41,7 +41,7 @@ func TestCreateBasicUsers(t *testing.T) {
 func TestCreateOrganizationData(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	client := &Client{}
-	exporter := NewExporter(client, "output", logger)
+	exporter := NewExporter(client, "output", logger, false)
 
 	orgs := exporter.createOrganizationData("testworkspace")
 
@@ -61,7 +61,7 @@ func TestWriteJSONFile(t *testing.T) {
 
 	logger, _ := zap.NewDevelopment()
 	client := &Client{}
-	exporter := NewExporter(client, tempDir, logger)
+	exporter := NewExporter(client, tempDir, logger, false)
 
 	testData := []data.User{{
 		Type:  "user",
@@ -101,7 +101,7 @@ func TestCreateArchive(t *testing.T) {
 
 	logger, _ := zap.NewDevelopment()
 	client := &Client{}
-	exporter := NewExporter(client, tempDir, logger)
+	exporter := NewExporter(client, tempDir, logger, false)
 
 	dummyFilePath := filepath.Join(exporter.outputDir, "dummy.txt")
 	err = os.WriteFile(dummyFilePath, []byte("test data"), 0644)
@@ -145,7 +145,7 @@ func TestExport(t *testing.T) {
 		logger:         logger,
 		commitSHACache: make(map[string]string),
 	}
-	exporter := NewExporter(client, tempDir, logger)
+	exporter := NewExporter(client, tempDir, logger, false)
 
 	err = exporter.Export("workspace", "repo")
 	assert.NoError(t, err)

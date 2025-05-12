@@ -260,13 +260,23 @@ func (c *Client) GetUsers(workspace, repoSlug string) ([]data.User, error) {
 	return allUsers, nil
 }
 
-func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest, error) {
-	c.logger.Info("Fetching pull requests")
+func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool) ([]data.PullRequest, error) {
+	c.logger.Info("Fetching pull requests",
+		zap.String("workspace", workspace),
+		zap.String("repository", repoSlug),
+		zap.Bool("open_prs_only", openPRsOnly))
 
 	var pullRequests []data.PullRequest
 	page := 1
 	pageLen := 50
 	hasMore := true
+
+	var stateParam string
+	if openPRsOnly {
+		stateParam = "state=OPEN"
+	} else {
+		stateParam = "state=ALL"
+	}
 
 	getFullSHA := func(shortSHA string) string {
 		if len(shortSHA) == 40 {
@@ -291,8 +301,12 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 	}
 
 	for hasMore {
-		endpoint := fmt.Sprintf("repositories/%s/%s/pullrequests?page=%d&pagelen=%d&state=ALL",
-			workspace, repoSlug, page, pageLen)
+		endpoint := fmt.Sprintf("repositories/%s/%s/pullrequests?page=%d&pagelen=%d&%s",
+			workspace, repoSlug, page, pageLen, stateParam)
+
+		c.logger.Debug("Fetching pull requests with endpoint",
+			zap.String("endpoint", endpoint),
+			zap.Bool("open_prs_only", openPRsOnly))
 
 		var response data.BitbucketPRResponse
 		var err error

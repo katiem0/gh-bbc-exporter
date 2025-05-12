@@ -93,6 +93,7 @@ Flags:
   -a, --bbc-api-url string    Bitbucket API to use (default "https://api.bitbucket.org/2.0")
   -d, --debug                 Enable debug logging
   -h, --help                  help for bbc-exporter
+      --open-prs-only         Import only open pull requests and ignore closed/merged ones
   -o, --output string         Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)
   -r, --repo string           Name of the repository to export from Bitbucket Cloud
   -t, --token string          Bitbucket access token for authentication

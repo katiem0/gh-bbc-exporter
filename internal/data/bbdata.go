@@ -8,6 +8,7 @@ type CmdFlags struct {
 	Repository       string
 	Workspace        string
 	OutputDir        string
+	OpenPRsOnly      bool
 	Debug            bool
 }
 
