@@ -301,9 +301,23 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool) (
 	}
 
 	for hasMore {
-		endpoint := fmt.Sprintf("repositories/%s/%s/pullrequests?page=%d&pagelen=%d&%s",
-			workspace, repoSlug, page, pageLen, stateParam)
+		baseURL, err := url.Parse(fmt.Sprintf("repositories/%s/%s/pullrequests", workspace, repoSlug))
+		if err != nil {
+			c.logger.Error("failed to parse base URL", zap.Error(err))
+			return nil, err
+		}
 
+		queryParams := url.Values{}
+		queryParams.Set("page", strconv.Itoa(page))
+		queryParams.Set("pagelen", strconv.Itoa(pageLen))
+		if openPRsOnly {
+			queryParams.Set("state", "OPEN")
+		} else {
+			queryParams.Set("state", "ALL")
+		}
+
+		baseURL.RawQuery = queryParams.Encode()
+		endpoint := baseURL.String()
 		c.logger.Debug("Fetching pull requests with endpoint",
 			zap.String("endpoint", endpoint),
 			zap.Bool("open_prs_only", openPRsOnly))
