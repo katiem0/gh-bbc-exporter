@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -271,13 +272,6 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool) (
 	pageLen := 50
 	hasMore := true
 
-	var stateParam string
-	if openPRsOnly {
-		stateParam = "state=OPEN"
-	} else {
-		stateParam = "state=ALL"
-	}
-
 	getFullSHA := func(shortSHA string) string {
 		if len(shortSHA) == 40 {
 			return shortSHA
@@ -301,15 +295,16 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool) (
 	}
 
 	for hasMore {
-		baseURL, err := url.Parse(fmt.Sprintf("repositories/%s/%s/pullrequests", workspace, repoSlug))
-		if err != nil {
-			c.logger.Error("failed to parse base URL", zap.Error(err))
-			return nil, err
+		baseURL, parseErr := url.Parse(fmt.Sprintf("repositories/%s/%s/pullrequests", workspace, repoSlug))
+		if parseErr != nil {
+			c.logger.Error("failed to parse base URL", zap.Error(parseErr))
+			return nil, parseErr
 		}
 
 		queryParams := url.Values{}
 		queryParams.Set("page", strconv.Itoa(page))
 		queryParams.Set("pagelen", strconv.Itoa(pageLen))
+
 		if openPRsOnly {
 			queryParams.Set("state", "OPEN")
 		} else {
@@ -318,6 +313,7 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool) (
 
 		baseURL.RawQuery = queryParams.Encode()
 		endpoint := baseURL.String()
+
 		c.logger.Debug("Fetching pull requests with endpoint",
 			zap.String("endpoint", endpoint),
 			zap.Bool("open_prs_only", openPRsOnly))
