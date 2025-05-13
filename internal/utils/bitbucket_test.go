@@ -3,6 +3,7 @@ package utils
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
@@ -131,7 +132,7 @@ func TestGetPullRequests(t *testing.T) {
 		commitSHACache: make(map[string]string),
 	}
 
-	prs, err := client.GetPullRequests("workspace", "repo")
+	prs, err := client.GetPullRequests("workspace", "repo", false)
 
 	assert.NoError(t, err)
 	assert.Empty(t, prs)
@@ -144,7 +145,7 @@ func TestGetPullRequests(t *testing.T) {
 	defer testServer.Close()
 
 	client.baseURL = testServer.URL
-	prs, err = client.GetPullRequests("workspace", "repo")
+	prs, err = client.GetPullRequests("workspace", "repo", false)
 
 	assert.NoError(t, err)
 	assert.NotEmpty(t, prs)
@@ -159,7 +160,7 @@ func TestGetPullRequests(t *testing.T) {
 	defer testServer.Close()
 
 	client.baseURL = testServer.URL
-	prs, err = client.GetPullRequests("workspace", "repo")
+	prs, err = client.GetPullRequests("workspace", "repo", false)
 
 	assert.Error(t, err)
 	assert.Nil(t, prs)
@@ -286,4 +287,97 @@ func TestGetRepository(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, repo)
+}
+
+func TestGetPullRequestsWithStateFilter(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	// Test with openPRsOnly = true
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check if this is a request for pull requests (not for commit SHA)
+		if strings.Contains(r.URL.String(), "/pullrequests") {
+			// Verify the endpoint contains state=OPEN
+			if !strings.Contains(r.URL.String(), "state=OPEN") {
+				t.Errorf("Expected URL to contain state=OPEN when openPRsOnly is true, but got: %s", r.URL.String())
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{
+                "values": [
+                    {
+                        "id": 1, 
+                        "title": "Open PR", 
+                        "state": "OPEN",
+                        "author": {"uuid": "{test-uuid}"},
+                        "source": {"branch": {"name": "feature"}, "commit": {"hash": "1234567890123456789012345678901234567890"}},
+                        "destination": {"branch": {"name": "main"}, "commit": {"hash": "0987654321098765432109876543210987654321"}}
+                    }
+                ], 
+                "next": null
+            }`))
+		} else {
+			// For any other requests like commit SHA lookups, return success
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{"hash": "1234567890123456789012345678901234567890"}`))
+		}
+	}))
+	defer testServer.Close()
+
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		commitSHACache: make(map[string]string),
+	}
+
+	prs, err := client.GetPullRequests("workspace", "repo", true)
+	assert.NoError(t, err)
+	assert.Len(t, prs, 1)
+	assert.Equal(t, "Open PR", prs[0].Title)
+
+	// Test with openPRsOnly = false
+	testServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check if this is a request for pull requests (not for commit SHA)
+		if strings.Contains(r.URL.String(), "/pullrequests") {
+			// Verify the endpoint contains state=ALL
+			if !strings.Contains(r.URL.String(), "state=ALL") {
+				t.Errorf("Expected URL to contain state=ALL when openPRsOnly is false, but got: %s", r.URL.String())
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{
+                "values": [
+                    {
+                        "id": 1, 
+                        "title": "Any PR", 
+                        "state": "OPEN",
+                        "author": {"uuid": "{test-uuid}"},
+                        "source": {"branch": {"name": "feature"}, "commit": {"hash": "1234567890123456789012345678901234567890"}},
+                        "destination": {"branch": {"name": "main"}, "commit": {"hash": "0987654321098765432109876543210987654321"}}
+                    }, 
+                    {
+                        "id": 2, 
+                        "title": "Closed PR", 
+                        "state": "DECLINED",
+                        "author": {"uuid": "{test-uuid}"},
+                        "source": {"branch": {"name": "bugfix"}, "commit": {"hash": "abcdef1234567890abcdef1234567890abcdef12"}},
+                        "destination": {"branch": {"name": "main"}, "commit": {"hash": "fedcba0987654321fedcba0987654321fedcba09"}}
+                    }
+                ], 
+                "next": null
+            }`))
+		} else {
+			// For any other requests like commit SHA lookups, return success
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{"hash": "1234567890123456789012345678901234567890"}`))
+		}
+	}))
+	defer testServer.Close()
+
+	client.baseURL = testServer.URL
+	prs, err = client.GetPullRequests("workspace", "repo", false)
+	assert.NoError(t, err)
+	assert.Len(t, prs, 2)
 }

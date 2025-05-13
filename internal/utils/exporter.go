@@ -16,16 +16,18 @@ import (
 )
 
 type Exporter struct {
-	client    *Client
-	outputDir string
-	logger    *zap.Logger
+	client      *Client
+	outputDir   string
+	logger      *zap.Logger
+	openPRsOnly bool
 }
 
-func NewExporter(client *Client, outputDir string, logger *zap.Logger) *Exporter {
+func NewExporter(client *Client, outputDir string, logger *zap.Logger, openPRsOnly bool) *Exporter {
 	return &Exporter{
-		client:    client,
-		outputDir: outputDir,
-		logger:    logger,
+		client:      client,
+		outputDir:   outputDir,
+		logger:      logger,
+		openPRsOnly: openPRsOnly,
 	}
 }
 
@@ -98,7 +100,7 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 		return err
 	}
 
-	prs, err := e.client.GetPullRequests(workspace, repoSlug)
+	prs, err := e.client.GetPullRequests(workspace, repoSlug, e.openPRsOnly)
 	if err != nil {
 		e.logger.Warn("Failed to fetch pull requests", zap.Error(err))
 		prs = []data.PullRequest{}

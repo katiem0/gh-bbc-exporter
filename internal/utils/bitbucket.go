@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -260,8 +261,11 @@ func (c *Client) GetUsers(workspace, repoSlug string) ([]data.User, error) {
 	return allUsers, nil
 }
 
-func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest, error) {
-	c.logger.Info("Fetching pull requests")
+func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool) ([]data.PullRequest, error) {
+	c.logger.Info("Fetching pull requests",
+		zap.String("workspace", workspace),
+		zap.String("repository", repoSlug),
+		zap.Bool("open_prs_only", openPRsOnly))
 
 	var pullRequests []data.PullRequest
 	page := 1
@@ -291,8 +295,28 @@ func (c *Client) GetPullRequests(workspace, repoSlug string) ([]data.PullRequest
 	}
 
 	for hasMore {
-		endpoint := fmt.Sprintf("repositories/%s/%s/pullrequests?page=%d&pagelen=%d&state=ALL",
-			workspace, repoSlug, page, pageLen)
+		baseURL, parseErr := url.Parse(fmt.Sprintf("repositories/%s/%s/pullrequests", workspace, repoSlug))
+		if parseErr != nil {
+			c.logger.Error("failed to parse base URL", zap.Error(parseErr))
+			return nil, parseErr
+		}
+
+		queryParams := url.Values{}
+		queryParams.Set("page", strconv.Itoa(page))
+		queryParams.Set("pagelen", strconv.Itoa(pageLen))
+
+		if openPRsOnly {
+			queryParams.Set("state", "OPEN")
+		} else {
+			queryParams.Set("state", "ALL")
+		}
+
+		baseURL.RawQuery = queryParams.Encode()
+		endpoint := baseURL.String()
+
+		c.logger.Debug("Fetching pull requests with endpoint",
+			zap.String("endpoint", endpoint),
+			zap.Bool("open_prs_only", openPRsOnly))
 
 		var response data.BitbucketPRResponse
 		var err error
