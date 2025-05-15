@@ -438,9 +438,10 @@ func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, worksp
 	return []data.Repository{
 		{
 			Type:             "repository",
-			URL:              formatURL("repository", workspace, repo.Name),
+			URL:              formatURL("repository", workspace, repo.Slug),
 			Owner:            formatURL("user", workspace, ""),
 			Name:             repo.Name,
+			Slug:             repo.Slug,
 			Description:      repo.Description,
 			Private:          repo.IsPrivate,
 			HasIssues:        true,
@@ -450,7 +451,7 @@ func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, worksp
 			Webhooks:         []interface{}{},
 			Collaborators:    []interface{}{},
 			CreatedAt:        createdAt,
-			GitURL:           formatURL("git", workspace, repo.Name),
+			GitURL:           formatURL("git", workspace, repo.Slug),
 			DefaultBranch:    "main",
 			PublicKeys:       []interface{}{},
 			Page:             nil,

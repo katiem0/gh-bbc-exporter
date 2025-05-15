@@ -14,6 +14,7 @@ type CmdFlags struct {
 
 type BitbucketRepository struct {
 	Name        string `json:"name"`
+	Slug        string `json:"slug"`
 	UUID        string `json:"uuid"`
 	FullName    string `json:"full_name"`
 	Owner       Owner  `json:"owner"`
