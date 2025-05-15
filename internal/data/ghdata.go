@@ -86,6 +86,7 @@ type Repository struct {
 	URL                    string                 `json:"url"`
 	Owner                  string                 `json:"owner"`
 	Name                   string                 `json:"name"`
+	Slug                   string                 `json:"slug"`
 	Description            string                 `json:"description"`
 	Private                bool                   `json:"private"`
 	HasIssues              bool                   `json:"has_issues"`
