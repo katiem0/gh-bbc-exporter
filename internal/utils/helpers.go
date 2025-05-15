@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -234,24 +233,4 @@ func PrintSuccessMessage(outputPath string) {
 	} else {
 		fmt.Printf("\nExport successful!\nOutput directory: %s\n", outputPath)
 	}
-}
-
-// SanitizeRepositoryName converts a Bitbucket repository name to a GitHub-compatible format
-// by replacing spaces and non-alphanumeric characters with hyphens
-func SanitizeRepositoryName(name string) string {
-	// Replace spaces with hyphens
-	name = strings.ReplaceAll(name, " ", "-")
-
-	// Replace other non-alphanumeric characters (except hyphens and underscores) with hyphens
-	reg := regexp.MustCompile(`[^a-zA-Z0-9\-_]`)
-	name = reg.ReplaceAllString(name, "-")
-
-	// Collapse multiple consecutive hyphens into a single one
-	reg = regexp.MustCompile(`-+`)
-	name = reg.ReplaceAllString(name, "-")
-
-	// Trim hyphens from start and end
-	name = strings.Trim(name, "-")
-
-	return name
 }

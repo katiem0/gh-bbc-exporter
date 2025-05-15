@@ -32,7 +32,6 @@ func NewExporter(client *Client, outputDir string, logger *zap.Logger, openPRsOn
 }
 
 func (e *Exporter) Export(workspace, repoSlug string) error {
-
 	if e.outputDir == "" {
 		timestamp := time.Now().Format("20060102-150405")
 		e.outputDir = fmt.Sprintf("./bitbucket-export-%s", timestamp)
