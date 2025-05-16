@@ -198,7 +198,7 @@ another specified archive name.
 ### Upload Archive to GitHub-Owned Storage
 
 Following documentation provided as part of the private preview for
-[(GEI) can migrate repositories with GitHub owned blob storage][private-stprage].
+[(GEI) can migrate repositories with GitHub owned blob storage][private-storage].
 
 There are two ways to upload your archives: single POST requests for archives up to 5 GiB,
 and via a multipart upload flow for archives between 5 MiB and 30 GiB. Depending on the
@@ -333,7 +333,7 @@ Authorization: Bearer ghp_12345
 
 > [!Note]
 > Example of a Ruby script that will perform the above flow using Faraday and
-> Addressable can be found posted [here][private-stprage].
+> Addressable can be found posted [here][private-storage].
 
 ### Start a Repository Migration
 
@@ -473,7 +473,7 @@ to get your operations up and running. Additional post-migration steps that shou
 
 [aws-credentials]: https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/migrating-repositories-from-github-enterprise-server-to-github-enterprise-cloud?tool=cli#configuring-aws-s3-credentials-in-the-github-cli
 [azure-string]: https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/migrating-repositories-from-github-enterprise-server-to-github-enterprise-cloud?tool=cli#configuring-azure-blob-storage-account-credentials-in-the-github-cli
-[private-stprage]: https://github.com/orgs/community/discussions/144948
+[private-storage]: https://github.com/orgs/community/discussions/144948
 [recs-and-prereqs]: https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/migrating-repositories-from-github-enterprise-server-to-github-enterprise-cloud?tool=api#prerequisites
 [migrate-roles]: https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/managing-access-for-a-migration-from-bitbucket-server#required-roles-for-github
 [PAT-scopes]: https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/managing-access-for-a-migration-from-bitbucket-server#required-scopes-for-personal-access-tokens
