@@ -1,41 +1,98 @@
 # Importing Bitbucket Cloud Archive to GitHub Enterprise Cloud
 
-This import process relies on the use of
-[GitHub Enterprise Importer with GitHub owned blob storage](https://github.blog/changelog/2024-11-21-migrate-repositories-with-github-enterprise-importer-using-github-owned-blob-storage-private-preview/),
-as outlined in this [discussion post](https://github.com/orgs/community/discussions/144948).
+This import process can utilize multiple storage options:
+
+1. Azure Storage Blobs
+2. AWS S3 Buckets
+3. [GitHub-owned storage (private preview)](https://github.blog/changelog/2024-11-21-migrate-repositories-with-github-enterprise-importer-using-github-owned-blob-storage-private-preview/)
+
+Each option provides a pathway for migrating Bitbucket Cloud repositories to
+GitHub Enterprise Cloud using the GitHub Enterprise Importer (GEI).
 
 > [!Note]
-> This functionality is not supported by the main migration pathway, and is subject to change.
+> The GitHub-owned storage functionality is in private preview and subject to change.
 
 ## Limitations
 
 1. Migrations using GitHub-owned blob storage with GEI are gated by a feature
-   flag during private preview. If you’re interested in participating in this
+   flag during private preview. If you're interested in participating in this
    private preview, please reach out to your GitHub account manager or contact
    our sales team to have this feature enabled for your enterprise.
 2. This feature is not available for migration to GitHub Enterprise Cloud with
    data residency at this time.
+3. Archives larger than 30 GiB are not supported by GitHub-owned storage.
+4. For usage of Azure Storage or AWS S3 with APIs directly, you must generate
+   URLs for the archives that are accessible by GitHub through a short-lived URL.
 
-## Using GitHub-owned storage via individual API calls
+## Migrating with the GitHub CLI
 
-The import process follows the same process documented in
-[Migrating repositories from GitHub Enterprise Server to GitHub Enterprise Cloud](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/migrating-repositories-from-github-enterprise-server-to-github-enterprise-cloud?tool=api).
+GitHub Enterprise Importer provides CLI commands that simplify the migration
+process. This option works with both GitHub-owned storage and external storage providers.
+
+### Using Azure Storage Blobs
+
+For Azure Storage, you'll need to configure your [connection string][azure-string]
+and then run:
+
+```sh
+gh gei migrate-repo \
+  --github-source-org SOURCE_ORG \
+  --source-repo SOURCE_REPO \
+  --github-target-org TARGET_ORG \
+  --target-repo TARGET_REPO \
+  --azure-storage-connection-string "YOUR_CONNECTION_STRING" \
+  --git-archive-path AZURE_PATH.tar.gz \
+  --metadata-archive-path AZURE_PATH.tar.gz
+```
+
+### Using AWS S3 Buckets
+
+For AWS S3, you'll need to provide your
+[AWS credentials][aws-credentials] and then run:
+
+```sh
+gh gei migrate-repo \
+  --github-source-org SOURCE_ORG \
+  --source-repo SOURCE_REPO \
+  --github-target-org TARGET_ORG \
+  --target-repo TARGET_REPO \
+  --aws-bucket-name YOUR_BUCKET_NAME \
+  --git-archive-path S3_PATH.tar.gz \
+  --metadata-archive-path S3_PATH.tar.gz
+```
+
+### Using GitHub-owned storage
+
+If you have access to the
+[private preview of GitHub-owned storage][private-storage], use this command:
+
+```sh
+gh gei migrate-repo \
+  --github-source-org SOURCE_ORG \
+  --source-repo SOURCE_REPO \
+  --github-target-org TARGET_ORG \
+  --target-repo TARGET_REPO \
+  --git-archive-path PATH_TO_ARCHIVE.tar.gz \
+  --metadata-archive-path PATH_TO_ARCHIVE.tar.gz \
+  --use-github-storage
+```
+
+## Migrating with Individual API Calls
 
 ### Prerequisites
 
 As noted in our public documentation, the same
-[recommendations and prerequisites](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/migrating-repositories-from-github-enterprise-server-to-github-enterprise-cloud?tool=api#prerequisites)
+[recommendations and prerequisites][recs-and-prereqs]
 are needed for performing this migration.
 
-#### GitHub Enterprise Cloud Access
+### GitHub Enterprise Cloud Access
 
 As with other imports to GitHub, the ability to utilize
-[migrator or organization owner roles](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/managing-access-for-a-migration-from-bitbucket-server#required-roles-for-github)
-still exists.
+[migrator or organization owner roles] [migrate-roles] still exists.
 
 Personal Access tokens will require different scopes based on the role. More
 information can be found in
-[Required scopes for personal access tokens](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/managing-access-for-a-migration-from-bitbucket-server#required-scopes-for-personal-access-tokens).
+[Required scopes for personal access tokens][PAT-scopes].
 
 ### Get Owner ID for Destination Organization
 
@@ -44,7 +101,7 @@ return the `ownerId`, also called the organization ID, for the organization you
 want to own the migrated repositories. You'll need the `ownerId` to identify your
 migration destination.
 
-### `GetOrgInfo` query
+#### `GetOrgInfo` query
 
 ```graphql
 query(
@@ -64,7 +121,7 @@ query(
 |:---------------|:-----------|
 |`login` | Your organization name. |
 
-### `GetOrgInfo` response
+#### `GetOrgInfo` response
 
 ```json
 {
@@ -87,7 +144,7 @@ which we'll use in the next step.
 You can set up a migration source using the`createMigrationSource` query. You'll need to supply
 the `ownerId`, or organization ID, gathered from the `GetOrgInfo` query.
 
-### `createMigrationSource` mutation
+#### `createMigrationSource` mutation
 
 ```graphql
 mutation createMigrationSource($name: String!, $url: String!, $ownerId: ID!) {
@@ -113,7 +170,7 @@ mutation createMigrationSource($name: String!, $url: String!, $ownerId: ID!) {
 | `url` | The URL for Bitbucket Cloud: `https://bitbucket.org` should be used. |
 <!-- markdownlint-enable MD013 -->
 
-### `createMigrationSource` response
+#### `createMigrationSource` response
 
 ```json
 {
@@ -141,7 +198,7 @@ another specified archive name.
 ### Upload Archive to GitHub-Owned Storage
 
 Following documentation provided as part of the private preview for
-[(GEI) can migrate repositories with GitHub owned blob storage](https://github.com/orgs/community/discussions/144948).
+[(GEI) can migrate repositories with GitHub owned blob storage][private-storage].
 
 There are two ways to upload your archives: single POST requests for archives up to 5 GiB,
 and via a multipart upload flow for archives between 5 MiB and 30 GiB. Depending on the
@@ -276,7 +333,7 @@ Authorization: Bearer ghp_12345
 
 > [!Note]
 > Example of a Ruby script that will perform the above flow using Faraday and
-> Addressable can be found posted [here](https://github.com/orgs/community/discussions/144948).
+> Addressable can be found posted [here][private-storage].
 
 ### Start a Repository Migration
 
@@ -287,7 +344,7 @@ If you want to move multiple repositories at once from the same source
 organization,you can queue multiple migrations. You can run up to 5 repository
 migrations at the same time.
 
-### `startRepositoryMigration` mutation
+#### `startRepositoryMigration` mutation
 
 ```graphql
 mutation startRepositoryMigration (
@@ -328,8 +385,8 @@ mutation startRepositoryMigration (
 ```
 
 >[!Note]
-> All GraphQL queries and mutations require the private preview access
-> GitHub-owned blob storage header added:
+> If using GH-Owned storage, all GraphQL queries and mutations require
+> the private preview access GitHub-owned blob storage header added:
 >
 > ```graphql
 > GraphQL-Features:"octoshift_github_owned_storage"
@@ -360,7 +417,7 @@ The `getMigration` query will return with a status to let you know if the migrat
 `in progress`, `failed`, or `completed`. If your migration failed, the Importer will provide a reason
 for the failure.
 
-### `getMigration` query
+#### `getMigration` query
 
 ```graphql
 query (
@@ -381,7 +438,8 @@ query (
 ```
 
 >[!Note]
-> All GraphQL queries and mutations require the private preview access header added:
+> If using GH-Owned storage, all GraphQL queries and mutations require the
+> private preview access header added:
 >
 > ```graphql
 > GraphQL-Features: "octoshift_github_owned_storage"
@@ -391,7 +449,7 @@ query (
 |:---------------|:------------|
 | `id` | The `id` that the `startRepositoryMigration` mutation returned. |
 
-Here are the possible values for [**`MigrationState`**](https://docs.github.com/en/enterprise-cloud@latest/graphql/reference/enums#migrationstate)
+Here are the possible values for [**`MigrationState`**][migration-state]
 
 | Enumeration              | Description                                            |
 |:-------------------------|:-------------------------------------------------------|
@@ -408,5 +466,17 @@ Here are the possible values for [**`MigrationState`**](https://docs.github.com/
 Ensure the migrated resources are correctly setup and configure your workflows and CI/CD environments
 to get your operations up and running. Additional post-migration steps that should be completed:
 
-- [Accessing your migration logs](https://docs.github.com/en/migrations/using-github-enterprise-importer/completing-your-migration-with-github-enterprise-importer/accessing-your-migration-logs-for-github-enterprise-importer)
-- [Reclaiming mannequins](https://docs.github.com/en/migrations/using-github-enterprise-importer/completing-your-migration-with-github-enterprise-importer/reclaiming-mannequins-for-github-enterprise-importer)
+- [Accessing your migration logs][migration-logs]
+- [Reclaiming mannequins][reclaim-mannequin]
+
+<!-- link reference section -->
+
+[aws-credentials]: https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/migrating-repositories-from-github-enterprise-server-to-github-enterprise-cloud?tool=cli#configuring-aws-s3-credentials-in-the-github-cli
+[azure-string]: https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/migrating-repositories-from-github-enterprise-server-to-github-enterprise-cloud?tool=cli#configuring-azure-blob-storage-account-credentials-in-the-github-cli
+[private-storage]: https://github.com/orgs/community/discussions/144948
+[recs-and-prereqs]: https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/migrating-repositories-from-github-enterprise-server-to-github-enterprise-cloud?tool=api#prerequisites
+[migrate-roles]: https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/managing-access-for-a-migration-from-bitbucket-server#required-roles-for-github
+[PAT-scopes]: https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/managing-access-for-a-migration-from-bitbucket-server#required-scopes-for-personal-access-tokens
+[migration-state]: https://docs.github.com/en/enterprise-cloud@latest/graphql/reference/enums#migrationstate
+[migration-logs]: https://docs.github.com/en/migrations/using-github-enterprise-importer/completing-your-migration-with-github-enterprise-importer/accessing-your-migration-logs-for-github-enterprise-importer
+[reclaim-mannequin]: https://docs.github.com/en/migrations/using-github-enterprise-importer/completing-your-migration-with-github-enterprise-importer/reclaiming-mannequins-for-github-enterprise-importer

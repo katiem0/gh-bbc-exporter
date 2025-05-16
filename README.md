@@ -12,7 +12,7 @@ repositories into a format compatible with GitHub Enterprise migrations.
 ## Overview
 
 This extension helps you migrate repositories from Bitbucket Cloud to GitHub Enterprise Cloud
-by creating an export archive that matches the format expected by GHE migration tools.
+by creating an export archive that matches the format expected by GitHub Enterprise Importer (GEI).
 
 The exporter creates a complete migration archive containing:
 
@@ -101,6 +101,18 @@ Flags:
   -w, --workspace string      Bitbucket workspace
 ```
 
+Example Command
+
+```sh
+gh bbc-exporter -w your-workspace -r your-repo -t your-bitbucket-token
+```
+
+Or with basic authentication:
+
+```sh
+gh bbc-exporter -w your-workspace -r your-repo -u your-username -p your-app-password
+```
+
 For migrations from BitBucket Data Center or Server, please see [GitHub's Official Documentation](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/about-migrations-from-bitbucket-server-to-github-enterprise-cloud).
 
 ### Export Format
@@ -140,6 +152,8 @@ using GitHub owned storage and GEI. Detailed documentation can be found in
 - Issues are not exported (Bitbucket issues have a different structure from GitHub issues)
 - Repository and Pull request labels have not been implemented
 - User information is limited to what's available from Bitbucket API
+- Archives larger than 30 GiB are not supported by GitHub-owned storage
+- GitHub Enterprise Cloud with data residency is not supported
 
 ## Troubleshooting
 
@@ -153,6 +167,9 @@ using GitHub owned storage and GEI. Detailed documentation can be found in
 3. **Empty Repository Export**
    If the repository can't be cloned, the exporter creates an empty repository structure.
    Check that the repository exists and is accessible.
+4. **Migration Fails in GitHub Enterprise Importer**
+   Check the error logging repository that's created during migration for detailed
+   information about any failures.
 
 ## Development
 
