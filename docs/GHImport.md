@@ -24,7 +24,6 @@ GitHub Enterprise Cloud using the GitHub Enterprise Importer (GEI).
 4. For usage of Azure Storage or AWS S3 with APIs directly, you must generate
    URLs for the archives that are accessible by GitHub through a short-lived URL.
 
-
 ## Migrating with the GitHub CLI
 
 GitHub Enterprise Importer provides CLI commands that simplify the migration
@@ -49,7 +48,7 @@ gh gei migrate-repo \
 ### Using AWS S3 Buckets
 
 For AWS S3, you'll need to provide your
-[AWS credentials](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/migrating-repositories-from-github-enterprise-server-to-github-enterprise-cloud?tool=cli#configuring-aws-s3-credentials-in-the-github-cli) and then run:
+[AWS credentials](aws-credentials) and then run:
 
 ```sh
 gh gei migrate-repo \
@@ -470,3 +469,5 @@ to get your operations up and running. Additional post-migration steps that shou
 
 - [Accessing your migration logs](https://docs.github.com/en/migrations/using-github-enterprise-importer/completing-your-migration-with-github-enterprise-importer/accessing-your-migration-logs-for-github-enterprise-importer)
 - [Reclaiming mannequins](https://docs.github.com/en/migrations/using-github-enterprise-importer/completing-your-migration-with-github-enterprise-importer/reclaiming-mannequins-for-github-enterprise-importer)
+
+[aws-credentials]: https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/migrating-repositories-from-github-enterprise-server-to-github-enterprise-cloud?tool=cli#configuring-aws-s3-credentials-in-the-github-cli
