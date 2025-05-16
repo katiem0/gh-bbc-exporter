@@ -168,7 +168,8 @@ using GitHub owned storage and GEI. Detailed documentation can be found in
    If the repository can't be cloned, the exporter creates an empty repository structure.
    Check that the repository exists and is accessible.
 4. **Migration Fails in GitHub Enterprise Importer**
-   Check the error logging repository that's created during migration for detailed information about any failures.
+   Check the error logging repository that's created during migration for detailed
+   information about any failures.
 
 ## Development
 

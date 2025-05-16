@@ -6,7 +6,7 @@ This import process can utilize multiple storage options:
 2. AWS S3 Buckets
 3. [GitHub-owned storage (private preview)](https://github.blog/changelog/2024-11-21-migrate-repositories-with-github-enterprise-importer-using-github-owned-blob-storage-private-preview/)
 
-Each option provides a pathway for migrating Bitbucket Cloud repositories to 
+Each option provides a pathway for migrating Bitbucket Cloud repositories to
 GitHub Enterprise Cloud using the GitHub Enterprise Importer (GEI).
 
 > [!Note]
@@ -24,14 +24,13 @@ GitHub Enterprise Cloud using the GitHub Enterprise Importer (GEI).
 4. For usage of Azure Storage or AWS S3 with APIs directly, you must generate
    URLs for the archives that are accessible by GitHub through a short-lived URL.
 
-## Migration Options
 
-### Option 1: Using the GitHub CLI
+## Migrating with the GitHub CLI
 
-GitHub Enterprise Importer provides CLI commands that simplify the migration 
+GitHub Enterprise Importer provides CLI commands that simplify the migration
 process. This option works with both GitHub-owned storage and external storage providers.
 
-#### Using Azure Storage Blobs
+### Using Azure Storage Blobs
 
 For Azure Storage, you'll need to configure your [connection string](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/migrating-repositories-from-github-enterprise-server-to-github-enterprise-cloud?tool=cli#configuring-azure-blob-storage-account-credentials-in-the-github-cli)
 and then run:
@@ -47,9 +46,10 @@ gh gei migrate-repo \
   --metadata-archive-path AZURE_PATH.tar.gz
 ```
 
-#### Using AWS S3 Buckets
+### Using AWS S3 Buckets
 
-For AWS S3, you'll need to provide your [AWS credentials](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/migrating-repositories-from-github-enterprise-server-to-github-enterprise-cloud?tool=cli#configuring-aws-s3-credentials-in-the-github-cli) and then run:
+For AWS S3, you'll need to provide your
+[AWS credentials](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/migrating-repositories-from-github-enterprise-server-to-github-enterprise-cloud?tool=cli#configuring-aws-s3-credentials-in-the-github-cli) and then run:
 
 ```sh
 gh gei migrate-repo \
@@ -62,9 +62,10 @@ gh gei migrate-repo \
   --metadata-archive-path S3_PATH.tar.gz
 ```
 
-#### Using GitHub-owned storage
+### Using GitHub-owned storage
 
-If you have access to the [private preview of GitHub-owned storage](https://github.com/orgs/community/discussions/144948), use this command:
+If you have access to the
+[private preview of GitHub-owned storage](https://github.com/orgs/community/discussions/144948), use this command:
 
 ```sh
 gh gei migrate-repo \
@@ -77,15 +78,15 @@ gh gei migrate-repo \
   --use-github-storage
 ```
 
-### Option 2: Using GitHub-owned storage via individual API calls
+## Migrating with Individual API Calls
 
-#### Prerequisites
+### Prerequisites
 
 As noted in our public documentation, the same
 [recommendations and prerequisites](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/migrating-repositories-from-github-enterprise-server-to-github-enterprise-cloud?tool=api#prerequisites)
 are needed for performing this migration.
 
-##### GitHub Enterprise Cloud Access
+### GitHub Enterprise Cloud Access
 
 As with other imports to GitHub, the ability to utilize
 [migrator or organization owner roles](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/managing-access-for-a-migration-from-bitbucket-server#required-roles-for-github)
@@ -95,7 +96,7 @@ Personal Access tokens will require different scopes based on the role. More
 information can be found in
 [Required scopes for personal access tokens](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/managing-access-for-a-migration-from-bitbucket-server#required-scopes-for-personal-access-tokens).
 
-#### Get Owner ID for Destination Organization
+### Get Owner ID for Destination Organization
 
 As an organization owner in GitHub Enterprise Cloud, use the `GetOrgInfo` query to
 return the `ownerId`, also called the organization ID, for the organization you
@@ -140,7 +141,7 @@ query(
 In this example, `MDEyOk9yZ2FuaXphdGlvbjU2MTA` is the organization ID or `ownerId`,
 which we'll use in the next step.
 
-#### Set Up Migration Source in GitHub Enterprise Cloud
+### Set Up Migration Source in GitHub Enterprise Cloud
 
 You can set up a migration source using the`createMigrationSource` query. You'll need to supply
 the `ownerId`, or organization ID, gathered from the `GetOrgInfo` query.
@@ -171,7 +172,7 @@ mutation createMigrationSource($name: String!, $url: String!, $ownerId: ID!) {
 | `url` | The URL for Bitbucket Cloud: `https://bitbucket.org` should be used. |
 <!-- markdownlint-enable MD013 -->
 
-### `createMigrationSource` response
+#### `createMigrationSource` response
 
 ```json
 {
@@ -191,12 +192,12 @@ mutation createMigrationSource($name: String!, $url: String!, $ownerId: ID!) {
 In this example, `MS_kgDaACRjZTY5NGQ1OC1mNDkyLTQ2NjgtOGE1NS00MGUxYTdlZmQwNWQ` is the migration
 source ID, which we'll use in a later step.
 
-#### Ensure Bitbucket Cloud Migration Archive exists
+### Ensure Bitbucket Cloud Migration Archive exists
 
 An archive should be accessible in the format `bitbucket-export-YYYYMMDD-HHMMSS.tar.gz` or
 another specified archive name.
 
-#### Upload Archive to GitHub-Owned Storage
+### Upload Archive to GitHub-Owned Storage
 
 Following documentation provided as part of the private preview for
 [(GEI) can migrate repositories with GitHub owned blob storage](https://github.com/orgs/community/discussions/144948).
@@ -207,7 +208,7 @@ migration, it may use one archive, or separate archives for Git data and reposit
 (i.e. pull requests, issues, etc.). In any case, perform the uploads as necessary, and keep
 track of the GEI URIs from your uploads to continue with a migration.
 
-##### Performing single uploads to GitHub-owned storage (step 7, <5 GiB)
+#### Performing single uploads to GitHub-owned storage (step 7, <5 GiB)
 
 To perform a single upload, simply submit a POST request with your archive as the POST data to:
 
@@ -267,7 +268,7 @@ The response body will include a JSON object, like so:
 The `"uri"` value contains the GEI URI! This URI represents the uploaded archive,
 and will be used to enqueue migrations in step 8!
 
-##### Performing multipart uploads to GitHub-owned storage (step 7, 5-30 GiB)
+#### Performing multipart uploads to GitHub-owned storage (step 7, 5-30 GiB)
 
 Multipart uploads are a little more involved, and follow a high-level flow like so:
 
@@ -336,7 +337,7 @@ Authorization: Bearer ghp_12345
 > Example of a Ruby script that will perform the above flow using Faraday and
 > Addressable can be found posted [here](https://github.com/orgs/community/discussions/144948).
 
-#### Start a Repository Migration
+### Start a Repository Migration
 
 When you start a migration, a single repository and its accompanying data
 migrates into a brand new GitHub repository that you identify.
@@ -386,7 +387,7 @@ mutation startRepositoryMigration (
 ```
 
 >[!Note]
-> If using GH-Owned storage, all GraphQL queries and mutations require 
+> If using GH-Owned storage, all GraphQL queries and mutations require
 > the private preview access GitHub-owned blob storage header added:
 >
 > ```graphql
@@ -418,7 +419,7 @@ The `getMigration` query will return with a status to let you know if the migrat
 `in progress`, `failed`, or `completed`. If your migration failed, the Importer will provide a reason
 for the failure.
 
-### `getMigration` query
+#### `getMigration` query
 
 ```graphql
 query (
@@ -439,7 +440,7 @@ query (
 ```
 
 >[!Note]
-> If using GH-Owned storage, all GraphQL queries and mutations require the 
+> If using GH-Owned storage, all GraphQL queries and mutations require the
 > private preview access header added:
 >
 > ```graphql
