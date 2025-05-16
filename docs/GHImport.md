@@ -64,7 +64,7 @@ gh gei migrate-repo \
 ### Using GitHub-owned storage
 
 If you have access to the
-[private preview of GitHub-owned storage](https://github.com/orgs/community/discussions/144948), use this command:
+[private preview of GitHub-owned storage][private-storage], use this command:
 
 ```sh
 gh gei migrate-repo \
@@ -82,18 +82,17 @@ gh gei migrate-repo \
 ### Prerequisites
 
 As noted in our public documentation, the same
-[recommendations and prerequisites](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/migrating-repositories-from-github-enterprise-server-to-github-enterprise-cloud?tool=api#prerequisites)
+[recommendations and prerequisites][recs-and-prereqs]
 are needed for performing this migration.
 
 ### GitHub Enterprise Cloud Access
 
 As with other imports to GitHub, the ability to utilize
-[migrator or organization owner roles](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/managing-access-for-a-migration-from-bitbucket-server#required-roles-for-github)
-still exists.
+[migrator or organization owner roles] [migrate-roles] still exists.
 
 Personal Access tokens will require different scopes based on the role. More
 information can be found in
-[Required scopes for personal access tokens](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/managing-access-for-a-migration-from-bitbucket-server#required-scopes-for-personal-access-tokens).
+[Required scopes for personal access tokens][PAT-scopes].
 
 ### Get Owner ID for Destination Organization
 
@@ -199,7 +198,7 @@ another specified archive name.
 ### Upload Archive to GitHub-Owned Storage
 
 Following documentation provided as part of the private preview for
-[(GEI) can migrate repositories with GitHub owned blob storage](https://github.com/orgs/community/discussions/144948).
+[(GEI) can migrate repositories with GitHub owned blob storage][private-stprage].
 
 There are two ways to upload your archives: single POST requests for archives up to 5 GiB,
 and via a multipart upload flow for archives between 5 MiB and 30 GiB. Depending on the
@@ -334,7 +333,7 @@ Authorization: Bearer ghp_12345
 
 > [!Note]
 > Example of a Ruby script that will perform the above flow using Faraday and
-> Addressable can be found posted [here](https://github.com/orgs/community/discussions/144948).
+> Addressable can be found posted [here][private-stprage].
 
 ### Start a Repository Migration
 
@@ -450,7 +449,7 @@ query (
 |:---------------|:------------|
 | `id` | The `id` that the `startRepositoryMigration` mutation returned. |
 
-Here are the possible values for [**`MigrationState`**](https://docs.github.com/en/enterprise-cloud@latest/graphql/reference/enums#migrationstate)
+Here are the possible values for [**`MigrationState`**][migration-state]
 
 | Enumeration              | Description                                            |
 |:-------------------------|:-------------------------------------------------------|
@@ -467,8 +466,17 @@ Here are the possible values for [**`MigrationState`**](https://docs.github.com/
 Ensure the migrated resources are correctly setup and configure your workflows and CI/CD environments
 to get your operations up and running. Additional post-migration steps that should be completed:
 
-- [Accessing your migration logs](https://docs.github.com/en/migrations/using-github-enterprise-importer/completing-your-migration-with-github-enterprise-importer/accessing-your-migration-logs-for-github-enterprise-importer)
-- [Reclaiming mannequins](https://docs.github.com/en/migrations/using-github-enterprise-importer/completing-your-migration-with-github-enterprise-importer/reclaiming-mannequins-for-github-enterprise-importer)
+- [Accessing your migration logs][migration-logs]
+- [Reclaiming mannequins][reclaim-mannequin]
+
+<!-- link reference section -->
 
 [aws-credentials]: https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/migrating-repositories-from-github-enterprise-server-to-github-enterprise-cloud?tool=cli#configuring-aws-s3-credentials-in-the-github-cli
 [azure-string]: https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/migrating-repositories-from-github-enterprise-server-to-github-enterprise-cloud?tool=cli#configuring-azure-blob-storage-account-credentials-in-the-github-cli
+[private-stprage]: https://github.com/orgs/community/discussions/144948
+[recs-and-prereqs]: https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-between-github-products/migrating-repositories-from-github-enterprise-server-to-github-enterprise-cloud?tool=api#prerequisites
+[migrate-roles]: https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/managing-access-for-a-migration-from-bitbucket-server#required-roles-for-github
+[PAT-scopes]: https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/managing-access-for-a-migration-from-bitbucket-server#required-scopes-for-personal-access-tokens
+[migration-state]: https://docs.github.com/en/enterprise-cloud@latest/graphql/reference/enums#migrationstate
+[migration-logs]: https://docs.github.com/en/migrations/using-github-enterprise-importer/completing-your-migration-with-github-enterprise-importer/accessing-your-migration-logs-for-github-enterprise-importer
+[reclaim-mannequin]: https://docs.github.com/en/migrations/using-github-enterprise-importer/completing-your-migration-with-github-enterprise-importer/reclaiming-mannequins-for-github-enterprise-importer
