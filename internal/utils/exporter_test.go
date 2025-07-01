@@ -115,6 +115,22 @@ func TestCreateArchive(t *testing.T) {
 
 	_, err = os.Stat(archivePath)
 	assert.NoError(t, err)
+
+	archiveFile, err := os.Open(archivePath)
+	assert.NoError(t, err)
+	defer func() {
+		if err := archiveFile.Close(); err != nil {
+			t.Logf("Warning: Failed to close archive file: %v", err)
+		}
+	}()
+
+	gzipReader, err := gzip.NewReader(archiveFile)
+	assert.NoError(t, err)
+	defer func() {
+		if err := gzipReader.Close(); err != nil {
+			t.Logf("Warning: Failed to close gzip reader: %v", err)
+		}
+	}()
 }
 
 func TestExport(t *testing.T) {
@@ -186,11 +202,19 @@ func TestArchiveCompatibility(t *testing.T) {
 	// Now validate the archive
 	file, err := os.Open(archivePath)
 	assert.NoError(t, err)
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			t.Logf("Warning: Failed to close file: %v", err)
+		}
+	}()
 
 	gzipReader, err := gzip.NewReader(file)
 	assert.NoError(t, err)
-	defer gzipReader.Close()
+	defer func() {
+		if err := gzipReader.Close(); err != nil {
+			t.Logf("Warning: Failed to close gzip reader: %v", err)
+		}
+	}()
 
 	tarReader := tar.NewReader(gzipReader)
 

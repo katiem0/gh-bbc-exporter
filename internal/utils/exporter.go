@@ -677,13 +677,8 @@ func (e *Exporter) addFileToArchive(tarWriter *tar.Writer, path, relPath string,
 	header.Gname = ""
 
 	// Reset timestamps to a format compatible with USTAR
-	// USTAR uses Unix time format which only works reliably from 1970 to 2038
-	// Use a fixed timestamp to avoid encoding issues
 	modTime := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
 	header.ModTime = modTime
-
-	// Go 1.15+ includes additional time fields which cause problems with USTAR format
-	// These need to be zero values in the header
 	header.AccessTime = time.Time{}
 	header.ChangeTime = time.Time{}
 
@@ -702,7 +697,6 @@ func (e *Exporter) addFileToArchive(tarWriter *tar.Writer, path, relPath string,
 				zap.String("path", header.Name))
 		}
 	} else if len(header.Name) > 100 {
-		// For non-git files, just use the base name as before
 		baseName := filepath.Base(header.Name)
 		if len(baseName) > 100 {
 			baseName = baseName[:97] + "..."
