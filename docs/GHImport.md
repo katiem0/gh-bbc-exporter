@@ -333,7 +333,7 @@ Authorization: Bearer ghp_12345
 
 > [!Note]
 > Example of a Ruby script that will perform the above flow using Faraday and
-> Addressable can be found posted [here][private-storage].
+> Addressable can be found posted [in the GitHub-owned storage documentation][private-storage].
 
 ### Start a Repository Migration
 
