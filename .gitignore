@@ -3,3 +3,6 @@
 bitbucket-*
 output/
 .DS_Store
+
+*.log
+*.tmp
