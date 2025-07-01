@@ -29,6 +29,13 @@ GitHub Enterprise Cloud using the GitHub Enterprise Importer (GEI).
 GitHub Enterprise Importer provides CLI commands that simplify the migration
 process. This option works with both GitHub-owned storage and external storage providers.
 
+For all options, the following variable values should be used:
+
+| Variable | Value |
+|:---------|:------|
+| `github-source-org` | Bitbucket Workspace name |
+| `source-repo` | Bitbucket Repository name |
+
 ### Using Azure Storage Blobs
 
 For Azure Storage, you'll need to configure your [connection string][azure-string]
