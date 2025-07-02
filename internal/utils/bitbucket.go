@@ -414,7 +414,7 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool) (
 				Reactions:            []string{},
 				ReviewRequests:       []string{},
 				CloseIssueReferences: []string{},
-				WorkInProgress:       false,
+				WorkInProgress:       pr.Draft,
 				MergeCommitSha:       mergeCommitSha,
 			}
 
@@ -506,7 +506,7 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 		hasMore := true
 
 		for hasMore {
-			endpoint := fmt.Sprintf("repositories/%s/%s/pullrequests/%d/comments?page=%d&pagelen=%d",
+			endpoint := fmt.Sprintf("repositories/%s/%s/pullrequests/%d/comments?q=deleted=false&page=%d&pagelen=%d",
 				workspace, repoSlug, prID, page, pageLen)
 
 			var response data.BitbucketCommentResponse

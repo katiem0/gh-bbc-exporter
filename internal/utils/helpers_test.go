@@ -1,12 +1,16 @@
 package utils
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 )
 
 func TestValidateExportFlags(t *testing.T) {
@@ -206,4 +210,113 @@ func TestPrintSuccessMessage(t *testing.T) {
 	assert.NotPanics(t, func() {
 		PrintSuccessMessage("/path/to/output")
 	})
+}
+
+func TestPaginationHandling(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	// Create a test server that returns paginated results
+	firstPage := true
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.String(), "/pullrequests") {
+			w.WriteHeader(http.StatusOK)
+			if firstPage {
+				// First page with next link
+				writeResponse(t, w, []byte(`{
+                    "values": [
+                        {
+                            "id": 1, 
+                            "title": "First Page PR", 
+                            "state": "OPEN",
+                            "author": {"uuid": "{test-uuid}"},
+                            "source": {"branch": {"name": "feature"}, "commit": {"hash": "1234567890123456789012345678901234567890"}},
+                            "destination": {"branch": {"name": "main"}, "commit": {"hash": "0987654321098765432109876543210987654321"}}
+                        }
+                    ], 
+                    "next": "https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests?page=2"
+                }`))
+				firstPage = false
+			} else {
+				// Second page with no next link
+				writeResponse(t, w, []byte(`{
+                    "values": [
+                        {
+                            "id": 2, 
+                            "title": "Second Page PR", 
+                            "state": "OPEN",
+                            "author": {"uuid": "{test-uuid}"},
+                            "source": {"branch": {"name": "feature2"}, "commit": {"hash": "abcdef1234567890abcdef1234567890abcdef12"}},
+                            "destination": {"branch": {"name": "main"}, "commit": {"hash": "fedcba0987654321fedcba0987654321fedcba09"}}
+                        }
+                    ], 
+                    "next": null
+                }`))
+			}
+		} else {
+			// For commit SHA lookups
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{"hash": "1234567890123456789012345678901234567890"}`))
+		}
+	}))
+	defer testServer.Close()
+
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		commitSHACache: make(map[string]string),
+	}
+
+	prs, err := client.GetPullRequests("workspace", "repo", false)
+
+	assert.NoError(t, err)
+	assert.Len(t, prs, 2, "Expected PRs from both pages")
+	assert.Equal(t, "First Page PR", prs[0].Title)
+	assert.Equal(t, "Second Page PR", prs[1].Title)
+}
+
+func TestExtractPRNumber(t *testing.T) {
+	testCases := []struct {
+		name     string
+		prURL    string
+		expected string
+	}{
+		{
+			name:     "Standard PR URL",
+			prURL:    "https://bitbucket.org/workspace/repo/pull/123",
+			expected: "123",
+		},
+		{
+			name:     "PR URL with additional path segments",
+			prURL:    "https://bitbucket.org/workspace/repo/pull/456/overview",
+			expected: "456",
+		},
+		{
+			name:     "PR URL with query parameters",
+			prURL:    "https://bitbucket.org/workspace/repo/pull/789?param=value",
+			expected: "789",
+		},
+		{
+			name:     "Invalid URL format",
+			prURL:    "https://bitbucket.org/workspace/repo/not-a-pull/123",
+			expected: "",
+		},
+		{
+			name:     "Empty URL",
+			prURL:    "",
+			expected: "",
+		},
+		{
+			name:     "PR URL with multiple segments and query",
+			prURL:    "https://bitbucket.org/workspace/repo/pull/101/commits/abc123?at=branch",
+			expected: "101",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := extractPRNumber(tc.prURL)
+			assert.Equal(t, tc.expected, result, "For URL %s, expected PR number %s but got %s", tc.prURL, tc.expected, result)
+		})
+	}
 }

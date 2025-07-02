@@ -237,3 +237,38 @@ func TestArchiveCompatibility(t *testing.T) {
 		}
 	}
 }
+
+func TestCreateArchiveErrors(t *testing.T) {
+	// Test with a non-writable directory
+	logger, _ := zap.NewDevelopment()
+	client := &Client{}
+
+	// Create temp dir for testing
+	tempDir, err := os.MkdirTemp("", "exporter-test-")
+	assert.NoError(t, err)
+
+	// Make it non-writable after we're done with setup
+	defer func() {
+		// Restore permissions before removal
+		os.Chmod(tempDir, 0755)
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+	}()
+
+	exporter := NewExporter(client, tempDir, logger, false)
+
+	// Create a test file
+	dummyFilePath := filepath.Join(exporter.outputDir, "dummy.txt")
+	err = os.WriteFile(dummyFilePath, []byte("test data"), 0644)
+	assert.NoError(t, err)
+
+	// Make the directory non-writable
+	err = os.Chmod(tempDir, 0400)
+	assert.NoError(t, err)
+
+	// Now try to create an archive - should fail
+	archivePath, err := exporter.CreateArchive()
+	assert.Error(t, err)
+	assert.Empty(t, archivePath)
+}
