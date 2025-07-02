@@ -48,6 +48,7 @@ type BitbucketPR struct {
 	State             string              `json:"state"`
 	CreatedOn         string              `json:"created_on"`
 	UpdatedOn         string              `json:"updated_on"`
+	Draft             bool                `json:"draft"`
 	CommentCount      int                 `json:"comment_count"`
 	CloseSourceBranch bool                `json:"close_source_branch"`
 	Source            BitbucketPREndpoint `json:"source"`
@@ -118,7 +119,12 @@ type BitbucketComment struct {
 	CreatedOn string          `json:"created_on"`
 	UpdatedOn string          `json:"updated_on"`
 	Inline    *Inline         `json:"inline"`
-	ParentID  int             `json:"parent,omitempty"`
+	Parent    *Parent         `json:"parent,omitempty"`
+}
+
+type Parent struct {
+	ID   int    `json:"id"`
+	Type string `json:"type"`
 }
 
 type Inline struct {

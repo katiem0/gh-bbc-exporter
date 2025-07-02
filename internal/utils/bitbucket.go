@@ -414,7 +414,7 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool) (
 				Reactions:            []string{},
 				ReviewRequests:       []string{},
 				CloseIssueReferences: []string{},
-				WorkInProgress:       false,
+				WorkInProgress:       pr.Draft,
 				MergeCommitSha:       mergeCommitSha,
 			}
 
@@ -506,8 +506,17 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 		hasMore := true
 
 		for hasMore {
-			endpoint := fmt.Sprintf("repositories/%s/%s/pullrequests/%d/comments?page=%d&pagelen=%d",
-				workspace, repoSlug, prID, page, pageLen)
+			baseEndpoint := fmt.Sprintf("repositories/%s/%s/pullrequests/%d/comments",
+				workspace, repoSlug, prID)
+
+			// Build query parameters properly
+			params := url.Values{}
+			params.Add("q", "deleted=false")
+			params.Add("page", strconv.Itoa(page))
+			params.Add("pagelen", strconv.Itoa(pageLen))
+
+			// Combine endpoint with encoded query parameters
+			endpoint := baseEndpoint + "?" + params.Encode()
 
 			var response data.BitbucketCommentResponse
 

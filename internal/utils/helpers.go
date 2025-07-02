@@ -107,9 +107,9 @@ func formatURL(urlType string, workspace, repoSlug string, id ...interface{}) st
 		}
 		return fmt.Sprintf("https://bitbucket.org/%s/%s/pulls", workspace, repoSlug)
 	case "issue_comment":
-		if len(id) > 0 {
+		if len(id) > 1 {
 			return fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%v#issuecomment-%v",
-				workspace, repoSlug, extractPRNumber(fmt.Sprintf("%v", id[0])), id[1])
+				workspace, repoSlug, id[0], id[1])
 		}
 		return fmt.Sprintf("https://bitbucket.org/%s/%s/pull/comments", workspace, repoSlug)
 	case "pr_review":
@@ -138,11 +138,28 @@ func formatURL(urlType string, workspace, repoSlug string, id ...interface{}) st
 }
 
 func extractPRNumber(prURL string) string {
-	parts := strings.Split(prURL, "/")
-	if len(parts) > 0 {
-		return parts[len(parts)-1]
+	// Extract the PR number from a Bitbucket PR URL
+	// Example: https://bitbucket.org/workspace/repo/pull/123
+
+	// First check if this is a PR URL
+	if !strings.Contains(prURL, "/pull/") {
+		return ""
 	}
-	return "1"
+
+	// Split the URL by "/" and find the part after "pull"
+	parts := strings.Split(prURL, "/")
+	for i := 0; i < len(parts)-1; i++ {
+		if parts[i] == "pull" {
+			// Get the next part which should be the PR number
+			prNumber := parts[i+1]
+			// Remove any query parameters
+			prNumber = strings.Split(prNumber, "?")[0]
+			// Remove any additional path segments
+			prNumber = strings.Split(prNumber, "/")[0]
+			return prNumber
+		}
+	}
+	return ""
 }
 
 func (e *Exporter) updateRepositoryField(repoSlug string, field string, value interface{}) {

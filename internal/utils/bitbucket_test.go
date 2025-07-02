@@ -3,6 +3,7 @@ package utils
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -380,4 +381,97 @@ func TestGetPullRequestsWithStateFilter(t *testing.T) {
 	prs, err = client.GetPullRequests("workspace", "repo", false)
 	assert.NoError(t, err)
 	assert.Len(t, prs, 2)
+}
+
+func TestDraftPRHandling(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	// Create a test server that returns a draft PR
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.String(), "/pullrequests") {
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{
+                "values": [
+                    {
+                        "id": 1, 
+                        "title": "Draft PR", 
+                        "state": "OPEN",
+                        "draft": true,
+                        "author": {"uuid": "{test-uuid}"},
+                        "source": {"branch": {"name": "feature"}, "commit": {"hash": "1234567890123456789012345678901234567890"}},
+                        "destination": {"branch": {"name": "main"}, "commit": {"hash": "0987654321098765432109876543210987654321"}}
+                    },
+                    {
+                        "id": 2, 
+                        "title": "Regular PR", 
+                        "state": "OPEN",
+                        "draft": false,
+                        "author": {"uuid": "{test-uuid}"},
+                        "source": {"branch": {"name": "bugfix"}, "commit": {"hash": "abcdef1234567890abcdef1234567890abcdef12"}},
+                        "destination": {"branch": {"name": "main"}, "commit": {"hash": "fedcba0987654321fedcba0987654321fedcba09"}}
+                    }
+                ], 
+                "next": null
+            }`))
+		} else {
+			// For commit SHA lookups
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{"hash": "1234567890123456789012345678901234567890"}`))
+		}
+	}))
+	defer testServer.Close()
+
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		commitSHACache: make(map[string]string),
+	}
+
+	prs, err := client.GetPullRequests("workspace", "repo", false)
+	assert.NoError(t, err)
+	assert.Len(t, prs, 2)
+
+	// Check that the draft PR has work_in_progress set to true
+	assert.True(t, prs[0].WorkInProgress, "Expected draft PR to have WorkInProgress set to true")
+	assert.Equal(t, "Draft PR", prs[0].Title, "Expected title to match")
+
+	// Check that the regular PR has work_in_progress set to false
+	assert.False(t, prs[1].WorkInProgress, "Expected non-draft PR to have WorkInProgress set to false")
+	assert.Equal(t, "Regular PR", prs[1].Title, "Expected title to match")
+}
+
+func TestExportNonExistentRepo(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "exporter-test-")
+	assert.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+	}()
+
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return 404 for repository
+		if strings.Contains(r.URL.Path, "/repositories/") {
+			w.WriteHeader(http.StatusNotFound)
+			writeResponse(t, w, []byte(`{"error": "Repository not found"}`))
+		} else {
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{}`))
+		}
+	}))
+	defer testServer.Close()
+
+	logger, _ := zap.NewDevelopment()
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		commitSHACache: make(map[string]string),
+	}
+	exporter := NewExporter(client, tempDir, logger, false)
+
+	err = exporter.Export("workspace", "non-existent-repo")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "Repository not found")
 }
