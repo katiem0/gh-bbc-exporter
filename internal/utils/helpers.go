@@ -107,9 +107,9 @@ func formatURL(urlType string, workspace, repoSlug string, id ...interface{}) st
 		}
 		return fmt.Sprintf("https://bitbucket.org/%s/%s/pulls", workspace, repoSlug)
 	case "issue_comment":
-		if len(id) > 0 {
+		if len(id) > 1 {
 			return fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%v#issuecomment-%v",
-				workspace, repoSlug, extractPRNumber(fmt.Sprintf("%v", id[0])), id[1])
+				workspace, repoSlug, id[0], id[1])
 		}
 		return fmt.Sprintf("https://bitbucket.org/%s/%s/pull/comments", workspace, repoSlug)
 	case "pr_review":

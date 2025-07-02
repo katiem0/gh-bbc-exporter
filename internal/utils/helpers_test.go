@@ -133,8 +133,7 @@ func TestFormatURL(t *testing.T) {
 		urlType    string
 		workspace  string
 		repository string
-		id         string
-		id2        string
+		id         []interface{}
 		expected   string
 	}{
 		{
@@ -142,48 +141,79 @@ func TestFormatURL(t *testing.T) {
 			urlType:    "pr",
 			workspace:  "testworkspace",
 			repository: "testrepo",
-			id:         "123",
+			id:         []interface{}{"123"},
 			expected:   "https://bitbucket.org/testworkspace/testrepo/pull/123",
+		},
+		{
+			name:       "PR URL without ID",
+			urlType:    "pr",
+			workspace:  "testworkspace",
+			repository: "testrepo",
+			id:         []interface{}{},
+			expected:   "https://bitbucket.org/testworkspace/testrepo/pulls",
 		},
 		{
 			name:       "Repository URL",
 			urlType:    "repository",
 			workspace:  "testworkspace",
 			repository: "testrepo",
+			id:         []interface{}{},
 			expected:   "https://bitbucket.org/testworkspace/testrepo",
 		},
 		{
-			name:      "User URL",
-			urlType:   "user",
-			workspace: "testworkspace",
-			id:        "testuser",
-			expected:  "https://bitbucket.org/testuser",
+			name:       "User URL",
+			urlType:    "user",
+			workspace:  "testworkspace",
+			repository: "",
+			id:         []interface{}{"testuser"},
+			expected:   "https://bitbucket.org/testuser",
+		},
+		{
+			name:       "User URL without ID",
+			urlType:    "user",
+			workspace:  "testworkspace",
+			repository: "",
+			id:         []interface{}{},
+			expected:   "https://bitbucket.org/testworkspace",
 		},
 		{
 			name:       "PR Review URL",
 			urlType:    "pr_review",
 			workspace:  "testworkspace",
 			repository: "testrepo",
-			id:         "123",
-			id2:        "456",
+			id:         []interface{}{"123", "456"},
 			expected:   "https://bitbucket.org/testworkspace/testrepo/pull/123/files#pullrequestreview-456",
+		},
+		{
+			name:       "PR Review URL without ID",
+			urlType:    "pr_review",
+			workspace:  "testworkspace",
+			repository: "testrepo",
+			id:         []interface{}{},
+			expected:   "https://bitbucket.org/testworkspace/testrepo/pull/reviews",
 		},
 		{
 			name:       "PR Review Comment URL",
 			urlType:    "pr_review_comment",
 			workspace:  "testworkspace",
 			repository: "testrepo",
-			id:         "123",
-			id2:        "456",
+			id:         []interface{}{"123", "456"},
 			expected:   "https://bitbucket.org/testworkspace/testrepo/pull/123/files#r456",
+		},
+		{
+			name:       "PR Review Comment URL without ID",
+			urlType:    "pr_review_comment",
+			workspace:  "testworkspace",
+			repository: "testrepo",
+			id:         []interface{}{},
+			expected:   "https://bitbucket.org/testworkspace/testrepo/pull/comments",
 		},
 		{
 			name:       "Issue Comment URL",
 			urlType:    "issue_comment",
 			workspace:  "testworkspace",
 			repository: "testrepo",
-			id:         "123",
-			id2:        "456",
+			id:         []interface{}{"123", "456"},
 			expected:   "https://bitbucket.org/testworkspace/testrepo/pull/123#issuecomment-456",
 		},
 		{
@@ -191,15 +221,59 @@ func TestFormatURL(t *testing.T) {
 			urlType:    "pr_review_thread",
 			workspace:  "testworkspace",
 			repository: "testrepo",
-			id:         "123",
-			id2:        "456",
+			id:         []interface{}{"123", "456"},
 			expected:   "https://bitbucket.org/testworkspace/testrepo/pull/123/files#pullrequestreviewthread-456",
+		},
+		{
+			name:       "PR Review Thread URL without ID",
+			urlType:    "pr_review_thread",
+			workspace:  "testworkspace",
+			repository: "testrepo",
+			id:         []interface{}{},
+			expected:   "https://bitbucket.org/testworkspace/testrepo/pull/threads",
+		},
+		{
+			name:       "Git URL",
+			urlType:    "git",
+			workspace:  "testworkspace",
+			repository: "testrepo",
+			id:         []interface{}{},
+			expected:   "tarball://root/repositories/testworkspace/testrepo.git",
+		},
+		{
+			name:       "Organization URL",
+			urlType:    "organization",
+			workspace:  "testworkspace",
+			repository: "",
+			id:         []interface{}{},
+			expected:   "https://bitbucket.org/testworkspace",
+		},
+		{
+			name:       "Default URL",
+			urlType:    "unknown",
+			workspace:  "testworkspace",
+			repository: "testrepo",
+			id:         []interface{}{},
+			expected:   "https://bitbucket.org/testworkspace/testrepo",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := formatURL(tc.urlType, tc.workspace, tc.repository, tc.id, tc.id2)
+			var result string
+
+			// Pass the arguments based on the test case
+			switch len(tc.id) {
+			case 0:
+				result = formatURL(tc.urlType, tc.workspace, tc.repository)
+			case 1:
+				result = formatURL(tc.urlType, tc.workspace, tc.repository, tc.id[0])
+			case 2:
+				result = formatURL(tc.urlType, tc.workspace, tc.repository, tc.id[0], tc.id[1])
+			default:
+				t.Fatalf("Unsupported number of ID parameters: %d", len(tc.id))
+			}
+
 			assert.Equal(t, tc.expected, result)
 		})
 	}
