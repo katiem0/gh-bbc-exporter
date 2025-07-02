@@ -250,7 +250,9 @@ func TestCreateArchiveErrors(t *testing.T) {
 	// Make it non-writable after we're done with setup
 	defer func() {
 		// Restore permissions before removal
-		os.Chmod(tempDir, 0755)
+		if err := os.Chmod(tempDir, 0755); err != nil {
+			t.Logf("Warning: Failed to restore directory permissions: %v", err)
+		}
 		if err := os.RemoveAll(tempDir); err != nil {
 			t.Logf("Warning: Failed to remove temp dir: %v", err)
 		}
