@@ -20,7 +20,7 @@ import (
 func TestNewExporter(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	client := &Client{}
-	exporter := NewExporter(client, "output", logger, false)
+	exporter := NewExporter(client, "output", logger, false, "")
 
 	assert.NotNil(t, exporter)
 	assert.Equal(t, client, exporter.client)
@@ -31,7 +31,7 @@ func TestNewExporter(t *testing.T) {
 func TestCreateBasicUsers(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	client := &Client{}
-	exporter := NewExporter(client, "output", logger, false)
+	exporter := NewExporter(client, "output", logger, false, "")
 
 	users := exporter.createBasicUsers("testworkspace")
 
@@ -43,7 +43,7 @@ func TestCreateBasicUsers(t *testing.T) {
 func TestCreateOrganizationData(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	client := &Client{}
-	exporter := NewExporter(client, "output", logger, false)
+	exporter := NewExporter(client, "output", logger, false, "")
 
 	orgs := exporter.createOrganizationData("testworkspace")
 
@@ -63,7 +63,7 @@ func TestWriteJSONFile(t *testing.T) {
 
 	logger, _ := zap.NewDevelopment()
 	client := &Client{}
-	exporter := NewExporter(client, tempDir, logger, false)
+	exporter := NewExporter(client, tempDir, logger, false, "")
 
 	testData := []data.User{{
 		Type:  "user",
@@ -103,7 +103,7 @@ func TestCreateArchive(t *testing.T) {
 
 	logger, _ := zap.NewDevelopment()
 	client := &Client{}
-	exporter := NewExporter(client, tempDir, logger, false)
+	exporter := NewExporter(client, tempDir, logger, false, "")
 
 	dummyFilePath := filepath.Join(exporter.outputDir, "dummy.txt")
 	err = os.WriteFile(dummyFilePath, []byte("test data"), 0644)
@@ -163,7 +163,7 @@ func TestExport(t *testing.T) {
 		logger:         logger,
 		commitSHACache: make(map[string]string),
 	}
-	exporter := NewExporter(client, tempDir, logger, false)
+	exporter := NewExporter(client, tempDir, logger, false, "")
 
 	err = exporter.Export("workspace", "repo")
 	assert.NoError(t, err)
@@ -180,7 +180,7 @@ func TestArchiveCompatibility(t *testing.T) {
 
 	logger, _ := zap.NewDevelopment()
 	client := &Client{}
-	exporter := NewExporter(client, tempDir, logger, false)
+	exporter := NewExporter(client, tempDir, logger, false, "")
 
 	// Create a test file
 	dummyFilePath := filepath.Join(exporter.outputDir, "dummy.txt")
@@ -258,7 +258,7 @@ func TestCreateArchiveErrors(t *testing.T) {
 		}
 	}()
 
-	exporter := NewExporter(client, tempDir, logger, false)
+	exporter := NewExporter(client, tempDir, logger, false, "")
 
 	// Create a test file
 	dummyFilePath := filepath.Join(exporter.outputDir, "dummy.txt")
@@ -273,4 +273,124 @@ func TestCreateArchiveErrors(t *testing.T) {
 	archivePath, err := exporter.CreateArchive()
 	assert.Error(t, err)
 	assert.Empty(t, archivePath)
+}
+
+func TestExportWithFilters(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "exporter-filter-test-")
+	assert.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+	}()
+
+	// Mock server responses
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+
+		// Repository info
+		if strings.Contains(r.URL.Path, "/repositories/") && !strings.Contains(r.URL.Path, "pullrequests") {
+			writeResponse(t, w, []byte(`{"name": "Test Repo", "mainbranch": {"name": "main"}}`))
+			return
+		}
+
+		// Pull requests
+		if strings.Contains(r.URL.Path, "pullrequests") {
+			// Check if open PRs only filter is applied
+			if strings.Contains(r.URL.RawQuery, "state=OPEN") {
+				writeResponse(t, w, []byte(`{
+                    "values": [
+                        {
+                            "id": 3, 
+                            "title": "New Open PR",
+                            "state": "OPEN",
+                            "created_on": "2023-06-01T00:00:00+00:00",
+                            "author": {"uuid": "{123}"},
+                            "source": {"branch": {"name": "feature"}, "commit": {"hash": "abc123"}},
+                            "destination": {"branch": {"name": "main"}, "commit": {"hash": "def456"}}
+                        }
+                    ],
+                    "next": null
+                }`))
+				return
+			}
+
+			// Return all PRs
+			writeResponse(t, w, []byte(`{
+                "values": [
+                    {
+                        "id": 1, 
+                        "title": "Old Open PR",
+                        "state": "OPEN",
+                        "created_on": "2022-01-01T00:00:00+00:00",
+                        "author": {"uuid": "{123}"},
+                        "source": {"branch": {"name": "source"}, "commit": {"hash": "abc123"}},
+                        "destination": {"branch": {"name": "main"}, "commit": {"hash": "def456"}}
+                    },
+                    {
+                        "id": 2, 
+                        "title": "Old Closed PR",
+                        "state": "DECLINED",
+                        "created_on": "2022-03-01T00:00:00+00:00",
+                        "author": {"uuid": "{123}"},
+                        "source": {"branch": {"name": "source"}, "commit": {"hash": "abc123"}},
+                        "destination": {"branch": {"name": "main"}, "commit": {"hash": "def456"}}
+                    },
+                    {
+                        "id": 3, 
+                        "title": "New Open PR",
+                        "state": "OPEN",
+                        "created_on": "2023-06-01T00:00:00+00:00",
+                        "author": {"uuid": "{123}"},
+                        "source": {"branch": {"name": "feature"}, "commit": {"hash": "abc123"}},
+                        "destination": {"branch": {"name": "main"}, "commit": {"hash": "def456"}}
+                    }
+                ],
+                "next": null
+            }`))
+			return
+		}
+
+		// For other requests like users, comments, etc.
+		writeResponse(t, w, []byte(`{"values": [], "next": null}`))
+	}))
+	defer testServer.Close()
+
+	logger, _ := zap.NewDevelopment()
+
+	// Test 1: No filters
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		commitSHACache: make(map[string]string),
+	}
+	exporter := NewExporter(client, tempDir+"/no-filters", logger, false, "")
+
+	err = exporter.Export("workspace", "repo")
+	assert.NoError(t, err)
+
+	// Test 2: Open PRs only
+	client = &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		commitSHACache: make(map[string]string),
+	}
+	exporter = NewExporter(client, tempDir+"/open-only", logger, true, "")
+
+	err = exporter.Export("workspace", "repo")
+	assert.NoError(t, err)
+
+	// Test 3: Date filter
+	client = &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		commitSHACache: make(map[string]string),
+	}
+	exporter = NewExporter(client, tempDir+"/date-filter", logger, false, "2023-01-01")
+
+	err = exporter.Export("workspace", "repo")
+	assert.NoError(t, err)
 }

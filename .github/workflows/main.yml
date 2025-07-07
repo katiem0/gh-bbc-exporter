@@ -39,7 +39,7 @@ jobs:
       - name: Run tests
         run: |
           set -o pipefail
-          go test -v ./... -race -coverprofile=coverage.txt -covermode=atomic 2>&1 | tee test_output.log
+          go test ./... -race -coverprofile=coverage.txt -covermode=atomic 2>&1 | tee test_output.log
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v5.4.2

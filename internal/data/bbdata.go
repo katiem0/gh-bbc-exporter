@@ -8,6 +8,7 @@ type CmdFlags struct {
 	Repository       string
 	Workspace        string
 	OutputDir        string
+	PRsFromDate      string // Format: YYYY-MM-DD
 	OpenPRsOnly      bool
 	Debug            bool
 }

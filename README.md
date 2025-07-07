@@ -53,7 +53,7 @@ are needed. Your Bitbucket username can be found by following:
 3. Click on "Settings"
 4. Find Username under **Bitbucket profile settings**
 
-To [create an app password](https://support.atlassian.com/bitbucket-cloud/docs/create-an-app-password/):
+To [create an app password][app-password]:
 
 1. Under Personal settings, select Personal Bitbucket settings.
 2. On the left sidebar, select App passwords.
@@ -89,16 +89,17 @@ Usage:
   bbc-exporter [flags]
 
 Flags:
-  -p, --app-password string   Bitbucket app password for basic authentication
-  -a, --bbc-api-url string    Bitbucket API to use (default "https://api.bitbucket.org/2.0")
-  -d, --debug                 Enable debug logging
-  -h, --help                  help for bbc-exporter
-      --open-prs-only         Import only open pull requests and ignore closed/merged ones
-  -o, --output string         Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)
-  -r, --repo string           Name of the repository to export from Bitbucket Cloud
-  -t, --token string          Bitbucket access token for authentication
-  -u, --user string           Bitbucket username for basic authentication
-  -w, --workspace string      Bitbucket workspace
+  -p, --app-password string    Bitbucket app password for basic authentication
+  -a, --bbc-api-url string     Bitbucket API to use (default "https://api.bitbucket.org/2.0")
+  -d, --debug                  Enable debug logging
+  -h, --help                   help for bbc-exporter
+      --open-prs-only          Import only open pull requests and ignore closed/merged ones
+  -o, --output string          Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)
+      --prs-from-date string   Import pull requests created on or after this date (format: YYYY-MM-DD). Filters by PR creation date.
+  -r, --repo string            Name of the repository to export from Bitbucket Cloud
+  -t, --token string           Bitbucket access token for authentication
+  -u, --user string            Bitbucket username for basic authentication
+  -w, --workspace string       Bitbucket workspace name
 ```
 
 Example Command
@@ -113,7 +114,7 @@ Or with basic authentication:
 gh bbc-exporter -w your-workspace -r your-repo -u your-username -p your-app-password
 ```
 
-For migrations from BitBucket Data Center or Server, please see [GitHub's Official Documentation](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/about-migrations-from-bitbucket-server-to-github-enterprise-cloud).
+For migrations from BitBucket Data Center or Server, please see [GitHub's Official Documentation][bitbucket-server].
 
 ### Export Format
 
@@ -152,7 +153,7 @@ using GitHub owned storage and GEI. Detailed documentation can be found in
 - Issues are not exported (Bitbucket issues have a different structure from GitHub issues)
 - Repository and Pull request labels have not been implemented
 - User information is limited to what's available from Bitbucket API
-- Archives larger than 30 GiB are not supported by GitHub-owned storage
+- [Archives larger than 40 GiB][storage-increase] are not supported by GitHub-owned storage
 - GitHub Enterprise Cloud with data residency is not supported
 
 ## Troubleshooting
@@ -209,3 +210,9 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 3. Commit your changes (`git commit -m 'Add some amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
+
+<!-- link reference section -->
+
+[app-password]: https://support.atlassian.com/bitbucket-cloud/docs/create-an-app-password/
+[storage-increase]: https://github.blog/changelog/2025-06-03-increasing-github-enterprise-importers-repository-size-limits/
+[bitbucket-server]: https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/about-migrations-from-bitbucket-server-to-github-enterprise-cloud

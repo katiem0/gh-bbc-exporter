@@ -261,7 +261,7 @@ func (c *Client) GetUsers(workspace, repoSlug string) ([]data.User, error) {
 	return allUsers, nil
 }
 
-func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool) ([]data.PullRequest, error) {
+func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, prsFromDate string) ([]data.PullRequest, error) {
 	c.logger.Info("Fetching pull requests",
 		zap.String("workspace", workspace),
 		zap.String("repository", repoSlug),
@@ -271,6 +271,33 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool) (
 	page := 1
 	pageLen := 50
 	hasMore := true
+
+	var fromDate time.Time
+	var fromDateProvided bool
+
+	if prsFromDate != "" {
+		parsedDate, err := time.Parse("2006-01-02", prsFromDate)
+		if err != nil {
+			c.logger.Error("Failed to parse from date",
+				zap.String("date", prsFromDate),
+				zap.Error(err))
+			return nil, fmt.Errorf("invalid date format for prsFromDate: %w", err)
+		}
+
+		// Set time to beginning of day in UTC to ensure consistent comparisons
+		fromDate = time.Date(
+			parsedDate.Year(),
+			parsedDate.Month(),
+			parsedDate.Day(),
+			0, 0, 0, 0,
+			time.UTC)
+
+		fromDateProvided = true
+		c.logger.Info("Filtering PRs by creation date (created_on)",
+			zap.String("from_date", prsFromDate),
+			zap.Time("parsed_date", fromDate),
+			zap.String("field_used", "created_on"))
+	}
 
 	getFullSHA := func(shortSHA string) string {
 		if len(shortSHA) == 40 {
@@ -346,6 +373,29 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool) (
 			zap.String("next_url", response.Next))
 
 		for _, pr := range response.Values {
+			if fromDateProvided {
+				prCreatedAt, err := time.Parse(time.RFC3339, pr.CreatedOn)
+				if err != nil {
+					c.logger.Warn("Could not parse PR creation date",
+						zap.String("date", pr.CreatedOn),
+						zap.Int("pr_id", pr.ID),
+						zap.Error(err))
+					continue
+				}
+
+				if prCreatedAt.Before(fromDate) {
+					c.logger.Debug("Skipping PR: created before filter date",
+						zap.Int("pr_id", pr.ID),
+						zap.String("pr_title", pr.Title),
+						zap.Time("pr_created_at", prCreatedAt),
+						zap.Time("filter_date", fromDate))
+					continue
+				}
+				c.logger.Debug("Including PR: creation date meets filter criteria",
+					zap.Int("pr_id", pr.ID),
+					zap.String("pr_title", pr.Title),
+					zap.Time("pr_created_at", prCreatedAt))
+			}
 			var mergedAt, closedAt *string
 			switch pr.State {
 			case "MERGED":

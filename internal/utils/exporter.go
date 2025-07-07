@@ -20,14 +20,16 @@ type Exporter struct {
 	outputDir   string
 	logger      *zap.Logger
 	openPRsOnly bool
+	prsFromDate string
 }
 
-func NewExporter(client *Client, outputDir string, logger *zap.Logger, openPRsOnly bool) *Exporter {
+func NewExporter(client *Client, outputDir string, logger *zap.Logger, openPRsOnly bool, prsFromDate string) *Exporter {
 	return &Exporter{
 		client:      client,
 		outputDir:   outputDir,
 		logger:      logger,
 		openPRsOnly: openPRsOnly,
+		prsFromDate: prsFromDate,
 	}
 }
 
@@ -100,13 +102,15 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 		return err
 	}
 
-	prs, err := e.client.GetPullRequests(workspace, repoSlug, e.openPRsOnly)
+	prs, err := e.client.GetPullRequests(workspace, repoSlug, e.openPRsOnly, e.prsFromDate)
 	if err != nil {
 		e.logger.Warn("Failed to fetch pull requests", zap.Error(err))
 		prs = []data.PullRequest{}
 	} else {
 		e.logger.Info("Successfully fetched pull requests",
-			zap.Int("count", len(prs)))
+			zap.Int("count", len(prs)),
+			zap.Bool("open_only", e.openPRsOnly),
+			zap.String("from_date", e.prsFromDate))
 	}
 
 	if len(prs) > 0 {

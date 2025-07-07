@@ -14,18 +14,20 @@ import (
 )
 
 func TestValidateExportFlags(t *testing.T) {
-	cmdFlags := &data.CmdFlags{}
 
 	// Test case 1: No credentials provided
+	cmdFlags := &data.CmdFlags{}
 	err := ValidateExportFlags(cmdFlags)
 	assert.Error(t, err, "Expected error when no credentials are provided")
 
 	// Test case 2: Token provided
+	cmdFlags = &data.CmdFlags{}
 	cmdFlags.BitbucketToken = "testtoken"
 	err = ValidateExportFlags(cmdFlags)
 	assert.NoError(t, err, "Expected no error when token is provided")
 
 	// Test case 3: Username and app password provided
+	cmdFlags = &data.CmdFlags{}
 	cmdFlags.BitbucketToken = ""
 	cmdFlags.BitbucketUser = "testuser"
 	cmdFlags.BitbucketAppPass = "testpass"
@@ -33,6 +35,7 @@ func TestValidateExportFlags(t *testing.T) {
 	assert.NoError(t, err, "Expected no error when username and app password are provided")
 
 	// Test case 4: Only username provided (missing app password)
+	cmdFlags = &data.CmdFlags{}
 	cmdFlags.BitbucketToken = ""
 	cmdFlags.BitbucketUser = "testuser"
 	cmdFlags.BitbucketAppPass = ""
@@ -40,11 +43,27 @@ func TestValidateExportFlags(t *testing.T) {
 	assert.Error(t, err, "Expected error when only username is provided")
 
 	// Test case 5: Only app password provided (missing username)
+	cmdFlags = &data.CmdFlags{}
 	cmdFlags.BitbucketToken = ""
 	cmdFlags.BitbucketUser = ""
 	cmdFlags.BitbucketAppPass = "testpass"
 	err = ValidateExportFlags(cmdFlags)
 	assert.Error(t, err, "Expected error when only app password is provided")
+
+	// Test case 6: Valid date format for PRsFromDate
+	cmdFlags = &data.CmdFlags{}
+	cmdFlags.BitbucketToken = "testtoken"
+	cmdFlags.PRsFromDate = "2023-01-01"
+	err = ValidateExportFlags(cmdFlags)
+	assert.NoError(t, err, "Expected no error with valid date format")
+
+	// Test case 7: Invalid date format for PRsFromDate
+	cmdFlags = &data.CmdFlags{}
+	cmdFlags.BitbucketToken = "testtoken"
+	cmdFlags.PRsFromDate = "01/01/2023"
+	err = ValidateExportFlags(cmdFlags)
+	assert.Error(t, err, "Expected error with invalid date format")
+	assert.Contains(t, err.Error(), "invalid date format for --prs-from-date", "Error should mention invalid date format")
 }
 
 func TestSetupEnvironmentCredentials(t *testing.T) {
@@ -341,7 +360,7 @@ func TestPaginationHandling(t *testing.T) {
 		commitSHACache: make(map[string]string),
 	}
 
-	prs, err := client.GetPullRequests("workspace", "repo", false)
+	prs, err := client.GetPullRequests("workspace", "repo", false, "")
 
 	assert.NoError(t, err)
 	assert.Len(t, prs, 2, "Expected PRs from both pages")
@@ -391,6 +410,63 @@ func TestExtractPRNumber(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			result := extractPRNumber(tc.prURL)
 			assert.Equal(t, tc.expected, result, "For URL %s, expected PR number %s but got %s", tc.prURL, tc.expected, result)
+		})
+	}
+}
+
+func TestPRDateValidation(t *testing.T) {
+	testCases := []struct {
+		name        string
+		dateStr     string
+		expectError bool
+	}{
+		{
+			name:        "Valid date format",
+			dateStr:     "2023-01-01",
+			expectError: false,
+		},
+		{
+			name:        "Invalid date format - slashes",
+			dateStr:     "01/01/2023",
+			expectError: true,
+		},
+		{
+			name:        "Invalid date format - month first",
+			dateStr:     "01-31-2023",
+			expectError: true,
+		},
+		{
+			name:        "Invalid date - nonexistent date",
+			dateStr:     "2023-02-30",
+			expectError: true,
+		},
+		{
+			name:        "Invalid date - text",
+			dateStr:     "yesterday",
+			expectError: true,
+		},
+		{
+			name:        "Empty string",
+			dateStr:     "",
+			expectError: false, // Empty is valid as it's optional
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmdFlags := &data.CmdFlags{
+				BitbucketToken: "test-token", // Add required auth
+				PRsFromDate:    tc.dateStr,
+			}
+
+			err := ValidateExportFlags(cmdFlags)
+
+			if tc.expectError {
+				assert.Error(t, err, "Expected error for date: %s", tc.dateStr)
+				assert.Contains(t, err.Error(), "invalid date format", "Error should mention date format")
+			} else {
+				assert.NoError(t, err, "Expected no error for date: %s", tc.dateStr)
+			}
 		})
 	}
 }

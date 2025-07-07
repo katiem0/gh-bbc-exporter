@@ -82,41 +82,6 @@ func TestMakeRequest(t *testing.T) {
 	assert.Contains(t, err.Error(), "API request failed after 5 retries")
 }
 
-func TestGetFullCommitSHA(t *testing.T) {
-	// Test case 1: Successful request
-	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		writeResponse(t, w, []byte(`{"hash": "1234567890123456789012345678901234567890"}`))
-	}))
-	defer testServer.Close()
-
-	logger, _ := zap.NewDevelopment()
-	client := &Client{
-		baseURL:    testServer.URL,
-		httpClient: testServer.Client(),
-		logger:     logger,
-	}
-
-	sha, err := client.GetFullCommitSHA("workspace", "repo", "shortsha")
-
-	assert.NoError(t, err)
-	assert.Equal(t, "1234567890123456789012345678901234567890", sha)
-
-	// Test case 2: API returns an error
-	testServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		writeResponse(t, w, []byte(`{"error": "internal server error"}`))
-	}))
-	defer testServer.Close()
-
-	client.baseURL = testServer.URL
-	sha, err = client.GetFullCommitSHA("workspace", "repo", "shortsha")
-
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to fetch full commit SHA")
-	assert.Equal(t, "shortsha", sha) // Should return the original short SHA
-}
-
 func TestGetPullRequests(t *testing.T) {
 	// Test case 1: Successful request with no pull requests
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -133,7 +98,7 @@ func TestGetPullRequests(t *testing.T) {
 		commitSHACache: make(map[string]string),
 	}
 
-	prs, err := client.GetPullRequests("workspace", "repo", false)
+	prs, err := client.GetPullRequests("workspace", "repo", false, "")
 
 	assert.NoError(t, err)
 	assert.Empty(t, prs)
@@ -146,7 +111,7 @@ func TestGetPullRequests(t *testing.T) {
 	defer testServer.Close()
 
 	client.baseURL = testServer.URL
-	prs, err = client.GetPullRequests("workspace", "repo", false)
+	prs, err = client.GetPullRequests("workspace", "repo", false, "")
 
 	assert.NoError(t, err)
 	assert.NotEmpty(t, prs)
@@ -161,7 +126,7 @@ func TestGetPullRequests(t *testing.T) {
 	defer testServer.Close()
 
 	client.baseURL = testServer.URL
-	prs, err = client.GetPullRequests("workspace", "repo", false)
+	prs, err = client.GetPullRequests("workspace", "repo", false, "")
 
 	assert.Error(t, err)
 	assert.Nil(t, prs)
@@ -332,7 +297,7 @@ func TestGetPullRequestsWithStateFilter(t *testing.T) {
 		commitSHACache: make(map[string]string),
 	}
 
-	prs, err := client.GetPullRequests("workspace", "repo", true)
+	prs, err := client.GetPullRequests("workspace", "repo", true, "")
 	assert.NoError(t, err)
 	assert.Len(t, prs, 1)
 	assert.Equal(t, "Open PR", prs[0].Title)
@@ -378,9 +343,54 @@ func TestGetPullRequestsWithStateFilter(t *testing.T) {
 	defer testServer.Close()
 
 	client.baseURL = testServer.URL
-	prs, err = client.GetPullRequests("workspace", "repo", false)
+	prs, err = client.GetPullRequests("workspace", "repo", false, "")
 	assert.NoError(t, err)
 	assert.Len(t, prs, 2)
+}
+
+func TestGetPullRequestsWithDateFilter(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return sample PRs with different dates
+		w.WriteHeader(http.StatusOK)
+		writeResponse(t, w, []byte(`{
+            "values": [
+                {
+                    "id": 1, 
+                    "title": "Old PR",
+                    "state": "OPEN",
+                    "created_on": "2022-01-01T00:00:00+00:00",
+                    "author": {"uuid": "{123}"},
+                    "source": {"branch": {"name": "source-branch"}, "commit": {"hash": "abc123"}},
+                    "destination": {"branch": {"name": "main"}, "commit": {"hash": "def456"}}
+                },
+                {
+                    "id": 2, 
+                    "title": "New PR",
+                    "state": "OPEN",
+                    "created_on": "2023-06-01T00:00:00+00:00",
+                    "author": {"uuid": "{123}"},
+                    "source": {"branch": {"name": "feature"}, "commit": {"hash": "abc123"}},
+                    "destination": {"branch": {"name": "main"}, "commit": {"hash": "def456"}}
+                }
+            ],
+            "next": null
+        }`))
+	}))
+	defer testServer.Close()
+
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		commitSHACache: make(map[string]string),
+	}
+
+	// Test with date filter
+	prs, err := client.GetPullRequests("workspace", "repo", false, "2023-01-01")
+	assert.NoError(t, err)
+	assert.Len(t, prs, 1)
+	assert.Equal(t, "New PR", prs[0].Title)
 }
 
 func TestDraftPRHandling(t *testing.T) {
@@ -428,7 +438,7 @@ func TestDraftPRHandling(t *testing.T) {
 		commitSHACache: make(map[string]string),
 	}
 
-	prs, err := client.GetPullRequests("workspace", "repo", false)
+	prs, err := client.GetPullRequests("workspace", "repo", false, "")
 	assert.NoError(t, err)
 	assert.Len(t, prs, 2)
 
@@ -469,9 +479,187 @@ func TestExportNonExistentRepo(t *testing.T) {
 		logger:         logger,
 		commitSHACache: make(map[string]string),
 	}
-	exporter := NewExporter(client, tempDir, logger, false)
+	exporter := NewExporter(client, tempDir, logger, false, "")
 
 	err = exporter.Export("workspace", "non-existent-repo")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Repository not found")
+}
+
+func TestGetPullRequestsWithComprehensiveFilters(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	// Create a test server that checks the query parameters and returns filtered data
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Parse the URL to check query parameters
+		isOpenOnly := strings.Contains(r.URL.String(), "state=OPEN")
+		hasDateFilter := r.URL.Query().Get("prsFromDate") == "2023-01-01" || strings.Contains(r.URL.RawQuery, "prsFromDate=2023-01-01")
+
+		// Base set of all PRs
+		allPRs := `{
+            "values": [
+                {
+                    "id": 1, 
+                    "title": "Old Open PR",
+                    "state": "OPEN",
+                    "created_on": "2022-01-01T00:00:00+00:00",
+                    "author": {"uuid": "{123}"},
+                    "source": {"branch": {"name": "source-branch"}, "commit": {"hash": "abc123"}},
+                    "destination": {"branch": {"name": "main"}, "commit": {"hash": "def456"}}
+                },
+                {
+                    "id": 2, 
+                    "title": "Old Closed PR",
+                    "state": "DECLINED",
+                    "created_on": "2022-03-01T00:00:00+00:00",
+                    "author": {"uuid": "{123}"},
+                    "source": {"branch": {"name": "source-branch"}, "commit": {"hash": "abc123"}},
+                    "destination": {"branch": {"name": "main"}, "commit": {"hash": "def456"}}
+                },
+                {
+                    "id": 3, 
+                    "title": "New Open PR",
+                    "state": "OPEN",
+                    "created_on": "2023-06-01T00:00:00+00:00",
+                    "author": {"uuid": "{123}"},
+                    "source": {"branch": {"name": "feature"}, "commit": {"hash": "abc123"}},
+                    "destination": {"branch": {"name": "main"}, "commit": {"hash": "def456"}}
+                },
+                {
+                    "id": 4,
+                    "title": "New Merged PR",
+                    "state": "MERGED",
+                    "created_on": "2023-07-01T00:00:00+00:00",
+                    "author": {"uuid": "{123}"},
+                    "source": {"branch": {"name": "bugfix"}, "commit": {"hash": "abc123"}},
+                    "destination": {"branch": {"name": "main"}, "commit": {"hash": "def456"}}
+                }
+            ],
+            "next": null
+        }`
+
+		// Only open PRs
+		openPRs := `{
+            "values": [
+                {
+                    "id": 1, 
+                    "title": "Old Open PR",
+                    "state": "OPEN",
+                    "created_on": "2022-01-01T00:00:00+00:00",
+                    "author": {"uuid": "{123}"},
+                    "source": {"branch": {"name": "source-branch"}, "commit": {"hash": "abc123"}},
+                    "destination": {"branch": {"name": "main"}, "commit": {"hash": "def456"}}
+                },
+                {
+                    "id": 3, 
+                    "title": "New Open PR",
+                    "state": "OPEN",
+                    "created_on": "2023-06-01T00:00:00+00:00",
+                    "author": {"uuid": "{123}"},
+                    "source": {"branch": {"name": "feature"}, "commit": {"hash": "abc123"}},
+                    "destination": {"branch": {"name": "main"}, "commit": {"hash": "def456"}}
+                }
+            ],
+            "next": null
+        }`
+
+		// PRs from 2023
+		prsFrom2023 := `{
+            "values": [
+                {
+                    "id": 3, 
+                    "title": "New Open PR",
+                    "state": "OPEN",
+                    "created_on": "2023-06-01T00:00:00+00:00",
+                    "author": {"uuid": "{123}"},
+                    "source": {"branch": {"name": "feature"}, "commit": {"hash": "abc123"}},
+                    "destination": {"branch": {"name": "main"}, "commit": {"hash": "def456"}}
+                },
+                {
+                    "id": 4,
+                    "title": "New Merged PR",
+                    "state": "MERGED",
+                    "created_on": "2023-07-01T00:00:00+00:00",
+                    "author": {"uuid": "{123}"},
+                    "source": {"branch": {"name": "bugfix"}, "commit": {"hash": "abc123"}},
+                    "destination": {"branch": {"name": "main"}, "commit": {"hash": "def456"}}
+                }
+            ],
+            "next": null
+        }`
+
+		// Open PRs from 2023
+		openPRsFrom2023 := `{
+            "values": [
+                {
+                    "id": 3, 
+                    "title": "New Open PR",
+                    "state": "OPEN",
+                    "created_on": "2023-06-01T00:00:00+00:00",
+                    "author": {"uuid": "{123}"},
+                    "source": {"branch": {"name": "feature"}, "commit": {"hash": "abc123"}},
+                    "destination": {"branch": {"name": "main"}, "commit": {"hash": "def456"}}
+                }
+            ],
+            "next": null
+        }`
+
+		w.WriteHeader(http.StatusOK)
+
+		// Return appropriate response based on filter combination
+		if isOpenOnly && hasDateFilter {
+			// Open PRs from 2023
+			writeResponse(t, w, []byte(openPRsFrom2023))
+		} else if isOpenOnly {
+			// Only open PRs
+			writeResponse(t, w, []byte(openPRs))
+		} else if hasDateFilter {
+			// PRs from 2023
+			writeResponse(t, w, []byte(prsFrom2023))
+		} else {
+			// All PRs
+			writeResponse(t, w, []byte(allPRs))
+		}
+	}))
+	defer testServer.Close()
+
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		commitSHACache: make(map[string]string),
+	}
+
+	// Test 1: No filters - should return all PRs
+	prs, err := client.GetPullRequests("workspace", "repo", false, "")
+	assert.NoError(t, err)
+	assert.Len(t, prs, 4, "Expected all 4 PRs with no filters")
+
+	// Test 2: Open PRs only
+	prs, err = client.GetPullRequests("workspace", "repo", true, "")
+	assert.NoError(t, err)
+	assert.Len(t, prs, 2, "Expected 2 open PRs")
+	var titles []string
+	for _, pr := range prs {
+		titles = append(titles, pr.Title)
+	}
+	assert.Contains(t, titles, "Old Open PR")
+	assert.Contains(t, titles, "New Open PR")
+
+	// Test 3: Date filter only - PRs from 2023
+	prs, err = client.GetPullRequests("workspace", "repo", false, "2023-01-01")
+	assert.NoError(t, err)
+	assert.Len(t, prs, 2, "Expected 2 PRs from 2023")
+	titles = []string{}
+	for _, pr := range prs {
+		titles = append(titles, pr.Title)
+	}
+	assert.Contains(t, titles, "New Open PR")
+	assert.Contains(t, titles, "New Merged PR")
+
+	// Test 4: Combined filters - Open PRs from 2023
+	prs, err = client.GetPullRequests("workspace", "repo", true, "2023-01-01")
+	assert.NoError(t, err)
+	assert.Len(t, prs, 1, "Expected 1 open PR from 2023")
+	assert.Equal(t, "New Open PR", prs[0].Title)
 }
