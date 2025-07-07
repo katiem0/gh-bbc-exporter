@@ -14,10 +14,9 @@ import (
 )
 
 func TestValidateExportFlags(t *testing.T) {
-	cmdFlags := &data.CmdFlags{}
 
 	// Test case 1: No credentials provided
-	cmdFlags = &data.CmdFlags{}
+	cmdFlags := &data.CmdFlags{}
 	err := ValidateExportFlags(cmdFlags)
 	assert.Error(t, err, "Expected error when no credentials are provided")
 
@@ -64,7 +63,7 @@ func TestValidateExportFlags(t *testing.T) {
 	cmdFlags.PRsFromDate = "01/01/2023"
 	err = ValidateExportFlags(cmdFlags)
 	assert.Error(t, err, "Expected error with invalid date format")
-	assert.Contains(t, err.Error(), "invalid date format for --prs-from", "Error should mention invalid date format")
+	assert.Contains(t, err.Error(), "invalid date format for --prs-from-date", "Error should mention invalid date format")
 }
 
 func TestSetupEnvironmentCredentials(t *testing.T) {

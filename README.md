@@ -53,7 +53,7 @@ are needed. Your Bitbucket username can be found by following:
 3. Click on "Settings"
 4. Find Username under **Bitbucket profile settings**
 
-To [create an app password](https://support.atlassian.com/bitbucket-cloud/docs/create-an-app-password/):
+To [create an app password][app-password]:
 
 1. Under Personal settings, select Personal Bitbucket settings.
 2. On the left sidebar, select App passwords.
@@ -114,7 +114,7 @@ Or with basic authentication:
 gh bbc-exporter -w your-workspace -r your-repo -u your-username -p your-app-password
 ```
 
-For migrations from BitBucket Data Center or Server, please see [GitHub's Official Documentation](https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/about-migrations-from-bitbucket-server-to-github-enterprise-cloud).
+For migrations from BitBucket Data Center or Server, please see [GitHub's Official Documentation][bitbucket-server].
 
 ### Export Format
 
@@ -153,7 +153,7 @@ using GitHub owned storage and GEI. Detailed documentation can be found in
 - Issues are not exported (Bitbucket issues have a different structure from GitHub issues)
 - Repository and Pull request labels have not been implemented
 - User information is limited to what's available from Bitbucket API
-- [Archives larger than 40 GiB](https://github.blog/changelog/2025-06-03-increasing-github-enterprise-importers-repository-size-limits/) are not supported by GitHub-owned storage
+- [Archives larger than 40 GiB][storage-increase] are not supported by GitHub-owned storage
 - GitHub Enterprise Cloud with data residency is not supported
 
 ## Troubleshooting
@@ -210,3 +210,10 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 3. Commit your changes (`git commit -m 'Add some amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
+
+
+<!-- link reference section -->
+
+[app-password]: https://support.atlassian.com/bitbucket-cloud/docs/create-an-app-password/
+[storage-increase]: https://github.blog/changelog/2025-06-03-increasing-github-enterprise-importers-repository-size-limits/
+[bitbucket-server]: https://docs.github.com/en/migrations/using-github-enterprise-importer/migrating-from-bitbucket-server-to-github-enterprise-cloud/about-migrations-from-bitbucket-server-to-github-enterprise-cloud

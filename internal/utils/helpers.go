@@ -227,7 +227,7 @@ func ValidateExportFlags(cmdFlags *data.CmdFlags) error {
 	// Validate PRsFromDate format if provided
 	if cmdFlags.PRsFromDate != "" {
 		if _, err := time.Parse("2006-01-02", cmdFlags.PRsFromDate); err != nil {
-			return fmt.Errorf("invalid date format for --prs-from: %v (expected format: YYYY-MM-DD)", err)
+			return fmt.Errorf("invalid date format for --prs-from-date: %v (expected format: YYYY-MM-DD)", err)
 		}
 	}
 
