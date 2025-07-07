@@ -49,6 +49,7 @@ func NewCmdRoot() *cobra.Command {
 	exportCmd.PersistentFlags().StringVarP(&cmdFlags.Workspace, "workspace", "w", "", "Bitbucket workspace name")
 	exportCmd.PersistentFlags().StringVarP(&cmdFlags.OutputDir, "output", "o", "", "Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)")
 	exportCmd.PersistentFlags().BoolVar(&cmdFlags.OpenPRsOnly, "open-prs-only", false, "Import only open pull requests and ignore closed/merged ones")
+	exportCmd.PersistentFlags().StringVarP(&cmdFlags.PRsFromDate, "prs-from-date", "", "", "Import pull requests created on or after this date (format: YYYY-MM-DD). Filters by PR creation date.")
 	exportCmd.PersistentFlags().BoolVarP(&cmdFlags.Debug, "debug", "d", false, "Enable debug logging")
 	// Mark required flags
 	if err := exportCmd.MarkPersistentFlagRequired("workspace"); err != nil {
@@ -87,7 +88,15 @@ func runCmdExport(cmdFlags *data.CmdFlags, logger *zap.Logger) error {
 		cmdFlags.BitbucketAppPass,
 		logger,
 	)
-	exporter := utils.NewExporter(client, cmdFlags.OutputDir, logger, cmdFlags.OpenPRsOnly)
+
+	if cmdFlags.OpenPRsOnly {
+		logger.Info("Filtering: Only open PRs will be exported")
+	}
+	if cmdFlags.PRsFromDate != "" {
+		logger.Info("Filtering: PRs from date", zap.String("from_date", cmdFlags.PRsFromDate))
+	}
+
+	exporter := utils.NewExporter(client, cmdFlags.OutputDir, logger, cmdFlags.OpenPRsOnly, cmdFlags.PRsFromDate)
 
 	// Run export
 	if err := exporter.Export(cmdFlags.Workspace, cmdFlags.Repository); err != nil {

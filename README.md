@@ -89,16 +89,17 @@ Usage:
   bbc-exporter [flags]
 
 Flags:
-  -p, --app-password string   Bitbucket app password for basic authentication
-  -a, --bbc-api-url string    Bitbucket API to use (default "https://api.bitbucket.org/2.0")
-  -d, --debug                 Enable debug logging
-  -h, --help                  help for bbc-exporter
-      --open-prs-only         Import only open pull requests and ignore closed/merged ones
-  -o, --output string         Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)
-  -r, --repo string           Name of the repository to export from Bitbucket Cloud
-  -t, --token string          Bitbucket access token for authentication
-  -u, --user string           Bitbucket username for basic authentication
-  -w, --workspace string      Bitbucket workspace
+  -p, --app-password string    Bitbucket app password for basic authentication
+  -a, --bbc-api-url string     Bitbucket API to use (default "https://api.bitbucket.org/2.0")
+  -d, --debug                  Enable debug logging
+  -h, --help                   help for bbc-exporter
+      --open-prs-only          Import only open pull requests and ignore closed/merged ones
+  -o, --output string          Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)
+      --prs-from-date string   Import pull requests created on or after this date (format: YYYY-MM-DD). Filters by PR creation date.
+  -r, --repo string            Name of the repository to export from Bitbucket Cloud
+  -t, --token string           Bitbucket access token for authentication
+  -u, --user string            Bitbucket username for basic authentication
+  -w, --workspace string       Bitbucket workspace name
 ```
 
 Example Command
@@ -152,7 +153,7 @@ using GitHub owned storage and GEI. Detailed documentation can be found in
 - Issues are not exported (Bitbucket issues have a different structure from GitHub issues)
 - Repository and Pull request labels have not been implemented
 - User information is limited to what's available from Bitbucket API
-- Archives larger than 30 GiB are not supported by GitHub-owned storage
+- [Archives larger than 40 GiB](https://github.blog/changelog/2025-06-03-increasing-github-enterprise-importers-repository-size-limits/) are not supported by GitHub-owned storage
 - GitHub Enterprise Cloud with data residency is not supported
 
 ## Troubleshooting

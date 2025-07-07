@@ -224,6 +224,13 @@ func ValidateExportFlags(cmdFlags *data.CmdFlags) error {
 		return fmt.Errorf("mixed authentication methods: provide either token OR username/app-password, not both")
 	}
 
+	// Validate PRsFromDate format if provided
+	if cmdFlags.PRsFromDate != "" {
+		if _, err := time.Parse("2006-01-02", cmdFlags.PRsFromDate); err != nil {
+			return fmt.Errorf("invalid date format for --prs-from: %v (expected format: YYYY-MM-DD)", err)
+		}
+	}
+
 	return nil
 }
 
