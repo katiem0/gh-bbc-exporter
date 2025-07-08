@@ -48,8 +48,8 @@ func NewCmdRoot() *cobra.Command {
 	exportCmd.PersistentFlags().StringVarP(&cmdFlags.Repository, "repo", "r", "", "Name of the repository to export from Bitbucket Cloud")
 	exportCmd.PersistentFlags().StringVarP(&cmdFlags.Workspace, "workspace", "w", "", "Bitbucket workspace name")
 	exportCmd.PersistentFlags().StringVarP(&cmdFlags.OutputDir, "output", "o", "", "Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)")
-	exportCmd.PersistentFlags().BoolVar(&cmdFlags.OpenPRsOnly, "open-prs-only", false, "Import only open pull requests and ignore closed/merged ones")
-	exportCmd.PersistentFlags().StringVarP(&cmdFlags.PRsFromDate, "prs-from-date", "", "", "Import pull requests created on or after this date (format: YYYY-MM-DD). Filters by PR creation date.")
+	exportCmd.PersistentFlags().BoolVar(&cmdFlags.OpenPRsOnly, "open-prs-only", false, "Export only open pull requests and ignore closed/merged ones")
+	exportCmd.PersistentFlags().StringVarP(&cmdFlags.PRsFromDate, "prs-from-date", "", "", "Export pull requests created on or after this date (format: YYYY-MM-DD). Filters by PR creation date.")
 	exportCmd.PersistentFlags().BoolVarP(&cmdFlags.Debug, "debug", "d", false, "Enable debug logging")
 	// Mark required flags
 	if err := exportCmd.MarkPersistentFlagRequired("workspace"); err != nil {
