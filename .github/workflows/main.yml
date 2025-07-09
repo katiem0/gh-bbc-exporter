@@ -41,45 +41,35 @@ jobs:
           set -o pipefail
           go test ./... -race -coverprofile=coverage.txt -covermode=atomic 2>&1 | tee test_output.log
 
-      - name: Upload coverage report
-        uses: codecov/codecov-action@v5.4.2
-        with:
-          files: ./coverage.txt
-          fail_ci_if_error: false
-          verbose: true
-
-      - name: Check for Error syncing logger issue
+      - name: Calculate coverage percentage
+        id: coverage
         run: |
-          # Create a test script to check for the logger sync error
-          cat > test_logger.go << 'EOF'
-          package main
+          COVERAGE_PCT=$(go tool cover -func=coverage.txt | grep total | awk '{print $3}')
+          echo "Coverage percentage: $COVERAGE_PCT"
+          echo "coverage_percentage=$COVERAGE_PCT" >> $GITHUB_OUTPUT
           
-          import (
-            "github.com/katiem0/gh-bbc-exporter/internal/log"
-          )
+          # Set pass/fail threshold
+          THRESHOLD="70.0%"
+          COVERAGE_NUM=$(echo $COVERAGE_PCT | sed 's/%//')
+          THRESHOLD_NUM=$(echo $THRESHOLD | sed 's/%//')
           
-          func main() {
-            logger, _ := log.NewLogger(true)
-            defer func() {
-              _ = logger.Sync()
-            }()
-            logger.Info("Testing logger sync")
-          }
-          EOF
+          if (( $(echo "$COVERAGE_NUM < $THRESHOLD_NUM" | bc -l) )); then
+            echo "::warning::Coverage $COVERAGE_PCT is below threshold $THRESHOLD"
+          else
+            echo "::notice::Coverage $COVERAGE_PCT meets threshold $THRESHOLD"
+          fi
           
-          # Run the test script and look for the error
-          go run test_logger.go 2>&1 | grep -i "inappropriate ioctl for device" && echo "Logger sync error detected, but handled properly" || echo "No logger sync error detected"
-          # Clean up the test script
-          rm test_logger.go
+          # Generate HTML report
+          go tool cover -html=coverage.txt -o coverage.html
 
-      - name: Upload test artifacts
-        if: always()
+      - name: Upload coverage report as artifact
         uses: actions/upload-artifact@v4.6.2
+        if: always()
         with:
-          name: test-results
+          name: coverage-report
           path: |
             coverage.txt
-
+            coverage.html
   markdown:
     name: Lint Markdown
     runs-on: ubuntu-latest

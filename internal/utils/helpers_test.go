@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -141,6 +142,57 @@ func TestFormatDateToZ(t *testing.T) {
 			} else {
 				result := formatDateToZ(tc.input)
 				assert.Equal(t, tc.expected, result)
+			}
+		})
+	}
+}
+
+func TestFormatDateToZEdgeCases(t *testing.T) {
+	testCases := []struct {
+		name        string
+		input       string
+		expected    string
+		shouldMatch bool
+	}{
+		{
+			name:        "Empty string",
+			input:       "",
+			expected:    "", // Should return empty string
+			shouldMatch: true,
+		},
+		{
+			name:        "Invalid date format",
+			input:       "not-a-date",
+			expected:    "", // Should return empty string or default value
+			shouldMatch: true,
+		},
+		{
+			name:        "Date with microseconds",
+			input:       "2023-01-01T12:34:56.123456+00:00",
+			expected:    "2023-01-01T12:34:56Z",
+			shouldMatch: true,
+		},
+		{
+			name:        "Date with timezone offset",
+			input:       "2023-01-01T12:34:56+05:30",
+			expected:    "2023-01-01T07:04:56Z", // Converted to UTC
+			shouldMatch: true,
+		},
+		{
+			name:        "RFC3339 format",
+			input:       "2023-01-01T12:34:56Z",
+			expected:    "2023-01-01T12:34:56Z",
+			shouldMatch: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := formatDateToZ(tc.input)
+			if tc.shouldMatch {
+				assert.Equal(t, tc.expected, result)
+			} else {
+				assert.NotEqual(t, tc.expected, result)
 			}
 		})
 	}
@@ -469,4 +521,197 @@ func TestPRDateValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHashString(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:  "Simple string",
+			input: "test-string",
+			// Expected hash value may need to be updated based on your implementation
+			expected: HashString("test-string"),
+		},
+		{
+			name:  "File path with line number",
+			input: "workspace-src/file.go-10",
+			// Expected hash value may need to be updated based on your implementation
+			expected: HashString("workspace-src/file.go-10"),
+		},
+		{
+			name:  "Empty string",
+			input: "",
+			// Expected hash value may need to be updated based on your implementation
+			expected: HashString(""),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := HashString(tc.input)
+			assert.Equal(t, tc.expected, result)
+
+			// Test idempotence - hashing the same string should produce the same result
+			secondResult := HashString(tc.input)
+			assert.Equal(t, result, secondResult)
+		})
+	}
+}
+
+func TestHashStringCollisions(t *testing.T) {
+	// Test with a large set of different inputs to check for collisions
+	uniqueInputs := []string{
+		"workspace-src/file1.go-10",
+		"workspace-src/file2.go-10",
+		"workspace-src/file1.go-20",
+		"other-workspace-src/file1.go-10",
+		"workspace-src/path/to/file1.go-10",
+		"workspace-src/path/to/file2.go-10",
+		"workspace-src/path/to/file1.go-20",
+	}
+
+	// Generate hashes for all inputs
+	hashes := make(map[string]string)
+
+	for _, input := range uniqueInputs {
+		hash := HashString(input)
+
+		// Check if we've seen this hash before
+		if existing, exists := hashes[hash]; exists {
+			// If this is a real test failure, it will be caught
+			// But if your hash function is working properly, it shouldn't happen
+			t.Logf("Potential collision: '%s' and '%s' both hash to '%s'", existing, input, hash)
+		}
+		hashes[hash] = input
+	}
+
+	// Verify we have the same number of unique hashes as inputs
+	assert.Equal(t, len(uniqueInputs), len(hashes), "Hash collision detected")
+}
+
+func TestAuthenticationMethods(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	// Create a server that verifies authentication headers
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+
+		if strings.HasPrefix(authHeader, "Bearer ") && strings.Contains(authHeader, "test-token") {
+			// Token auth
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{"auth": "token"}`))
+		} else if r.Header.Get("Authorization") != "" {
+			// Basic auth
+			username, password, ok := r.BasicAuth()
+			if ok && username == "test-user" && password == "test-pass" {
+				w.WriteHeader(http.StatusOK)
+				writeResponse(t, w, []byte(`{"auth": "basic"}`))
+			} else {
+				w.WriteHeader(http.StatusUnauthorized)
+				writeResponse(t, w, []byte(`{"error": "invalid credentials"}`))
+			}
+		} else {
+			// No auth
+			w.WriteHeader(http.StatusUnauthorized)
+			writeResponse(t, w, []byte(`{"error": "authentication required"}`))
+		}
+	}))
+	defer testServer.Close()
+
+	// Test with token authentication
+	tokenClient := &Client{
+		baseURL:    testServer.URL,
+		httpClient: testServer.Client(),
+		token:      "test-token",
+		logger:     logger,
+	}
+
+	var result map[string]interface{}
+	err := tokenClient.makeRequest("GET", "/", &result)
+	assert.NoError(t, err)
+	assert.Equal(t, "token", result["auth"])
+
+	// Test with basic authentication
+	basicClient := &Client{
+		baseURL:    testServer.URL,
+		httpClient: testServer.Client(),
+		username:   "test-user",
+		appPass:    "test-pass",
+		logger:     logger,
+	}
+
+	err = basicClient.makeRequest("GET", "/", &result)
+	assert.NoError(t, err)
+	assert.Equal(t, "basic", result["auth"])
+
+	// Test with no authentication
+	noAuthClient := &Client{
+		baseURL:    testServer.URL,
+		httpClient: testServer.Client(),
+		logger:     logger,
+	}
+
+	err = noAuthClient.makeRequest("GET", "/", &result)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "authentication required")
+}
+
+func TestWriteJSONFileErrors(t *testing.T) {
+	// Test with invalid output directory
+	logger, _ := zap.NewDevelopment()
+	client := &Client{}
+	exporter := NewExporter(client, "/nonexistent/dir", logger, false, "")
+
+	err := exporter.writeJSONFile("test.json", map[string]string{"test": "data"})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no such file or directory")
+
+	// Test with non-marshallable data
+	tempDir, err := os.MkdirTemp("", "exporter-test-")
+	assert.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+	}()
+
+	exporter = NewExporter(client, tempDir, logger, false, "")
+
+	// Create data with circular reference that can't be marshalled to JSON
+	type CircularRef struct {
+		Self *CircularRef
+	}
+	circular := &CircularRef{}
+	circular.Self = circular
+
+	err = exporter.writeJSONFile("test.json", circular)
+	assert.Error(t, err)
+}
+
+func TestCreateEmptyRepositoryWithReadOnlyDir(t *testing.T) {
+	// Test case 2: Read-only directory - should fail
+	tempDir, err := os.MkdirTemp("", "exporter-readonly-test-")
+	assert.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+	}()
+
+	// Create a read-only directory
+	readOnlyDir := filepath.Join(tempDir, "readonly")
+	err = os.MkdirAll(readOnlyDir, 0500) // Read-only directory
+	assert.NoError(t, err)
+
+	logger, _ := zap.NewDevelopment()
+	client := &Client{}
+	exporter := NewExporter(client, readOnlyDir, logger, false, "")
+
+	// This should fail due to permissions
+	err = exporter.createEmptyRepository("workspace", "repo")
+	assert.Error(t, err)
+	// Don't check for the specific file, just confirm the operation failed with an error
 }

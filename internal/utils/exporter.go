@@ -499,33 +499,55 @@ func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, worksp
 }
 
 func (e *Exporter) createReviewThreads(comments []data.PullRequestReviewComment) []map[string]interface{} {
-	var threads []map[string]interface{}
+	// Group comments by thread URL to find unique threads
+	threadMap := make(map[string][]data.PullRequestReviewComment)
 
 	for _, comment := range comments {
+		threadURL := comment.PullRequestReviewThread
+		threadMap[threadURL] = append(threadMap[threadURL], comment)
+	}
+
+	var threads []map[string]interface{}
+
+	// Create one thread per unique thread URL, using the first comment's data
+	for threadURL, threadComments := range threadMap {
+		if len(threadComments) == 0 {
+			continue
+		}
+
+		// Get earliest comment in thread to use for thread metadata
+		firstComment := threadComments[0]
+		for _, c := range threadComments {
+			createdAt, _ := time.Parse(time.RFC3339, c.CreatedAt)
+			firstCreatedAt, _ := time.Parse(time.RFC3339, firstComment.CreatedAt)
+			if createdAt.Before(firstCreatedAt) {
+				firstComment = c
+			}
+		}
 
 		thread := map[string]interface{}{
 			"type":                  "pull_request_review_thread",
-			"url":                   comment.PullRequestReviewThread,
-			"pull_request":          comment.PullRequest,
-			"pull_request_review":   comment.PullRequestReview,
-			"diff_hunk":             comment.DiffHunk,
-			"path":                  comment.Path,
-			"position":              comment.Position,
-			"original_position":     comment.OriginalPosition,
-			"commit_id":             comment.CommitID,
-			"original_commit_id":    comment.OriginalCommitId,
+			"url":                   threadURL,
+			"pull_request":          firstComment.PullRequest,
+			"pull_request_review":   firstComment.PullRequestReview,
+			"diff_hunk":             firstComment.DiffHunk,
+			"path":                  firstComment.Path,
+			"position":              firstComment.Position,
+			"original_position":     firstComment.OriginalPosition,
+			"commit_id":             firstComment.CommitID,
+			"original_commit_id":    firstComment.OriginalCommitId,
 			"start_position_offset": nil,
-			"blob_position":         comment.Position - 1,
+			"blob_position":         firstComment.Position - 1,
 			"start_line":            nil,
-			"line":                  comment.Position,
+			"line":                  firstComment.Position,
 			"start_side":            nil,
 			"side":                  "right",
 			"original_start_line":   nil,
-			"original_line":         comment.OriginalPosition,
-			"created_at":            comment.CreatedAt,
+			"original_line":         firstComment.OriginalPosition,
+			"created_at":            firstComment.CreatedAt,
 			"resolved_at":           nil,
 			"resolver":              nil,
-			"subject_type":          comment.SubjectType,
+			"subject_type":          firstComment.SubjectType,
 			"outdated":              false,
 		}
 

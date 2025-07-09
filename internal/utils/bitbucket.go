@@ -594,9 +594,27 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 						lineNumber = *comment.Inline.From
 					}
 
+					// Create a unique thread identifier based on the file path and line number
+					// rather than the comment ID
+					threadKey := fmt.Sprintf("%s-%s-%d", workspace, comment.Inline.Path, lineNumber)
+					threadId := fmt.Sprintf("thread-%s", HashString(threadKey))
+
+					// Generate stable comment ID
 					commentId := fmt.Sprintf("%d", comment.ID)
-					reviewId := fmt.Sprintf("%d", comment.ID)
-					threadId := fmt.Sprintf("%d", comment.ID)
+
+					// Handle parent-child relationship
+					var inReplyTo *string
+					var reviewId string
+
+					if comment.Parent != nil {
+						// This is a reply - use parent's ID for the review ID
+						parentId := fmt.Sprintf("%d", comment.Parent.ID)
+						inReplyTo = &parentId
+						reviewId = fmt.Sprintf("review-%d", comment.Parent.ID)
+					} else {
+						// This is a top-level comment - use its own ID for the review ID
+						reviewId = fmt.Sprintf("review-%d", comment.ID)
+					}
 
 					commentURL := formatURL("pr_review_comment", workspace, repoSlug, prNumber, commentId)
 					reviewURL := formatURL("pr_review", workspace, repoSlug, prNumber, reviewId)
@@ -627,7 +645,7 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 						Formatter:               "markdown",
 						DiffHunk:                diffHunk,
 						State:                   1,
-						InReplyTo:               nil,
+						InReplyTo:               inReplyTo,
 						Reactions:               []string{},
 						SubjectType:             "line",
 					}

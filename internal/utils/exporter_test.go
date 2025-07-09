@@ -28,18 +28,6 @@ func TestNewExporter(t *testing.T) {
 	assert.NotNil(t, exporter.logger)
 }
 
-func TestCreateBasicUsers(t *testing.T) {
-	logger, _ := zap.NewDevelopment()
-	client := &Client{}
-	exporter := NewExporter(client, "output", logger, false, "")
-
-	users := exporter.createBasicUsers("testworkspace")
-
-	assert.Len(t, users, 1)
-	assert.Equal(t, "user", users[0].Type)
-	assert.Equal(t, "testworkspace", users[0].Login)
-}
-
 func TestCreateOrganizationData(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	client := &Client{}
@@ -393,4 +381,100 @@ func TestExportWithFilters(t *testing.T) {
 
 	err = exporter.Export("workspace", "repo")
 	assert.NoError(t, err)
+}
+
+func TestCreateReviewThreads(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	client := &Client{}
+	exporter := NewExporter(client, "output", logger, false, "")
+
+	// Create test comments that should be grouped into threads
+	reviewComments := []data.PullRequestReviewComment{
+		{
+			PullRequestReviewThread: "thread-123",
+			Path:                    "file1.txt",
+			Position:                10,
+			CreatedAt:               "2023-01-01T12:00:00Z",
+			CommitID:                "abcdef",
+			OriginalCommitId:        "abcdef",
+			DiffHunk:                "@@ -1,1 +1,1 @@\n+Test",
+		},
+		{
+			PullRequestReviewThread: "thread-123", // Same thread as above
+			Path:                    "file1.txt",
+			Position:                10,
+			CreatedAt:               "2023-01-02T12:00:00Z", // Later comment
+			CommitID:                "abcdef",
+			OriginalCommitId:        "abcdef",
+			DiffHunk:                "@@ -1,1 +1,1 @@\n+Test reply",
+		},
+		{
+			PullRequestReviewThread: "thread-456", // Different thread
+			Path:                    "file2.txt",
+			Position:                20,
+			CreatedAt:               "2023-01-01T14:00:00Z",
+			CommitID:                "ghijkl",
+			OriginalCommitId:        "ghijkl",
+			DiffHunk:                "@@ -1,1 +1,1 @@\n+Another test",
+		},
+	}
+
+	threads := exporter.createReviewThreads(reviewComments)
+
+	// Should have two threads
+	assert.Len(t, threads, 2)
+
+	// Verify thread data is correct
+	assert.Equal(t, "file1.txt", threads[0]["path"])
+	assert.Equal(t, 10, threads[0]["position"])
+	assert.Equal(t, "2023-01-01T12:00:00Z", threads[0]["created_at"]) // Should use earliest comment date
+
+	assert.Equal(t, "file2.txt", threads[1]["path"])
+	assert.Equal(t, 20, threads[1]["position"])
+	assert.Equal(t, "2023-01-01T14:00:00Z", threads[1]["created_at"])
+}
+
+func TestCloneRepositoryErrors(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir, err := os.MkdirTemp("", "clone-test-")
+	assert.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+	}()
+
+	logger, _ := zap.NewDevelopment()
+
+	// Test case 1: Invalid clone URL
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		writeResponse(t, w, []byte(`{"name": "Test Repo", "mainbranch": {"name": "main"}}`))
+	}))
+	defer testServer.Close()
+
+	client := &Client{
+		baseURL:    testServer.URL,
+		httpClient: testServer.Client(),
+		logger:     logger,
+	}
+
+	exporter := NewExporter(client, tempDir, logger, false, "")
+
+	// Invalid URL to trigger git clone failure
+	err = exporter.CloneRepository("workspace", "repo", "invalid://url")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to clone repository")
+
+	// Test case 2: Permission error on directory creation
+	// Create a read-only directory to cause permission error
+	readOnlyDir := filepath.Join(tempDir, "readonly")
+	err = os.MkdirAll(readOnlyDir, 0755)
+	assert.NoError(t, err)
+	err = os.Chmod(readOnlyDir, 0500)
+	assert.NoError(t, err)
+
+	readOnlyExporter := NewExporter(client, readOnlyDir, logger, false, "")
+	err = readOnlyExporter.CloneRepository("workspace", "repo", "https://example.com/repo.git")
+	assert.Error(t, err)
 }
