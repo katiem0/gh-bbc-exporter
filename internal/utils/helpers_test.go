@@ -672,7 +672,11 @@ func TestWriteJSONFileErrors(t *testing.T) {
 	// Test with non-marshallable data
 	tempDir, err := os.MkdirTemp("", "exporter-test-")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	exporter = NewExporter(client, tempDir, logger, false, "")
 
@@ -691,7 +695,11 @@ func TestCreateEmptyRepositoryWithReadOnlyDir(t *testing.T) {
 	// Test case 2: Read-only directory - should fail
 	tempDir, err := os.MkdirTemp("", "exporter-readonly-test-")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	// Create a read-only directory
 	readOnlyDir := filepath.Join(tempDir, "readonly")
