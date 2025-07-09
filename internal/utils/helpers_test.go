@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -656,4 +657,53 @@ func TestAuthenticationMethods(t *testing.T) {
 	err = noAuthClient.makeRequest("GET", "/", &result)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "authentication required")
+}
+
+func TestWriteJSONFileErrors(t *testing.T) {
+	// Test with invalid output directory
+	logger, _ := zap.NewDevelopment()
+	client := &Client{}
+	exporter := NewExporter(client, "/nonexistent/dir", logger, false, "")
+
+	err := exporter.writeJSONFile("test.json", map[string]string{"test": "data"})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no such file or directory")
+
+	// Test with non-marshallable data
+	tempDir, err := os.MkdirTemp("", "exporter-test-")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	exporter = NewExporter(client, tempDir, logger, false, "")
+
+	// Create data with circular reference that can't be marshalled to JSON
+	type CircularRef struct {
+		Self *CircularRef
+	}
+	circular := &CircularRef{}
+	circular.Self = circular
+
+	err = exporter.writeJSONFile("test.json", circular)
+	assert.Error(t, err)
+}
+
+func TestCreateEmptyRepositoryWithReadOnlyDir(t *testing.T) {
+	// Test case 2: Read-only directory - should fail
+	tempDir, err := os.MkdirTemp("", "exporter-readonly-test-")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// Create a read-only directory
+	readOnlyDir := filepath.Join(tempDir, "readonly")
+	err = os.MkdirAll(readOnlyDir, 0500) // Read-only directory
+	assert.NoError(t, err)
+
+	logger, _ := zap.NewDevelopment()
+	client := &Client{}
+	exporter := NewExporter(client, readOnlyDir, logger, false, "")
+
+	// This should fail due to permissions
+	err = exporter.createEmptyRepository("workspace", "repo")
+	assert.Error(t, err)
+	// Don't check for the specific file, just confirm the operation failed with an error
 }

@@ -70,26 +70,6 @@ jobs:
           path: |
             coverage.txt
             coverage.html
-      - name: Comment PR with coverage
-        if: github.event_name == 'pull_request'
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          recreate: true
-          header: coverage
-          message: |
-            ## Code Coverage: ${{ steps.coverage.outputs.coverage_percentage }}
-            
-            <details>
-            <summary>View Details</summary>
-            
-            ```
-            $(go tool cover -func=coverage.txt)
-            ```
-            
-            </details>
-            
-            [Download HTML Coverage Report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)
-
   markdown:
     name: Lint Markdown
     runs-on: ubuntu-latest
