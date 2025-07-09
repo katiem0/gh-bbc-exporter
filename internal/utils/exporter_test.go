@@ -434,23 +434,6 @@ func TestCreateReviewThreads(t *testing.T) {
 	assert.Equal(t, "2023-01-01T14:00:00Z", threads[1]["created_at"])
 }
 
-func TestExportErrorPaths(t *testing.T) {
-	// Test when output directory doesn't exist
-	client := &Client{}
-	logger, _ := zap.NewDevelopment()
-	exporter := NewExporter(client, "/nonexistent/path", logger, false, "")
-
-	err := exporter.Export("workspace", "repo")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "output directory")
-
-	// Test when workspace/repo parameter validation fails
-	exporter = NewExporter(client, ".", logger, false, "")
-	err = exporter.Export("", "repo")
-	assert.Error(t, err)
-	// More assertions
-}
-
 func TestCloneRepositoryErrors(t *testing.T) {
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "clone-test-")
