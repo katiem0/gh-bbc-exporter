@@ -15,7 +15,8 @@ import (
 
 // baseDelay is used for rate limiting tests and should match the value in the main code.
 var baseDelay = 1 * time.Second
-var maxRetries = 5
+
+//var maxRetries = 5
 
 // Helper function to safely write to response
 func writeResponse(t *testing.T, w http.ResponseWriter, data []byte) {
