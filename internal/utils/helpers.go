@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,7 +37,10 @@ func formatDateToZ(inputDate string) string {
 			return t.UTC().Format("2006-01-02T15:04:05Z")
 		}
 	}
-	return inputDate
+
+	// Return empty string for invalid date formats
+	// instead of returning the input string unchanged
+	return ""
 }
 
 func (e *Exporter) writeJSONFile(filename string, data interface{}) error {
@@ -257,4 +261,10 @@ func PrintSuccessMessage(outputPath string) {
 	} else {
 		fmt.Printf("\nExport successful!\nOutput directory: %s\n", outputPath)
 	}
+}
+
+func HashString(s string) string {
+	h := fnv.New32a()
+	h.Write([]byte(s))
+	return fmt.Sprintf("%x", h.Sum32())
 }

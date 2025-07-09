@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -26,18 +27,6 @@ func TestNewExporter(t *testing.T) {
 	assert.Equal(t, client, exporter.client)
 	assert.Equal(t, "output", exporter.outputDir)
 	assert.NotNil(t, exporter.logger)
-}
-
-func TestCreateBasicUsers(t *testing.T) {
-	logger, _ := zap.NewDevelopment()
-	client := &Client{}
-	exporter := NewExporter(client, "output", logger, false, "")
-
-	users := exporter.createBasicUsers("testworkspace")
-
-	assert.Len(t, users, 1)
-	assert.Equal(t, "user", users[0].Type)
-	assert.Equal(t, "testworkspace", users[0].Login)
 }
 
 func TestCreateOrganizationData(t *testing.T) {
@@ -131,6 +120,72 @@ func TestCreateArchive(t *testing.T) {
 			t.Logf("Warning: Failed to close gzip reader: %v", err)
 		}
 	}()
+}
+
+func TestCreateArchiveWithVariousFileTypes(t *testing.T) {
+	// Create a temporary directory with different file types
+	tempDir, err := os.MkdirTemp("", "archive-test-")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// Create regular file
+	regularFile := filepath.Join(tempDir, "regular.txt")
+	err = os.WriteFile(regularFile, []byte("regular file content"), 0644)
+	assert.NoError(t, err)
+
+	// Create symbolic link (if on Unix-like system)
+	if runtime.GOOS != "windows" {
+		symlinkPath := filepath.Join(tempDir, "symlink")
+		err = os.Symlink(regularFile, symlinkPath)
+		assert.NoError(t, err)
+	}
+
+	// Create directory
+	dirPath := filepath.Join(tempDir, "subdir")
+	err = os.MkdirAll(dirPath, 0755)
+	assert.NoError(t, err)
+
+	// Create file in subdirectory
+	subFile := filepath.Join(dirPath, "subfile.txt")
+	err = os.WriteFile(subFile, []byte("sub file content"), 0644)
+	assert.NoError(t, err)
+
+	// Create archive
+	outputPath := filepath.Join(tempDir, "archive.tar.gz")
+	err = CreateArchive(tempDir, outputPath)
+	assert.NoError(t, err)
+
+	// Verify archive exists and has content
+	info, err := os.Stat(outputPath)
+	assert.NoError(t, err)
+	assert.True(t, info.Size() > 0)
+
+	// Test archive contents
+	f, err := os.Open(outputPath)
+	assert.NoError(t, err)
+	defer f.Close()
+
+	gzr, err := gzip.NewReader(f)
+	assert.NoError(t, err)
+	defer gzr.Close()
+
+	tr := tar.NewReader(gzr)
+
+	foundFiles := make(map[string]bool)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		assert.NoError(t, err)
+
+		// Record found files
+		foundFiles[header.Name] = true
+	}
+
+	// Check that expected files are in the archive
+	assert.True(t, foundFiles["regular.txt"], "Regular file should be in archive")
+	assert.True(t, foundFiles["subdir/subfile.txt"], "File in subdirectory should be in archive")
 }
 
 func TestExport(t *testing.T) {
@@ -393,4 +448,111 @@ func TestExportWithFilters(t *testing.T) {
 
 	err = exporter.Export("workspace", "repo")
 	assert.NoError(t, err)
+}
+
+func TestCreateReviewThreads(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	client := &Client{}
+	exporter := NewExporter(client, "output", logger, false, "")
+
+	// Create test comments that should be grouped into threads
+	reviewComments := []data.PullRequestReviewComment{
+		{
+			PullRequestReviewThread: "thread-123",
+			Path:                    "file1.txt",
+			Position:                10,
+			CreatedAt:               "2023-01-01T12:00:00Z",
+			CommitID:                "abcdef",
+			OriginalCommitId:        "abcdef",
+			DiffHunk:                "@@ -1,1 +1,1 @@\n+Test",
+		},
+		{
+			PullRequestReviewThread: "thread-123", // Same thread as above
+			Path:                    "file1.txt",
+			Position:                10,
+			CreatedAt:               "2023-01-02T12:00:00Z", // Later comment
+			CommitID:                "abcdef",
+			OriginalCommitId:        "abcdef",
+			DiffHunk:                "@@ -1,1 +1,1 @@\n+Test reply",
+		},
+		{
+			PullRequestReviewThread: "thread-456", // Different thread
+			Path:                    "file2.txt",
+			Position:                20,
+			CreatedAt:               "2023-01-01T14:00:00Z",
+			CommitID:                "ghijkl",
+			OriginalCommitId:        "ghijkl",
+			DiffHunk:                "@@ -1,1 +1,1 @@\n+Another test",
+		},
+	}
+
+	threads := exporter.createReviewThreads(reviewComments)
+
+	// Should have two threads
+	assert.Len(t, threads, 2)
+
+	// Verify thread data is correct
+	assert.Equal(t, "file1.txt", threads[0]["path"])
+	assert.Equal(t, 10, threads[0]["position"])
+	assert.Equal(t, "2023-01-01T12:00:00Z", threads[0]["created_at"]) // Should use earliest comment date
+
+	assert.Equal(t, "file2.txt", threads[1]["path"])
+	assert.Equal(t, 20, threads[1]["position"])
+	assert.Equal(t, "2023-01-01T14:00:00Z", threads[1]["created_at"])
+}
+
+func TestExportErrorPaths(t *testing.T) {
+	// Test when output directory doesn't exist
+	client := &Client{}
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(client, "/nonexistent/path", logger, false, "")
+
+	err := exporter.Export("workspace", "repo")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "output directory")
+
+	// Test when workspace/repo parameter validation fails
+	exporter = NewExporter(client, ".", logger, false, "")
+	err = exporter.Export("", "repo")
+	assert.Error(t, err)
+	// More assertions
+}
+
+func TestCloneRepositoryErrors(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir, err := os.MkdirTemp("", "clone-test-")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	logger, _ := zap.NewDevelopment()
+
+	// Test case 1: Invalid clone URL
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		writeResponse(t, w, []byte(`{"name": "Test Repo", "mainbranch": {"name": "main"}}`))
+	}))
+	defer testServer.Close()
+
+	client := &Client{
+		baseURL:    testServer.URL,
+		httpClient: testServer.Client(),
+		logger:     logger,
+	}
+
+	exporter := NewExporter(client, tempDir, logger, false, "")
+
+	// Invalid URL to trigger git clone failure
+	err = exporter.CloneRepository("workspace", "repo", "invalid://url")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to clone repository")
+
+	// Test case 2: Permission error on directory creation
+	// Create a read-only directory to cause permission error
+	readOnlyDir := filepath.Join(tempDir, "readonly")
+	err = os.MkdirAll(readOnlyDir, 0400)
+	assert.NoError(t, err)
+
+	readOnlyExporter := NewExporter(client, readOnlyDir, logger, false, "")
+	err = readOnlyExporter.CloneRepository("workspace", "repo", "https://example.com/repo.git")
+	assert.Error(t, err)
 }

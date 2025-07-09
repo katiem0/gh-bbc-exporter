@@ -6,11 +6,15 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )
+
+// baseDelay is used for rate limiting tests and should match the value in the main code.
+var baseDelay = 1 * time.Second
 
 // Helper function to safely write to response
 func writeResponse(t *testing.T, w http.ResponseWriter, data []byte) {
@@ -662,4 +666,344 @@ func TestGetPullRequestsWithComprehensiveFilters(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, prs, 1, "Expected 1 open PR from 2023")
 	assert.Equal(t, "New Open PR", prs[0].Title)
+}
+
+func TestGetPullRequestCommentsWithThreads(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	// Create a test server that returns multiple comments on the same line/file
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "comments") {
+			w.WriteHeader(http.StatusOK)
+			// Return two comments on the same file/line (one parent, one reply)
+			writeResponse(t, w, []byte(`{
+                "values": [
+                    {
+                        "id": 123,
+                        "created_on": "2023-01-01T12:00:00Z",
+                        "updated_on": "2023-01-01T12:00:00Z",
+                        "content": {"raw": "This is a parent comment"},
+                        "user": {"uuid": "{parent-uuid}"},
+                        "inline": {
+                            "path": "test/file.txt",
+                            "to": 10
+                        }
+                    },
+                    {
+                        "id": 456,
+                        "created_on": "2023-01-02T12:00:00Z",
+                        "updated_on": "2023-01-02T12:00:00Z",
+                        "content": {"raw": "This is a reply"},
+                        "user": {"uuid": "{reply-uuid}"},
+                        "parent": {"id": 123},
+                        "inline": {
+                            "path": "test/file.txt",
+                            "to": 10
+                        }
+                    }
+                ],
+                "next": null
+            }`))
+		} else {
+			// For commit SHA lookups
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{"hash": "1234567890123456789012345678901234567890"}`))
+		}
+	}))
+	defer testServer.Close()
+
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		commitSHACache: make(map[string]string),
+	}
+
+	// Test with pull requests
+	prs := []data.PullRequest{{
+		URL:  "https://bitbucket.org/workspace/repo/pull/1",
+		Head: data.PRBranch{Sha: "abcdef"},
+	}}
+
+	_, reviewComments, err := client.GetPullRequestComments("workspace", "repo", prs)
+	assert.NoError(t, err)
+	assert.Len(t, reviewComments, 2, "Expected two review comments")
+
+	// Check that they belong to the same thread
+	assert.Equal(t, reviewComments[0].PullRequestReviewThread, reviewComments[1].PullRequestReviewThread,
+		"Comments should share the same thread ID")
+
+	// Check parent-child relationship
+	assert.Nil(t, reviewComments[0].InReplyTo, "First comment should have no parent")
+	assert.NotNil(t, reviewComments[1].InReplyTo, "Second comment should have a parent")
+	assert.Equal(t, "123", *reviewComments[1].InReplyTo, "Reply should reference parent ID")
+
+	// Check review IDs - Updated to match the actual format used in the code
+	expectedReviewURL := formatURL("pr_review", "workspace", "repo", "1", "review-123")
+	assert.Equal(t, expectedReviewURL, reviewComments[0].PullRequestReview, "Parent comment should use own ID for review")
+	assert.Equal(t, expectedReviewURL, reviewComments[1].PullRequestReview, "Reply should use parent ID for review")
+}
+
+func TestTransformCommentBody(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	client := &Client{
+		logger: logger,
+	}
+
+	testCases := []struct {
+		name      string
+		body      string
+		workspace string
+		repoSlug  string
+		expected  string
+	}{
+		{
+			name:      "Empty body",
+			body:      "",
+			workspace: "workspace",
+			repoSlug:  "repo",
+			expected:  "",
+		},
+		{
+			name:      "Body with PR reference number",
+			body:      "Please see #123 for details",
+			workspace: "workspace",
+			repoSlug:  "repo",
+			expected:  "Please see #123 for details",
+		},
+		{
+			name:      "Body with full PR URL",
+			body:      "Check out https://bitbucket.org/workspace/repo/pull-requests/456",
+			workspace: "workspace",
+			repoSlug:  "repo",
+			expected:  "Check out https://bitbucket.org/workspace/repo/pull/456",
+		},
+		{
+			name:      "Multiple references",
+			body:      "Fix #123, related to #456 and https://bitbucket.org/workspace/repo/pull-requests/789",
+			workspace: "workspace",
+			repoSlug:  "repo",
+			expected:  "Fix #123, related to #456 and https://bitbucket.org/workspace/repo/pull/789",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := client.transformCommentBody(tc.body, tc.workspace, tc.repoSlug)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestTransformCommentBodyEdgeCases(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	client := &Client{
+		logger: logger,
+	}
+
+	testCases := []struct {
+		name      string
+		body      string
+		workspace string
+		repoSlug  string
+		expected  string
+	}{
+		{
+			name:      "Body with nil input",
+			body:      "",
+			workspace: "",
+			repoSlug:  "",
+			expected:  "",
+		},
+		{
+			name:      "Body with URL in code block",
+			body:      "```\nhttps://bitbucket.org/workspace/repo/pull-requests/123\n```",
+			workspace: "workspace",
+			repoSlug:  "repo",
+			expected:  "```\nhttps://bitbucket.org/workspace/repo/pull/123\n```",
+		},
+		{
+			name:      "Body with multiple URL formats",
+			body:      "PR at /workspace/repo/pull-requests/123 and bitbucket.org/workspace/repo/pull-requests/456",
+			workspace: "workspace",
+			repoSlug:  "repo",
+			expected:  "PR at /workspace/repo/pull-requests/123 and bitbucket.org/workspace/repo/pull-requests/456",
+		},
+		{
+			name:      "Body with URL for different repository",
+			body:      "See https://bitbucket.org/other-workspace/other-repo/pull-requests/123",
+			workspace: "workspace",
+			repoSlug:  "repo",
+			expected:  "See https://bitbucket.org/other-workspace/other-repo/pull-requests/123",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := client.transformCommentBody(tc.body, tc.workspace, tc.repoSlug)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestMakeRequestWithRateLimiting(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	// Create a counter to track request attempts
+	requestCount := 0
+
+	// Set up a test server that returns rate limit errors for the first few attempts
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+
+		// Return rate limit for first two attempts, then succeed
+		if requestCount <= 2 {
+			w.Header().Set("X-RateLimit-Remaining", "0")
+			w.Header().Set("X-RateLimit-Limit", "100")
+			w.WriteHeader(http.StatusTooManyRequests) // 429
+			writeResponse(t, w, []byte(`{"error": "Too many requests"}`))
+		} else {
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{"success": true}`))
+		}
+	}))
+	defer testServer.Close()
+
+	// Reduce the base delay for faster test execution
+	originalBaseDelay := baseDelay // Store original if it's a package variable
+	baseDelay = 10 * time.Millisecond
+	defer func() {
+		baseDelay = originalBaseDelay // Restore after test
+	}()
+
+	client := &Client{
+		baseURL:    testServer.URL,
+		httpClient: testServer.Client(),
+		logger:     logger,
+	}
+
+	var result struct {
+		Success bool `json:"success"`
+	}
+
+	startTime := time.Now()
+	err := client.makeRequest("GET", "/test-endpoint", &result)
+	duration := time.Since(startTime)
+
+	assert.NoError(t, err)
+	assert.True(t, result.Success)
+	assert.Equal(t, 3, requestCount, "Expected 3 request attempts")
+	assert.GreaterOrEqual(t, duration, 30*time.Millisecond, "Expected some backoff delay")
+}
+
+func TestMalformedJSONResponse(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// Return incomplete JSON to trigger a JSON parsing error
+		w.Header().Set("Content-Type", "application/json")
+		writeResponse(t, w, []byte(`{"name": "test-repo", "malformed`))
+	}))
+	defer testServer.Close()
+
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		commitSHACache: make(map[string]string),
+	}
+
+	_, err := client.GetRepository("workspace", "repo")
+	assert.Error(t, err)
+	// Check for any JSON-related error message
+	assert.Contains(t, err.Error(), "EOF")
+}
+
+func TestGetFullCommitSHA(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	testCases := []struct {
+		name           string
+		inputSHA       string
+		apiResponse    string
+		apiStatusCode  int
+		expected       string
+		expectError    bool
+		useCachedValue bool // Test the caching behavior
+	}{
+		{
+			name:          "Already full SHA",
+			inputSHA:      "1234567890123456789012345678901234567890",
+			apiResponse:   `{}`,
+			apiStatusCode: http.StatusOK,
+			expected:      "1234567890123456789012345678901234567890",
+			expectError:   false,
+		},
+		{
+			name:          "Short SHA with API response",
+			inputSHA:      "123456",
+			apiResponse:   `{"hash": "1234567890123456789012345678901234567890"}`,
+			apiStatusCode: http.StatusOK,
+			expected:      "1234567890123456789012345678901234567890",
+			expectError:   false,
+		},
+		{
+			name:          "API error",
+			inputSHA:      "abcdef",
+			apiResponse:   `{"error": "not found"}`,
+			apiStatusCode: http.StatusNotFound,
+			expected:      "abcdef", // Should return original on error
+			expectError:   true,
+		},
+		{
+			name:          "API returns invalid response",
+			inputSHA:      "abcdef",
+			apiResponse:   `{"hash": "short"}`,
+			apiStatusCode: http.StatusOK,
+			expected:      "abcdef", // Should return original for invalid response
+			expectError:   false,
+		},
+		{
+			name:           "Use cached value",
+			inputSHA:       "cached123",
+			apiResponse:    `{"error": "should not be called"}`,
+			apiStatusCode:  http.StatusInternalServerError,
+			expected:       "cachedvalue1234567890123456789012345678",
+			expectError:    false,
+			useCachedValue: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.apiStatusCode)
+				writeResponse(t, w, []byte(tc.apiResponse))
+			}))
+			defer testServer.Close()
+
+			client := &Client{
+				baseURL:        testServer.URL,
+				httpClient:     testServer.Client(),
+				logger:         logger,
+				commitSHACache: make(map[string]string),
+			}
+
+			// Pre-populate cache for cache test
+			if tc.useCachedValue {
+				client.commitSHACache[tc.inputSHA] = tc.expected
+			}
+
+			result, err := client.GetFullCommitSHA("workspace", "repo", tc.inputSHA)
+
+			if tc.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			assert.Equal(t, tc.expected, result)
+		})
+	}
 }
