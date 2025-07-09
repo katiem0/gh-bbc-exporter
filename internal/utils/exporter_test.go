@@ -455,7 +455,11 @@ func TestCloneRepositoryErrors(t *testing.T) {
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "clone-test-")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	logger, _ := zap.NewDevelopment()
 
@@ -482,7 +486,9 @@ func TestCloneRepositoryErrors(t *testing.T) {
 	// Test case 2: Permission error on directory creation
 	// Create a read-only directory to cause permission error
 	readOnlyDir := filepath.Join(tempDir, "readonly")
-	err = os.MkdirAll(readOnlyDir, 0400)
+	err = os.MkdirAll(readOnlyDir, 0755)
+	assert.NoError(t, err)
+	err = os.Chmod(readOnlyDir, 0500)
 	assert.NoError(t, err)
 
 	readOnlyExporter := NewExporter(client, readOnlyDir, logger, false, "")
