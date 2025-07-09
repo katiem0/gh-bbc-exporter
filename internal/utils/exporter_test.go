@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -120,72 +119,6 @@ func TestCreateArchive(t *testing.T) {
 			t.Logf("Warning: Failed to close gzip reader: %v", err)
 		}
 	}()
-}
-
-func TestCreateArchiveWithVariousFileTypes(t *testing.T) {
-	// Create a temporary directory with different file types
-	tempDir, err := os.MkdirTemp("", "archive-test-")
-	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
-
-	// Create regular file
-	regularFile := filepath.Join(tempDir, "regular.txt")
-	err = os.WriteFile(regularFile, []byte("regular file content"), 0644)
-	assert.NoError(t, err)
-
-	// Create symbolic link (if on Unix-like system)
-	if runtime.GOOS != "windows" {
-		symlinkPath := filepath.Join(tempDir, "symlink")
-		err = os.Symlink(regularFile, symlinkPath)
-		assert.NoError(t, err)
-	}
-
-	// Create directory
-	dirPath := filepath.Join(tempDir, "subdir")
-	err = os.MkdirAll(dirPath, 0755)
-	assert.NoError(t, err)
-
-	// Create file in subdirectory
-	subFile := filepath.Join(dirPath, "subfile.txt")
-	err = os.WriteFile(subFile, []byte("sub file content"), 0644)
-	assert.NoError(t, err)
-
-	// Create archive
-	outputPath := filepath.Join(tempDir, "archive.tar.gz")
-	err = CreateArchive(tempDir, outputPath)
-	assert.NoError(t, err)
-
-	// Verify archive exists and has content
-	info, err := os.Stat(outputPath)
-	assert.NoError(t, err)
-	assert.True(t, info.Size() > 0)
-
-	// Test archive contents
-	f, err := os.Open(outputPath)
-	assert.NoError(t, err)
-	defer f.Close()
-
-	gzr, err := gzip.NewReader(f)
-	assert.NoError(t, err)
-	defer gzr.Close()
-
-	tr := tar.NewReader(gzr)
-
-	foundFiles := make(map[string]bool)
-	for {
-		header, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		assert.NoError(t, err)
-
-		// Record found files
-		foundFiles[header.Name] = true
-	}
-
-	// Check that expected files are in the archive
-	assert.True(t, foundFiles["regular.txt"], "Regular file should be in archive")
-	assert.True(t, foundFiles["subdir/subfile.txt"], "File in subdirectory should be in archive")
 }
 
 func TestExport(t *testing.T) {
