@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -553,6 +554,29 @@ func (e *Exporter) createReviewThreads(comments []data.PullRequestReviewComment)
 
 		threads = append(threads, thread)
 	}
+
+	sort.Slice(threads, func(i, j int) bool {
+		// First sort by path
+		pathI, pathIOk := threads[i]["path"].(string)
+		pathJ, pathJOk := threads[j]["path"].(string)
+
+		if pathIOk && pathJOk && pathI != pathJ {
+			return pathI < pathJ
+		}
+
+		// If paths are the same or can't be compared, sort by position
+		posI, posIOk := threads[i]["position"].(int)
+		posJ, posJOk := threads[j]["position"].(int)
+
+		if posIOk && posJOk {
+			return posI < posJ
+		}
+
+		// Final fallback to created_at for consistent ordering
+		createdI, _ := threads[i]["created_at"].(string)
+		createdJ, _ := threads[j]["created_at"].(string)
+		return createdI < createdJ
+	})
 
 	return threads
 }
