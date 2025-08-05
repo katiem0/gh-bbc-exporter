@@ -556,44 +556,16 @@ func (e *Exporter) createReviewThreads(comments []data.PullRequestReviewComment)
 	}
 
 	sort.Slice(threads, func(i, j int) bool {
-		// First sort by path
-		pathI, pathIOk := threads[i]["path"].(string)
-		pathJ, pathJOk := threads[j]["path"].(string)
+		pathI, _ := threads[i]["path"].(string)
+		pathJ, _ := threads[j]["path"].(string)
 
-		if pathIOk && pathJOk && pathI != pathJ {
+		if pathI != pathJ {
 			return pathI < pathJ
 		}
 
-		// If paths are the same or can't be compared, sort by position
-		posI, posIOk := threads[i]["position"].(int)
-		posJ, posJOk := threads[j]["position"].(int)
-
-		// Handle case where one position exists but the other doesn't
-		if posIOk && !posJOk {
-			return true // Thread with position comes before thread without position
-		}
-		if !posIOk && posJOk {
-			return false // Thread without position comes after thread with position
-		}
-
-		// If both positions exist, compare them
-		if posIOk && posJOk {
-			return posI < posJ
-		}
-
-		// Final fallback to created_at for consistent ordering
-		createdI, createdIOk := threads[i]["created_at"].(string)
-		createdJ, createdJOk := threads[j]["created_at"].(string)
-
-		if createdIOk && createdJOk {
-			return createdI < createdJ
-		}
-
-		// Ultimate fallback: if we can't compare by any other means,
-		// use a stable sort criterion - the URL
-		urlI, _ := threads[i]["url"].(string)
-		urlJ, _ := threads[j]["url"].(string)
-		return urlI < urlJ
+		posI, _ := threads[i]["position"].(int)
+		posJ, _ := threads[j]["position"].(int)
+		return posI < posJ
 	})
 
 	return threads

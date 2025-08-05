@@ -154,6 +154,20 @@ func TestExecuteWithValidFlags(t *testing.T) {
 }
 
 func TestRootCmdOptionsValidation(t *testing.T) {
+	oldToken := os.Getenv("BITBUCKET_TOKEN")
+	oldUser := os.Getenv("BITBUCKET_USERNAME")
+	oldPass := os.Getenv("BITBUCKET_APP_PASSWORD")
+
+	defer func() {
+		os.Setenv("BITBUCKET_TOKEN", oldToken)
+		os.Setenv("BITBUCKET_USERNAME", oldUser)
+		os.Setenv("BITBUCKET_APP_PASSWORD", oldPass)
+	}()
+
+	os.Unsetenv("BITBUCKET_TOKEN")
+	os.Unsetenv("BITBUCKET_USERNAME")
+	os.Unsetenv("BITBUCKET_APP_PASSWORD")
+
 	// Test flag validation logic
 	tests := []struct {
 		name    string
@@ -375,48 +389,6 @@ func TestEnvironmentCredentials(t *testing.T) {
 	}
 }
 
-func TestEnvironmentVariableSecurityPrecedence(t *testing.T) {
-	// Test that environment variables work when no CLI flags are provided
-	t.Run("env vars only - should succeed", func(t *testing.T) {
-		// Save original environment
-		originalToken := os.Getenv("BITBUCKET_TOKEN")
-		tokenExists := originalToken != ""
-
-		// Set test value
-		err := os.Setenv("BITBUCKET_TOKEN", "secure-env-token")
-		assert.NoError(t, err, "Failed to set BITBUCKET_TOKEN environment variable")
-
-		// Restore properly on exit
-		defer func() {
-			if tokenExists {
-				_ = os.Setenv("BITBUCKET_TOKEN", originalToken)
-			} else {
-				_ = os.Unsetenv("BITBUCKET_TOKEN")
-			}
-		}()
-
-		rootCmd := NewCmdRoot()
-		// Mock the RunE to test the flow
-		var capturedToken string
-		rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
-			flags := &data.CmdFlags{}
-			// Simulate the actual flow
-			utils.SetupEnvironmentCredentials(flags)
-			capturedToken = flags.BitbucketToken
-			return utils.ValidateExportFlags(flags)
-		}
-
-		rootCmd.SetArgs([]string{
-			"--workspace", "test-ws",
-			"--repo", "test-repo",
-		})
-
-		err = rootCmd.Execute()
-		assert.NoError(t, err, "Should succeed with env var token")
-		assert.Equal(t, "secure-env-token", capturedToken)
-	})
-}
-
 func TestCredentialMasking(t *testing.T) {
 	// Ensure credentials are not logged in debug mode
 	core, obs := observer.New(zap.DebugLevel)
@@ -447,4 +419,75 @@ func TestCredentialMasking(t *testing.T) {
 		}
 		assert.True(t, foundToken, "Expected to find a 'token' field in the log")
 	}
+}
+
+func TestEnvironmentVariableSecurityPrecedence(t *testing.T) {
+	// Test that environment variables work when no CLI flags are provided
+	t.Run("env vars only - should succeed", func(t *testing.T) {
+		// Save original environment
+		originalToken := os.Getenv("BITBUCKET_TOKEN")
+		originalUser := os.Getenv("BITBUCKET_USERNAME")
+		originalPass := os.Getenv("BITBUCKET_APP_PASSWORD")
+
+		tokenExists := originalToken != ""
+		userExists := originalUser != ""
+		passExists := originalPass != ""
+
+		// Clear ALL environment variables first
+		_ = os.Unsetenv("BITBUCKET_TOKEN")
+		_ = os.Unsetenv("BITBUCKET_USERNAME")
+		_ = os.Unsetenv("BITBUCKET_APP_PASSWORD")
+
+		// Set only the test value we want
+		err := os.Setenv("BITBUCKET_TOKEN", "secure-env-token")
+		assert.NoError(t, err, "Failed to set BITBUCKET_TOKEN environment variable")
+
+		// Restore properly on exit
+		defer func() {
+			// Clear test values
+			_ = os.Unsetenv("BITBUCKET_TOKEN")
+			_ = os.Unsetenv("BITBUCKET_USERNAME")
+			_ = os.Unsetenv("BITBUCKET_APP_PASSWORD")
+
+			// Restore original values
+			if tokenExists {
+				_ = os.Setenv("BITBUCKET_TOKEN", originalToken)
+			}
+			if userExists {
+				_ = os.Setenv("BITBUCKET_USERNAME", originalUser)
+			}
+			if passExists {
+				_ = os.Setenv("BITBUCKET_APP_PASSWORD", originalPass)
+			}
+		}()
+
+		// Create a custom command for testing instead of using NewCmdRoot()
+		var capturedToken string
+		cmdFlags := &data.CmdFlags{}
+		rootCmd := &cobra.Command{
+			Use:   "bbc-exporter",
+			Short: "Export repository and metadata from Bitbucket Cloud",
+			RunE: func(cmd *cobra.Command, args []string) error {
+				utils.SetupEnvironmentCredentials(cmdFlags)
+				capturedToken = cmdFlags.BitbucketToken
+				return utils.ValidateExportFlags(cmdFlags)
+			},
+		}
+
+		// Add flags to the command
+		rootCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketToken, "token", "t", "", "Token")
+		rootCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketUser, "user", "u", "", "User")
+		rootCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketAppPass, "app-password", "p", "", "App Password")
+		rootCmd.PersistentFlags().StringVarP(&cmdFlags.Workspace, "workspace", "w", "", "Workspace")
+		rootCmd.PersistentFlags().StringVarP(&cmdFlags.Repository, "repo", "r", "", "Repository")
+
+		rootCmd.SetArgs([]string{
+			"--workspace", "test-ws",
+			"--repo", "test-repo",
+		})
+
+		err = rootCmd.Execute()
+		assert.NoError(t, err, "Should succeed with env var token")
+		assert.Equal(t, "secure-env-token", capturedToken)
+	})
 }
