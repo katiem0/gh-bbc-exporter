@@ -244,11 +244,31 @@ func TestEnvironmentCredentials(t *testing.T) {
 	originalUser := os.Getenv("BITBUCKET_USERNAME")
 	originalAppPass := os.Getenv("BITBUCKET_APP_PASSWORD")
 
+	// Track if variables existed originally
+	tokenExists := originalToken != ""
+	userExists := originalUser != ""
+	appPassExists := originalAppPass != ""
+
 	// Restore environment after test
 	defer func() {
-		_ = os.Setenv("BITBUCKET_TOKEN", originalToken)
-		_ = os.Setenv("BITBUCKET_USERNAME", originalUser)
-		_ = os.Setenv("BITBUCKET_APP_PASSWORD", originalAppPass)
+		// For each variable, either restore it or unset it
+		if tokenExists {
+			_ = os.Setenv("BITBUCKET_TOKEN", originalToken)
+		} else {
+			_ = os.Unsetenv("BITBUCKET_TOKEN")
+		}
+
+		if userExists {
+			_ = os.Setenv("BITBUCKET_USERNAME", originalUser)
+		} else {
+			_ = os.Unsetenv("BITBUCKET_USERNAME")
+		}
+
+		if appPassExists {
+			_ = os.Setenv("BITBUCKET_APP_PASSWORD", originalAppPass)
+		} else {
+			_ = os.Unsetenv("BITBUCKET_APP_PASSWORD")
+		}
 	}()
 
 	// Test cases for environment variables
@@ -358,10 +378,21 @@ func TestEnvironmentCredentials(t *testing.T) {
 func TestEnvironmentVariableSecurityPrecedence(t *testing.T) {
 	// Test that environment variables work when no CLI flags are provided
 	t.Run("env vars only - should succeed", func(t *testing.T) {
+		// Save original environment
+		originalToken := os.Getenv("BITBUCKET_TOKEN")
+		tokenExists := originalToken != ""
+
+		// Set test value
 		err := os.Setenv("BITBUCKET_TOKEN", "secure-env-token")
 		assert.NoError(t, err, "Failed to set BITBUCKET_TOKEN environment variable")
+
+		// Restore properly on exit
 		defer func() {
-			_ = os.Unsetenv("BITBUCKET_TOKEN")
+			if tokenExists {
+				_ = os.Setenv("BITBUCKET_TOKEN", originalToken)
+			} else {
+				_ = os.Unsetenv("BITBUCKET_TOKEN")
+			}
 		}()
 
 		rootCmd := NewCmdRoot()
@@ -398,13 +429,22 @@ func TestCredentialMasking(t *testing.T) {
 
 	// Verify logs don't contain actual tokens
 	logs := obs.All()
-	for _, log := range logs {
+	assert.Equal(t, 1, len(logs), "Expected one log entry")
+
+	if len(logs) > 0 {
+		log := logs[0]
 		assert.NotContains(t, log.Message, "actual-token-value")
-		// Also verify that sensitive info is redacted
+		assert.Equal(t, "Using authentication", log.Message)
+
+		// Find the token field and check its value
+		var foundToken bool
 		for _, field := range log.Context {
 			if field.Key == "token" {
+				foundToken = true
+				// Get the field value safely
 				assert.Equal(t, "[REDACTED]", field.String)
 			}
 		}
+		assert.True(t, foundToken, "Expected to find a 'token' field in the log")
 	}
 }
