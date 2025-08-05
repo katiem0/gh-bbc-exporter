@@ -89,7 +89,7 @@ Usage:
   bbc-exporter [flags]
 
 Flags:
-  -p, --app-password string    Bitbucket app password for basic authentication
+  -p, --app-password string    Bitbucket app password for basic authentication (env: BITBUCKET_APP_PASSWORD)
   -a, --bbc-api-url string     Bitbucket API to use (default "https://api.bitbucket.org/2.0")
   -d, --debug                  Enable debug logging
   -h, --help                   help for bbc-exporter
@@ -97,10 +97,29 @@ Flags:
   -o, --output string          Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)
       --prs-from-date string   Export pull requests created on or after this date (format: YYYY-MM-DD)
   -r, --repo string            Name of the repository to export from Bitbucket Cloud
-  -t, --token string           Bitbucket access token for authentication
-  -u, --user string            Bitbucket username for basic authentication
+  -t, --token string           Bitbucket access token for authentication (env: BITBUCKET_TOKEN)
+  -u, --user string            Bitbucket username for basic authentication (env: BITBUCKET_USERNAME)
   -w, --workspace string       Bitbucket workspace name
 ```
+
+### Authentication Methods
+
+#### Using Environment Variables
+
+This tool supports the use environment variables instead of command-line flags:
+
+```sh
+# Token authentication
+export BITBUCKET_TOKEN="your-token-here"
+gh bbc-exporter -w your-workspace -r your-repo
+
+# Basic authentication
+export BITBUCKET_USERNAME="your-username"
+export BITBUCKET_APP_PASSWORD="your-app-password"
+gh bbc-exporter -w your-workspace -r your-repo
+```
+
+#### Command-line Authentication
 
 Example Command
 
