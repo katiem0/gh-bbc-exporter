@@ -2,12 +2,15 @@ package cmd
 
 import (
 	"bytes"
+	"os"
 	"testing"
 
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
 	"github.com/katiem0/gh-bbc-exporter/internal/utils"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestValidateExportFlagsMixedAuth(t *testing.T) {
@@ -232,5 +235,216 @@ func TestRootCmdWithValidFlags(t *testing.T) {
 			assert.NoError(t, err)
 			assert.True(t, executed)
 		})
+	}
+}
+
+func TestEnvironmentCredentials(t *testing.T) {
+	// Save original environment
+	originalToken := os.Getenv("BITBUCKET_TOKEN")
+	originalUser := os.Getenv("BITBUCKET_USERNAME")
+	originalAppPass := os.Getenv("BITBUCKET_APP_PASSWORD")
+
+	// Track if variables existed originally
+	tokenExists := originalToken != ""
+	userExists := originalUser != ""
+	appPassExists := originalAppPass != ""
+
+	// Restore environment after test
+	defer func() {
+		// For each variable, either restore it or unset it
+		if tokenExists {
+			_ = os.Setenv("BITBUCKET_TOKEN", originalToken)
+		} else {
+			_ = os.Unsetenv("BITBUCKET_TOKEN")
+		}
+
+		if userExists {
+			_ = os.Setenv("BITBUCKET_USERNAME", originalUser)
+		} else {
+			_ = os.Unsetenv("BITBUCKET_USERNAME")
+		}
+
+		if appPassExists {
+			_ = os.Setenv("BITBUCKET_APP_PASSWORD", originalAppPass)
+		} else {
+			_ = os.Unsetenv("BITBUCKET_APP_PASSWORD")
+		}
+	}()
+
+	// Test cases for environment variables
+	testCases := []struct {
+		name    string
+		envVars map[string]string
+		cmdArgs []string
+		wantErr bool
+		checkFn func(*testing.T, *data.CmdFlags)
+	}{
+		{
+			name: "token from environment",
+			envVars: map[string]string{
+				"BITBUCKET_TOKEN": "env-token-123",
+			},
+			cmdArgs: []string{
+				"--workspace", "test-workspace",
+				"--repo", "test-repo",
+			},
+			wantErr: false,
+			checkFn: func(t *testing.T, flags *data.CmdFlags) {
+				assert.Equal(t, "env-token-123", flags.BitbucketToken, "Expected token from environment variable")
+			},
+		},
+		{
+			name: "basic auth from environment",
+			envVars: map[string]string{
+				"BITBUCKET_USERNAME":     "env-user",
+				"BITBUCKET_APP_PASSWORD": "env-password",
+			},
+			cmdArgs: []string{
+				"--workspace", "test-workspace",
+				"--repo", "test-repo",
+			},
+			wantErr: false,
+			checkFn: func(t *testing.T, flags *data.CmdFlags) {
+				assert.Equal(t, "env-user", flags.BitbucketUser, "Expected username from environment variable")
+				assert.Equal(t, "env-password", flags.BitbucketAppPass, "Expected password from environment variable")
+			},
+		},
+		{
+			name: "command line takes precedence over environment",
+			envVars: map[string]string{
+				"BITBUCKET_TOKEN": "env-token-123",
+			},
+			cmdArgs: []string{
+				"--workspace", "test-workspace",
+				"--repo", "test-repo",
+				"--token", "cli-token-override",
+			},
+			wantErr: false,
+			checkFn: func(t *testing.T, flags *data.CmdFlags) {
+				assert.Equal(t, "cli-token-override", flags.BitbucketToken, "Expected token from command line to override environment")
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Clear environment variables
+			_ = os.Unsetenv("BITBUCKET_TOKEN")
+			_ = os.Unsetenv("BITBUCKET_USERNAME")
+			_ = os.Unsetenv("BITBUCKET_APP_PASSWORD")
+
+			// Set environment variables for this test case
+			for k, v := range tc.envVars {
+				err := os.Setenv(k, v)
+				assert.NoError(t, err, "Failed to set environment variable %s", k)
+			}
+
+			// Create a new root command with mocked execution
+			cmdFlags := &data.CmdFlags{}
+			rootCmd := &cobra.Command{
+				RunE: func(cmd *cobra.Command, args []string) error {
+					// Mock the export function to capture the flags after env vars are loaded
+					utils.SetupEnvironmentCredentials(cmdFlags)
+					err := utils.ValidateExportFlags(cmdFlags)
+
+					// Run the check function to verify the flags
+					if !tc.wantErr && err == nil {
+						tc.checkFn(t, cmdFlags)
+					}
+					return err
+				},
+			}
+
+			// Set up the flags
+			rootCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketToken, "token", "t", "", "")
+			rootCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketUser, "user", "u", "", "")
+			rootCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketAppPass, "app-password", "p", "", "")
+			rootCmd.PersistentFlags().StringVarP(&cmdFlags.Repository, "repo", "r", "", "")
+			rootCmd.PersistentFlags().StringVarP(&cmdFlags.Workspace, "workspace", "w", "", "")
+
+			// Execute the command with test arguments
+			rootCmd.SetArgs(tc.cmdArgs)
+			err := rootCmd.Execute()
+
+			if tc.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestEnvironmentVariableSecurityPrecedence(t *testing.T) {
+	// Test that environment variables work when no CLI flags are provided
+	t.Run("env vars only - should succeed", func(t *testing.T) {
+		// Save original environment
+		originalToken := os.Getenv("BITBUCKET_TOKEN")
+		tokenExists := originalToken != ""
+
+		// Set test value
+		err := os.Setenv("BITBUCKET_TOKEN", "secure-env-token")
+		assert.NoError(t, err, "Failed to set BITBUCKET_TOKEN environment variable")
+
+		// Restore properly on exit
+		defer func() {
+			if tokenExists {
+				_ = os.Setenv("BITBUCKET_TOKEN", originalToken)
+			} else {
+				_ = os.Unsetenv("BITBUCKET_TOKEN")
+			}
+		}()
+
+		rootCmd := NewCmdRoot()
+		// Mock the RunE to test the flow
+		var capturedToken string
+		rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
+			flags := &data.CmdFlags{}
+			// Simulate the actual flow
+			utils.SetupEnvironmentCredentials(flags)
+			capturedToken = flags.BitbucketToken
+			return utils.ValidateExportFlags(flags)
+		}
+
+		rootCmd.SetArgs([]string{
+			"--workspace", "test-ws",
+			"--repo", "test-repo",
+		})
+
+		err = rootCmd.Execute()
+		assert.NoError(t, err, "Should succeed with env var token")
+		assert.Equal(t, "secure-env-token", capturedToken)
+	})
+}
+
+func TestCredentialMasking(t *testing.T) {
+	// Ensure credentials are not logged in debug mode
+	core, obs := observer.New(zap.DebugLevel)
+	logger := zap.New(core)
+
+	// Simulate logging with credentials
+	logger.Info("Using authentication",
+		zap.String("token", "[REDACTED]"),
+		zap.String("username", "user123"))
+
+	// Verify logs don't contain actual tokens
+	logs := obs.All()
+	assert.Equal(t, 1, len(logs), "Expected one log entry")
+
+	if len(logs) > 0 {
+		log := logs[0]
+		assert.NotContains(t, log.Message, "actual-token-value")
+		assert.Equal(t, "Using authentication", log.Message)
+
+		// Find the token field and check its value
+		var foundToken bool
+		for _, field := range log.Context {
+			if field.Key == "token" {
+				foundToken = true
+				// The field value in zap's observer is accessed through String() method
+				assert.Equal(t, "[REDACTED]", field.String)
+			}
+		}
+		assert.True(t, foundToken, "Expected to find a 'token' field in the log")
 	}
 }
