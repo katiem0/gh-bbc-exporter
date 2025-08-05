@@ -441,7 +441,7 @@ func TestCredentialMasking(t *testing.T) {
 		for _, field := range log.Context {
 			if field.Key == "token" {
 				foundToken = true
-				// Get the field value safely
+				// The field value in zap's observer is accessed through String() method
 				assert.Equal(t, "[REDACTED]", field.String)
 			}
 		}

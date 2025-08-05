@@ -106,7 +106,7 @@ Flags:
 
 #### Using Environment Variables
 
-This tool supports the use environment variables instead of command-line flags:
+This tool supports the use of environment variables instead of command-line flags:
 
 ```sh
 # Token authentication
