@@ -159,14 +159,28 @@ func TestRootCmdOptionsValidation(t *testing.T) {
 	oldPass := os.Getenv("BITBUCKET_APP_PASSWORD")
 
 	defer func() {
-		os.Setenv("BITBUCKET_TOKEN", oldToken)
-		os.Setenv("BITBUCKET_USERNAME", oldUser)
-		os.Setenv("BITBUCKET_APP_PASSWORD", oldPass)
+		// Check errors when restoring environment variables
+		if err := os.Setenv("BITBUCKET_TOKEN", oldToken); err != nil {
+			t.Logf("Failed to restore BITBUCKET_TOKEN: %v", err)
+		}
+		if err := os.Setenv("BITBUCKET_USERNAME", oldUser); err != nil {
+			t.Logf("Failed to restore BITBUCKET_USERNAME: %v", err)
+		}
+		if err := os.Setenv("BITBUCKET_APP_PASSWORD", oldPass); err != nil {
+			t.Logf("Failed to restore BITBUCKET_APP_PASSWORD: %v", err)
+		}
 	}()
 
-	os.Unsetenv("BITBUCKET_TOKEN")
-	os.Unsetenv("BITBUCKET_USERNAME")
-	os.Unsetenv("BITBUCKET_APP_PASSWORD")
+	// Check errors when unsetting environment variables
+	if err := os.Unsetenv("BITBUCKET_TOKEN"); err != nil {
+		t.Logf("Failed to unset BITBUCKET_TOKEN: %v", err)
+	}
+	if err := os.Unsetenv("BITBUCKET_USERNAME"); err != nil {
+		t.Logf("Failed to unset BITBUCKET_USERNAME: %v", err)
+	}
+	if err := os.Unsetenv("BITBUCKET_APP_PASSWORD"); err != nil {
+		t.Logf("Failed to unset BITBUCKET_APP_PASSWORD: %v", err)
+	}
 
 	// Test flag validation logic
 	tests := []struct {
