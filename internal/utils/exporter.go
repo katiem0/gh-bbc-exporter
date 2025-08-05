@@ -568,14 +568,32 @@ func (e *Exporter) createReviewThreads(comments []data.PullRequestReviewComment)
 		posI, posIOk := threads[i]["position"].(int)
 		posJ, posJOk := threads[j]["position"].(int)
 
+		// Handle case where one position exists but the other doesn't
+		if posIOk && !posJOk {
+			return true // Thread with position comes before thread without position
+		}
+		if !posIOk && posJOk {
+			return false // Thread without position comes after thread with position
+		}
+
+		// If both positions exist, compare them
 		if posIOk && posJOk {
 			return posI < posJ
 		}
 
 		// Final fallback to created_at for consistent ordering
-		createdI, _ := threads[i]["created_at"].(string)
-		createdJ, _ := threads[j]["created_at"].(string)
-		return createdI < createdJ
+		createdI, createdIOk := threads[i]["created_at"].(string)
+		createdJ, createdJOk := threads[j]["created_at"].(string)
+
+		if createdIOk && createdJOk {
+			return createdI < createdJ
+		}
+
+		// Ultimate fallback: if we can't compare by any other means,
+		// use a stable sort criterion - the URL
+		urlI, _ := threads[i]["url"].(string)
+		urlJ, _ := threads[j]["url"].(string)
+		return urlI < urlJ
 	})
 
 	return threads
