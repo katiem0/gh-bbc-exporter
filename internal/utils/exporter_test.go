@@ -766,15 +766,52 @@ func TestExportWithNoData(t *testing.T) {
 }
 
 func TestReviewStates(t *testing.T) {
-	// Document the review state constants for clarity
-	const (
-		StateApproved         = 1
-		StateChangesRequested = 3
-		StateCommented        = 2
-	)
+	// Create a logger and exporter
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, "output", logger, false, "")
 
-	// This test serves as documentation for the state values
-	assert.Equal(t, 1, StateApproved)
-	assert.Equal(t, 3, StateChangesRequested)
-	assert.Equal(t, 2, StateCommented)
+	// Create review comments with different states
+	reviewComments := []data.PullRequestReviewComment{
+		{
+			PullRequestReview: "https://example.com/review/1",
+			User:              "https://example.com/user/1",
+			State:             1, // Approved
+			CreatedAt:         "2023-01-01T10:00:00Z",
+		},
+		{
+			PullRequestReview: "https://example.com/review/2",
+			User:              "https://example.com/user/2",
+			State:             2, // Commented
+			CreatedAt:         "2023-01-02T10:00:00Z",
+		},
+		{
+			PullRequestReview: "https://example.com/review/3",
+			User:              "https://example.com/user/3",
+			State:             3, // Changes requested
+			CreatedAt:         "2023-01-03T10:00:00Z",
+		},
+	}
+
+	// Create reviews from the comments
+	reviews := exporter.createReviews(reviewComments)
+
+	// Verify we have the correct number of reviews
+	assert.Len(t, reviews, 3)
+
+	// Create a map to look up reviews by state for verification
+	reviewsByState := make(map[int]map[string]interface{})
+	for _, review := range reviews {
+		state := review["state"].(int)
+		reviewsByState[state] = review
+	}
+
+	// Verify each review state has the expected attributes
+	assert.Contains(t, reviewsByState, 1, "Should have a review with state 1 (approved)")
+	assert.Contains(t, reviewsByState, 2, "Should have a review with state 2 (commented)")
+	assert.Contains(t, reviewsByState, 3, "Should have a review with state 3 (changes requested)")
+
+	// Verify submitted dates for each state
+	assert.Equal(t, "2023-01-01T10:00:00Z", reviewsByState[1]["submitted_at"], "Approved review should have correct date")
+	assert.Equal(t, "2023-01-02T10:00:00Z", reviewsByState[2]["submitted_at"], "Commented review should have correct date")
+	assert.Equal(t, "2023-01-03T10:00:00Z", reviewsByState[3]["submitted_at"], "Changes requested review should have correct date")
 }
