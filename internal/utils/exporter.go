@@ -66,8 +66,7 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 		return err
 	}
 
-	defaultLabels := []data.Label{}
-	repositories := e.createRepositoriesData(repo, workspace, defaultLabels)
+	repositories := e.createRepositoriesData(repo, workspace)
 	if err := e.writeJSONFile("repositories_000001.json", repositories); err != nil {
 		return err
 	}
@@ -436,16 +435,22 @@ func (e *Exporter) createOrganizationData(workspace string) []data.Organization 
 	}
 }
 
-func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, workspace string, labels []data.Label) []data.Repository {
+func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, workspace string) []data.Repository {
 
 	createdAt := formatDateToZ(repo.CreatedOn)
+
+	if repo.Name != repo.Slug {
+		e.logger.Debug("Repository name contains special characters, using slug for compatibility",
+			zap.String("name", repo.Name),
+			zap.String("slug", repo.Slug))
+	}
 
 	return []data.Repository{
 		{
 			Type:             "repository",
 			URL:              formatURL("repository", workspace, repo.Slug),
 			Owner:            formatURL("user", workspace, ""),
-			Name:             repo.Name,
+			Name:             repo.Slug,
 			Slug:             repo.Slug,
 			Description:      repo.Description,
 			Private:          repo.IsPrivate,

@@ -715,3 +715,16 @@ func TestCreateEmptyRepositoryWithReadOnlyDir(t *testing.T) {
 	assert.Error(t, err)
 	// Don't check for the specific file, just confirm the operation failed with an error
 }
+
+func TestGetOutputPath(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	// Test with custom output directory
+	exporter := NewExporter(&Client{}, "/custom/path", logger, false, "")
+	assert.Equal(t, "/custom/path", exporter.GetOutputPath())
+
+	// Test with empty output directory - it remains empty until Export() is called
+	exporter = NewExporter(&Client{}, "", logger, false, "")
+	path := exporter.GetOutputPath()
+	assert.Equal(t, "", path, "Empty output dir should remain empty until Export() is called")
+}

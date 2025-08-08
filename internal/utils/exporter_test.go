@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestNewExporter(t *testing.T) {
@@ -477,4 +479,350 @@ func TestCloneRepositoryErrors(t *testing.T) {
 	readOnlyExporter := NewExporter(client, readOnlyDir, logger, false, "")
 	err = readOnlyExporter.CloneRepository("workspace", "repo", "https://example.com/repo.git")
 	assert.Error(t, err)
+}
+
+func TestCreateRepositoriesDataWithSpecialChars(t *testing.T) {
+	// Create an observable logger to capture log output
+	core, observedLogs := observer.New(zap.DebugLevel)
+	observableLogger := zap.New(core)
+
+	client := &Client{}
+	exporter := NewExporter(client, "output", observableLogger, false, "")
+
+	// Test with a repo where name and slug differ due to special characters
+	repo := &data.BitbucketRepository{
+		Name:        "@group-test/ui", // Name with special characters
+		Slug:        "group-test-ui",  // Slug without special characters
+		Description: "Test repository with special characters",
+		CreatedOn:   "2023-01-01T00:00:00Z",
+		IsPrivate:   true,
+	}
+
+	// Create repositories data
+	repositories := exporter.createRepositoriesData(repo, "test-workspace")
+
+	// Verify the result
+	assert.Len(t, repositories, 1)
+	assert.Equal(t, "group-test-ui", repositories[0].Name, "Should use slug instead of name")
+	assert.Equal(t, "group-test-ui", repositories[0].Slug, "Slug should match")
+
+	// Verify that a debug log was created about using the slug
+	logs := observedLogs.All()
+	var foundLogMessage bool
+	for _, log := range logs {
+		if strings.Contains(log.Message, "Repository name contains special characters") {
+			foundLogMessage = true
+			assert.Equal(t, "@group-test/ui", log.ContextMap()["name"], "Log should contain original name")
+			assert.Equal(t, "group-test-ui", log.ContextMap()["slug"], "Log should contain slug")
+			break
+		}
+	}
+	assert.True(t, foundLogMessage, "Should log about using slug instead of name")
+}
+
+func TestCreateBasicUsers_Fallback(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, "output", logger, false, "")
+
+	users := exporter.createBasicUsers("ws-fallback")
+	assert.Len(t, users, 1)
+	assert.Equal(t, "user", users[0].Type)
+	assert.Equal(t, "ws-fallback", users[0].Login)
+	assert.Equal(t, "ws-fallback", users[0].Name)
+}
+
+func TestUpdateRepositoryField(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "update-repo-field-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+
+	// Seed repositories_000001.json with a minimal repository entry
+	initial := []data.Repository{
+		{
+			Type:          "repository",
+			Name:          "group-test-ui",
+			Slug:          "group-test-ui",
+			DefaultBranch: "main",
+			GitURL:        "",
+		},
+	}
+	err = exporter.writeJSONFile("repositories_000001.json", initial)
+	assert.NoError(t, err)
+
+	// Update default_branch and git_url
+	exporter.updateRepositoryField("group-test-ui", "default_branch", "develop")
+	exporter.updateRepositoryField("group-test-ui", "git_url", "tarball://root/repositories/ws/group-test-ui.git")
+
+	// Read back and assert changes
+	b, err := os.ReadFile(filepath.Join(tempDir, "repositories_000001.json"))
+	assert.NoError(t, err)
+	var repos []data.Repository
+	assert.NoError(t, json.Unmarshal(b, &repos))
+	assert.Equal(t, "develop", repos[0].DefaultBranch)
+	assert.Equal(t, "tarball://root/repositories/ws/group-test-ui.git", repos[0].GitURL)
+}
+
+func TestCreateEmptyRepository(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "empty-repo-test-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+
+	// Test successful creation
+	err = exporter.createEmptyRepository("test-workspace", "test-repo")
+	assert.NoError(t, err)
+
+	// Verify the repository directory was created
+	repoPath := filepath.Join(tempDir, "repositories", "test-workspace", "test-repo.git")
+	assert.DirExists(t, repoPath)
+
+	// Verify it's a valid git repository
+	cmd := exec.Command("git", "rev-parse", "--git-dir")
+	cmd.Dir = repoPath
+	output, err := cmd.Output()
+	assert.NoError(t, err)
+	assert.Contains(t, string(output), ".")
+}
+
+func TestCloneRepositoryWithErrors(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "clone-repo-error-test-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	// Create mock server
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/repositories/") {
+			// Return repository with default branch
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{
+                "name": "test-repo",
+                "slug": "test-repo",
+                "mainbranch": {"name": "develop"}
+            }`))
+		}
+	}))
+	defer testServer.Close()
+
+	logger, _ := zap.NewDevelopment()
+	client := &Client{
+		baseURL:    testServer.URL,
+		httpClient: testServer.Client(),
+		logger:     logger,
+	}
+	exporter := NewExporter(client, tempDir, logger, false, "")
+
+	// Test with invalid clone URL - this should fail
+	err = exporter.CloneRepository("test-workspace", "test-repo", "invalid://url")
+	assert.Error(t, err) // CloneRepository returns error on failure
+	assert.Contains(t, err.Error(), "failed to clone repository")
+}
+
+func TestCreateReviews(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, "output", logger, false, "")
+
+	reviewComments := []data.PullRequestReviewComment{
+		{
+			PullRequestReview: "https://example.com/review/1",
+			User:              "https://example.com/user/1",
+			Body:              "Looks good!",
+			State:             1, // Use int value for approved
+			CreatedAt:         "2023-01-01T10:00:00Z",
+			UpdatedAt:         "2023-01-01T10:00:00Z",
+		},
+		{
+			PullRequestReview: "https://example.com/review/1", // Same review
+			User:              "https://example.com/user/1",
+			Body:              "Additional comment",
+			State:             1, // Use int value for approved
+			CreatedAt:         "2023-01-01T11:00:00Z",
+			UpdatedAt:         "2023-01-01T11:00:00Z",
+		},
+		{
+			PullRequestReview: "https://example.com/review/2", // Different review
+			User:              "https://example.com/user/2",
+			Body:              "Needs changes",
+			State:             3, // Use int value for changes_requested
+			CreatedAt:         "2023-01-02T10:00:00Z",
+			UpdatedAt:         "2023-01-02T10:00:00Z",
+		},
+	}
+
+	reviews := exporter.createReviews(reviewComments)
+
+	// Should have two reviews
+	assert.Len(t, reviews, 2)
+
+	// Create a map to look up reviews by their review URL
+	reviewsByURL := make(map[string]map[string]interface{})
+	for _, review := range reviews {
+		url := review["url"].(string)
+		reviewsByURL[url] = review
+	}
+
+	// Verify first review (by URL)
+	review1 := reviewsByURL["https://example.com/review/1"]
+	assert.NotNil(t, review1, "Should have review with URL https://example.com/review/1")
+	assert.Equal(t, "2023-01-01T10:00:00Z", review1["submitted_at"], "Should use earliest comment time")
+	assert.Equal(t, 1, review1["state"], "Should have state 1 (approved)")
+
+	// Verify second review
+	review2 := reviewsByURL["https://example.com/review/2"]
+	assert.NotNil(t, review2, "Should have review with URL https://example.com/review/2")
+	assert.Equal(t, "2023-01-02T10:00:00Z", review2["submitted_at"])
+	assert.Equal(t, 3, review2["state"], "Should have state 3 (changes requested)")
+}
+
+func TestArchiveDirectoryWithSpecialFiles(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "archive-special-test-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+
+	// Create various file types
+	regularFile := filepath.Join(tempDir, "regular.txt")
+	err = os.WriteFile(regularFile, []byte("regular content"), 0644)
+	assert.NoError(t, err)
+
+	// Create subdirectory with file
+	subDir := filepath.Join(tempDir, "subdir")
+	err = os.MkdirAll(subDir, 0755)
+	assert.NoError(t, err)
+
+	subFile := filepath.Join(subDir, "subfile.txt")
+	err = os.WriteFile(subFile, []byte("sub content"), 0644)
+	assert.NoError(t, err)
+
+	// Create archive
+	archivePath, err := exporter.CreateArchive()
+	assert.NoError(t, err)
+
+	// Verify archive contents
+	f, err := os.Open(archivePath)
+	assert.NoError(t, err)
+	defer func() { _ = f.Close() }()
+
+	gz, err := gzip.NewReader(f)
+	assert.NoError(t, err)
+	defer func() { _ = gz.Close() }()
+
+	tr := tar.NewReader(gz)
+
+	foundFiles := make(map[string]bool)
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		assert.NoError(t, err)
+		foundFiles[h.Name] = true
+	}
+
+	assert.True(t, foundFiles["regular.txt"], "Should find regular file")
+	assert.True(t, foundFiles["subdir/subfile.txt"], "Should find file in subdirectory")
+}
+
+func TestExportWithNoData(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "export-no-data-test-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	// Mock server that returns empty data
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+
+		if strings.Contains(r.URL.Path, "/repositories/") && !strings.Contains(r.URL.Path, "pullrequests") {
+			writeResponse(t, w, []byte(`{
+                "name": "empty-repo",
+                "slug": "empty-repo",
+                "mainbranch": {"name": "main"}
+            }`))
+		} else {
+			// Return empty lists for everything else
+			writeResponse(t, w, []byte(`{"values": [], "next": null}`))
+		}
+	}))
+	defer testServer.Close()
+
+	logger, _ := zap.NewDevelopment()
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		token:          "test-token",
+		commitSHACache: make(map[string]string),
+	}
+	exporter := NewExporter(client, tempDir, logger, false, "")
+
+	// Should succeed even with no data
+	err = exporter.Export("test-workspace", "empty-repo")
+	assert.NoError(t, err)
+
+	// Should still create basic files
+	assert.FileExists(t, filepath.Join(tempDir, "schema.json"))
+	assert.FileExists(t, filepath.Join(tempDir, "repositories_000001.json"))
+	assert.FileExists(t, filepath.Join(tempDir, "organizations_000001.json"))
+	assert.FileExists(t, filepath.Join(tempDir, "users_000001.json"))
+
+	// Should not create PR-related files when there are no PRs
+	assert.NoFileExists(t, filepath.Join(tempDir, "pull_requests_000001.json"))
+	assert.NoFileExists(t, filepath.Join(tempDir, "issue_comments_000001.json"))
+}
+
+func TestReviewStates(t *testing.T) {
+	// Create a logger and exporter
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, "output", logger, false, "")
+
+	// Create review comments with different states
+	reviewComments := []data.PullRequestReviewComment{
+		{
+			PullRequestReview: "https://example.com/review/1",
+			User:              "https://example.com/user/1",
+			State:             1, // Approved
+			CreatedAt:         "2023-01-01T10:00:00Z",
+		},
+		{
+			PullRequestReview: "https://example.com/review/2",
+			User:              "https://example.com/user/2",
+			State:             2, // Commented
+			CreatedAt:         "2023-01-02T10:00:00Z",
+		},
+		{
+			PullRequestReview: "https://example.com/review/3",
+			User:              "https://example.com/user/3",
+			State:             3, // Changes requested
+			CreatedAt:         "2023-01-03T10:00:00Z",
+		},
+	}
+
+	// Create reviews from the comments
+	reviews := exporter.createReviews(reviewComments)
+
+	// Verify we have the correct number of reviews
+	assert.Len(t, reviews, 3)
+
+	// Create a map to look up reviews by state for verification
+	reviewsByState := make(map[int]map[string]interface{})
+	for _, review := range reviews {
+		state := review["state"].(int)
+		reviewsByState[state] = review
+	}
+
+	// Verify each review state has the expected attributes
+	assert.Contains(t, reviewsByState, 1, "Should have a review with state 1 (approved)")
+	assert.Contains(t, reviewsByState, 2, "Should have a review with state 2 (commented)")
+	assert.Contains(t, reviewsByState, 3, "Should have a review with state 3 (changes requested)")
+
+	// Verify submitted dates for each state
+	assert.Equal(t, "2023-01-01T10:00:00Z", reviewsByState[1]["submitted_at"], "Approved review should have correct date")
+	assert.Equal(t, "2023-01-02T10:00:00Z", reviewsByState[2]["submitted_at"], "Commented review should have correct date")
+	assert.Equal(t, "2023-01-03T10:00:00Z", reviewsByState[3]["submitted_at"], "Changes requested review should have correct date")
 }

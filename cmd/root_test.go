@@ -505,3 +505,188 @@ func TestEnvironmentVariableSecurityPrecedence(t *testing.T) {
 		assert.Equal(t, "secure-env-token", capturedToken)
 	})
 }
+
+func TestEnvironmentVariableOverrides(t *testing.T) {
+	// Save original values
+	originalURL := os.Getenv("BITBUCKET_API_URL")
+	defer func() {
+		if originalURL != "" {
+			if err := os.Setenv("BITBUCKET_API_URL", originalURL); err != nil {
+				t.Logf("Failed to restore BITBUCKET_API_URL: %v", err)
+			}
+		} else {
+			if err := os.Unsetenv("BITBUCKET_API_URL"); err != nil {
+				t.Logf("Failed to unset BITBUCKET_API_URL: %v", err)
+			}
+		}
+	}()
+
+	// Set custom API URL
+	if err := os.Setenv("BITBUCKET_API_URL", "https://custom.bitbucket.com/api/v2"); err != nil {
+		t.Fatalf("Failed to set BITBUCKET_API_URL: %v", err)
+	}
+
+	cmdFlags := &data.CmdFlags{}
+	cmd := &cobra.Command{
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Capture flags after processing
+			cmdFlags.BitbucketAPIURL, _ = cmd.Flags().GetString("api-url")
+			return nil
+		},
+	}
+
+	cmd.PersistentFlags().StringVar(&cmdFlags.BitbucketAPIURL, "api-url", os.Getenv("BITBUCKET_API_URL"), "Bitbucket API URL")
+
+	err := cmd.Execute()
+	assert.NoError(t, err)
+	assert.Equal(t, "https://custom.bitbucket.com/api/v2", cmdFlags.BitbucketAPIURL)
+}
+
+func TestDebugLoggingConfiguration(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		expectDebug bool
+	}{
+		{
+			name:        "debug enabled",
+			args:        []string{"--debug", "--workspace", "test", "--repo", "test", "--token", "test"},
+			expectDebug: true,
+		},
+		{
+			name:        "debug disabled",
+			args:        []string{"--workspace", "test", "--repo", "test", "--token", "test"},
+			expectDebug: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rootCmd := NewCmdRoot()
+
+			// Capture debug flag
+			var debugEnabled bool
+			originalRunE := rootCmd.RunE
+			rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
+				debugEnabled, _ = cmd.Flags().GetBool("debug")
+				return nil
+			}
+			defer func() { rootCmd.RunE = originalRunE }()
+
+			rootCmd.SetArgs(tt.args)
+			err := rootCmd.Execute()
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectDebug, debugEnabled)
+		})
+	}
+}
+
+func TestRootCommandHelp(t *testing.T) {
+	rootCmd := NewCmdRoot()
+
+	// Capture output
+	var buf bytes.Buffer
+	rootCmd.SetOut(&buf)
+	rootCmd.SetErr(&buf)
+	rootCmd.SetArgs([]string{"--help"})
+
+	err := rootCmd.Execute()
+	assert.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "Export repository and metadata from Bitbucket Cloud")
+	assert.Contains(t, output, "--workspace")
+	assert.Contains(t, output, "--repo")
+	assert.Contains(t, output, "--token")
+}
+
+func TestRootCommandAPIURLFlag(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		expectedURL string
+	}{
+		{
+			name:        "custom API URL",
+			args:        []string{"--workspace", "test", "--repo", "test", "--token", "test", "--bbc-api-url", "https://custom.bitbucket.com/api/v2"},
+			expectedURL: "https://custom.bitbucket.com/api/v2",
+		},
+		{
+			name:        "default API URL",
+			args:        []string{"--workspace", "test", "--repo", "test", "--token", "test"},
+			expectedURL: "https://api.bitbucket.org/2.0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rootCmd := NewCmdRoot()
+
+			var capturedURL string
+			originalRunE := rootCmd.RunE
+			rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
+				capturedURL, _ = cmd.Flags().GetString("bbc-api-url")
+				return nil
+			}
+			defer func() { rootCmd.RunE = originalRunE }()
+
+			rootCmd.SetArgs(tt.args)
+			err := rootCmd.Execute()
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedURL, capturedURL)
+		})
+	}
+}
+
+func TestRootCommandOutputDirFlag(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "output-test-")
+	assert.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temporary directory: %v", err)
+		}
+	}()
+
+	tests := []struct {
+		name      string
+		args      []string
+		checkPath bool
+	}{
+		{
+			name:      "custom output directory",
+			args:      []string{"--workspace", "test", "--repo", "test", "--token", "test", "--output", tempDir},
+			checkPath: true,
+		},
+		{
+			name:      "default output directory",
+			args:      []string{"--workspace", "test", "--repo", "test", "--token", "test"},
+			checkPath: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rootCmd := NewCmdRoot()
+
+			var outputDir string
+			originalRunE := rootCmd.RunE
+			rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
+				outputDir, _ = cmd.Flags().GetString("output")
+				return nil
+			}
+			defer func() { rootCmd.RunE = originalRunE }()
+
+			rootCmd.SetArgs(tt.args)
+			err := rootCmd.Execute()
+
+			assert.NoError(t, err)
+			if tt.checkPath {
+				assert.Equal(t, tempDir, outputDir)
+			} else {
+				assert.Empty(t, outputDir)
+			}
+		})
+	}
+}

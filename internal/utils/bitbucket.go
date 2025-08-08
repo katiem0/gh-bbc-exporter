@@ -485,6 +485,10 @@ func (c *Client) GetFullCommitSHA(workspace, repoSlug, commitHash string) (strin
 		return commitHash, nil
 	}
 
+	if fullSHA, exists := c.commitSHACache[commitHash]; exists {
+		return fullSHA, nil
+	}
+
 	endpoint := fmt.Sprintf("repositories/%s/%s/commit/%s", workspace, repoSlug, commitHash)
 
 	var response struct {
@@ -497,6 +501,7 @@ func (c *Client) GetFullCommitSHA(workspace, repoSlug, commitHash string) (strin
 	}
 
 	if len(response.Hash) == 40 {
+		c.commitSHACache[commitHash] = response.Hash
 		return response.Hash, nil
 	}
 
