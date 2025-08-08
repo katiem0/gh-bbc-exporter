@@ -658,13 +658,24 @@ func TestCreateReviews(t *testing.T) {
 	// Should have two reviews
 	assert.Len(t, reviews, 2)
 
-	// First review should use earliest comment time
-	assert.Equal(t, "2023-01-01T10:00:00Z", reviews[0]["submitted_at"])
-	assert.Equal(t, 1, reviews[0]["state"]) // Check as int
+	// Create a map to look up reviews by their review URL
+	reviewsByURL := make(map[string]map[string]interface{})
+	for _, review := range reviews {
+		url := review["url"].(string)
+		reviewsByURL[url] = review
+	}
 
-	// Second review
-	assert.Equal(t, "2023-01-02T10:00:00Z", reviews[1]["submitted_at"])
-	assert.Equal(t, 3, reviews[1]["state"]) // Check as int
+	// Verify first review (by URL)
+	review1 := reviewsByURL["https://example.com/review/1"]
+	assert.NotNil(t, review1, "Should have review with URL https://example.com/review/1")
+	assert.Equal(t, "2023-01-01T10:00:00Z", review1["submitted_at"], "Should use earliest comment time")
+	assert.Equal(t, 1, review1["state"], "Should have state 1 (approved)")
+
+	// Verify second review
+	review2 := reviewsByURL["https://example.com/review/2"]
+	assert.NotNil(t, review2, "Should have review with URL https://example.com/review/2")
+	assert.Equal(t, "2023-01-02T10:00:00Z", review2["submitted_at"])
+	assert.Equal(t, 3, review2["state"], "Should have state 3 (changes requested)")
 }
 
 func TestArchiveDirectoryWithSpecialFiles(t *testing.T) {
