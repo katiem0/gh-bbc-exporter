@@ -511,14 +511,20 @@ func TestEnvironmentVariableOverrides(t *testing.T) {
 	originalURL := os.Getenv("BITBUCKET_API_URL")
 	defer func() {
 		if originalURL != "" {
-			os.Setenv("BITBUCKET_API_URL", originalURL)
+			if err := os.Setenv("BITBUCKET_API_URL", originalURL); err != nil {
+				t.Logf("Failed to restore BITBUCKET_API_URL: %v", err)
+			}
 		} else {
-			os.Unsetenv("BITBUCKET_API_URL")
+			if err := os.Unsetenv("BITBUCKET_API_URL"); err != nil {
+				t.Logf("Failed to unset BITBUCKET_API_URL: %v", err)
+			}
 		}
 	}()
 
 	// Set custom API URL
-	os.Setenv("BITBUCKET_API_URL", "https://custom.bitbucket.com/api/v2")
+	if err := os.Setenv("BITBUCKET_API_URL", "https://custom.bitbucket.com/api/v2"); err != nil {
+		t.Fatalf("Failed to set BITBUCKET_API_URL: %v", err)
+	}
 
 	cmdFlags := &data.CmdFlags{}
 	cmd := &cobra.Command{
@@ -637,7 +643,11 @@ func TestRootCommandAPIURLFlag(t *testing.T) {
 func TestRootCommandOutputDirFlag(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "output-test-")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temporary directory: %v", err)
+		}
+	}()
 
 	tests := []struct {
 		name      string
