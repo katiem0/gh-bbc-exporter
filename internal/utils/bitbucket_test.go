@@ -872,3 +872,93 @@ func TestMalformedJSONResponse(t *testing.T) {
 	// Check for any JSON-related error message
 	assert.Contains(t, err.Error(), "EOF")
 }
+
+func TestGetFullCommitSHAFastPaths(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	// Create a test server that should never be called
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// This should not be called for the fast paths we're testing
+		t.Error("HTTP request was made but should have been avoided")
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer testServer.Close()
+
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		commitSHACache: make(map[string]string),
+	}
+
+	// 1) Full SHA passthrough (no network)
+	full := strings.Repeat("a", 40)
+	got, err := client.GetFullCommitSHA("ws", "repo", full)
+	assert.NoError(t, err)
+	assert.Equal(t, full, got)
+
+	// 2) Cache hit (no network)
+	client.commitSHACache["abc123"] = strings.Repeat("b", 40)
+	got, err = client.GetFullCommitSHA("ws", "repo", "abc123")
+	assert.NoError(t, err)
+	assert.Equal(t, strings.Repeat("b", 40), got)
+}
+
+func TestGetFullCommitSHAWithAPICall(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return full SHA for short SHA
+		w.WriteHeader(http.StatusOK)
+		writeResponse(t, w, []byte(`{"hash": "1234567890abcdef1234567890abcdef12345678"}`))
+	}))
+	defer testServer.Close()
+
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		token:          "test-token",
+		commitSHACache: make(map[string]string),
+	}
+
+	// Test with short SHA that needs API call
+	shortSHA := "abc123"
+	fullSHA, err := client.GetFullCommitSHA("workspace", "repo", shortSHA)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "1234567890abcdef1234567890abcdef12345678", fullSHA)
+
+	// Verify it was cached
+	assert.Equal(t, fullSHA, client.commitSHACache[shortSHA])
+
+	// Second call should use cache (server won't be called)
+	cachedSHA, err := client.GetFullCommitSHA("workspace", "repo", shortSHA)
+	assert.NoError(t, err)
+	assert.Equal(t, fullSHA, cachedSHA)
+}
+
+func TestMakeRequestWithNoAuth(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify no auth header is present
+		assert.Empty(t, r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusOK)
+		writeResponse(t, w, []byte(`{"success": true}`))
+	}))
+	defer testServer.Close()
+
+	client := &Client{
+		baseURL:    testServer.URL,
+		httpClient: testServer.Client(),
+		logger:     logger,
+		// No auth credentials
+	}
+
+	var result map[string]interface{}
+	err := client.makeRequest("GET", "/test", &result)
+
+	assert.NoError(t, err)
+	assert.True(t, result["success"].(bool))
+}
