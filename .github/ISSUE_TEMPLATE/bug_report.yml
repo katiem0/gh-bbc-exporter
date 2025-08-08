@@ -1,4 +1,4 @@
-name: Bug Report
+name: :bug: Bug Report
 description: A bug was discovered when using this tool
 title: "[Bug]: "
 labels: ["bug", "triage"]
