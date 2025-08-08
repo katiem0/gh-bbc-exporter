@@ -1,11 +1,11 @@
 blank_issues_enabled: true
 contact_links:
-  - name: How to Export 
+  - name: "🔗 How to Export"
     url: https://github.com/katiem0/gh-bbc-exporter#readme
     about: Check out the export documentation for help.
-  - name: How to Import
+  - name: "🔗 How to Import"
     url: https://github.com/katiem0/gh-bbc-exporter/tree/main/docs
     about: Check out the import documentation for help.
-  - name: GitHub Migration Documentation
+  - name: "🔗 GitHub Migration Documentation"
     url: https://docs.github.com/en/migrations
     about: Learn about the migration process and best practices.
