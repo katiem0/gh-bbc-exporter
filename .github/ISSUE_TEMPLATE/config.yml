@@ -1,6 +1,6 @@
-blank_issues_enabled: false
+blank_issues_enabled: true
 contact_links:
-  - name: How to Export
+  - name: How to Export 
     url: https://github.com/katiem0/gh-bbc-exporter#readme
     about: Check out the export documentation for help.
   - name: How to Import
