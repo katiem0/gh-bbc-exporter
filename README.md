@@ -22,6 +22,13 @@ The exporter creates a complete migration archive containing:
 - Pull request reviews
 - User information
 
+## 📖 Documentation
+
+- [Installation & Usage](#installation)
+- [Breaking Changes in v2.0.0](./docs/BREAKING_CHANGES.md)
+- [Complete Changelog](./CHANGELOG.md)
+- [Import to GitHub Enterprise Cloud](./docs/GHImport.md)
+
 ## Installation
 
 ```sh
@@ -29,6 +36,9 @@ gh extension install katiem0/gh-bbc-exporter
 ```
 
 For more information: [`gh extension install`](https://cli.github.com/manual/gh_extension_install).
+
+> **⚠️ Breaking Changes in v2.0.0**  
+> If you're upgrading from v1.x, please review the [CHANGELOG.md](./CHANGELOG.md) and [Breaking Changes Guide](./docs/BREAKING_CHANGES.md) for important migration information.
 
 ## Prerequisites
 
