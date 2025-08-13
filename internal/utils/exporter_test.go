@@ -729,53 +729,6 @@ func TestArchiveDirectoryWithSpecialFiles(t *testing.T) {
 	assert.True(t, foundFiles["subdir/subfile.txt"], "Should find file in subdirectory")
 }
 
-func TestExportWithNoData(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "export-no-data-test-")
-	assert.NoError(t, err)
-	defer func() { _ = os.RemoveAll(tempDir) }()
-
-	// Mock server that returns empty data
-	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-
-		if strings.Contains(r.URL.Path, "/repositories/") && !strings.Contains(r.URL.Path, "pullrequests") {
-			writeResponse(t, w, []byte(`{
-                "name": "empty-repo",
-                "slug": "empty-repo",
-                "mainbranch": {"name": "main"}
-            }`))
-		} else {
-			// Return empty lists for everything else
-			writeResponse(t, w, []byte(`{"values": [], "next": null}`))
-		}
-	}))
-	defer testServer.Close()
-
-	logger, _ := zap.NewDevelopment()
-	client := &Client{
-		baseURL:        testServer.URL,
-		httpClient:     testServer.Client(),
-		logger:         logger,
-		token:          "test-token",
-		commitSHACache: make(map[string]string),
-	}
-	exporter := NewExporter(client, tempDir, logger, false, "")
-
-	// Should succeed even with no data
-	err = exporter.Export("test-workspace", "empty-repo")
-	assert.NoError(t, err)
-
-	// Should still create basic files
-	assert.FileExists(t, filepath.Join(tempDir, "schema.json"))
-	assert.FileExists(t, filepath.Join(tempDir, "repositories_000001.json"))
-	assert.FileExists(t, filepath.Join(tempDir, "organizations_000001.json"))
-	assert.FileExists(t, filepath.Join(tempDir, "users_000001.json"))
-
-	// Should not create PR-related files when there are no PRs
-	assert.NoFileExists(t, filepath.Join(tempDir, "pull_requests_000001.json"))
-	assert.NoFileExists(t, filepath.Join(tempDir, "issue_comments_000001.json"))
-}
-
 func TestReviewStates(t *testing.T) {
 	// Create a logger and exporter
 	logger, _ := zap.NewDevelopment()
@@ -825,4 +778,112 @@ func TestReviewStates(t *testing.T) {
 	assert.Equal(t, "2023-01-01T10:00:00Z", reviewsByState[1]["submitted_at"], "Approved review should have correct date")
 	assert.Equal(t, "2023-01-02T10:00:00Z", reviewsByState[2]["submitted_at"], "Commented review should have correct date")
 	assert.Equal(t, "2023-01-03T10:00:00Z", reviewsByState[3]["submitted_at"], "Changes requested review should have correct date")
+}
+
+func TestExportWithNoData(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "export-no-data-test-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	// Mock server that returns empty data
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+
+		if strings.Contains(r.URL.Path, "/repositories/") && !strings.Contains(r.URL.Path, "pullrequests") {
+			writeResponse(t, w, []byte(`{
+                "name": "empty-repo",
+                "slug": "empty-repo",
+                "mainbranch": {"name": "main"}
+            }`))
+		} else {
+			// Return empty lists for everything else
+			writeResponse(t, w, []byte(`{"values": [], "next": null}`))
+		}
+	}))
+	defer testServer.Close()
+
+	logger, _ := zap.NewDevelopment()
+
+	// Test with API token authentication
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		apiToken:       "test-api-token", // Changed from accessToken to apiToken
+		commitSHACache: make(map[string]string),
+	}
+	exporter := NewExporter(client, tempDir, logger, false, "")
+
+	// Should succeed even with no data
+	err = exporter.Export("test-workspace", "empty-repo")
+	assert.NoError(t, err)
+
+	// Should still create basic files
+	assert.FileExists(t, filepath.Join(tempDir, "schema.json"))
+	assert.FileExists(t, filepath.Join(tempDir, "repositories_000001.json"))
+	assert.FileExists(t, filepath.Join(tempDir, "organizations_000001.json"))
+	assert.FileExists(t, filepath.Join(tempDir, "users_000001.json"))
+
+	// Should not create PR-related files when there are no PRs
+	assert.NoFileExists(t, filepath.Join(tempDir, "pull_requests_000001.json"))
+	assert.NoFileExists(t, filepath.Join(tempDir, "issue_comments_000001.json"))
+}
+
+func TestGetAuthMethodDescription(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	tests := []struct {
+		name     string
+		client   *Client
+		expected string
+	}{
+		{
+			name: "workspace access token",
+			client: &Client{
+				accessToken: "token",
+				logger:      logger,
+			},
+			expected: "workspace access token",
+		},
+		{
+			name: "API token without email",
+			client: &Client{
+				apiToken: "api-token",
+				logger:   logger,
+			},
+			expected: "API token with x-bitbucket-api-token-auth",
+		},
+		{
+			name: "API token with email",
+			client: &Client{
+				apiToken: "api-token",
+				email:    "user@example.com",
+				logger:   logger,
+			},
+			expected: "API token with email",
+		},
+		{
+			name: "username and app password",
+			client: &Client{
+				username: "user",
+				appPass:  "pass",
+				logger:   logger,
+			},
+			expected: "username and app password",
+		},
+		{
+			name: "no authentication",
+			client: &Client{
+				logger: logger,
+			},
+			expected: "no authentication",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getAuthMethodDescription(tt.client)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
 }

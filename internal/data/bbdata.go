@@ -1,16 +1,18 @@
 package data
 
 type CmdFlags struct {
-	BitbucketToken   string
-	BitbucketUser    string
-	BitbucketAppPass string
-	BitbucketAPIURL  string
-	Repository       string
-	Workspace        string
-	OutputDir        string
-	PRsFromDate      string // Format: YYYY-MM-DD
-	OpenPRsOnly      bool
-	Debug            bool
+	BitbucketAccessToken string
+	BitbucketUser        string // Will be deprecated with AppPass Sept 2025
+	BitbucketEmail       string // Will replace username after Sept 2025
+	BitbucketAppPass     string // Will be deprecated from BB Sept 2025
+	BitbucketAPIToken    string // Will replace AppPass after Sept 2025
+	BitbucketAPIURL      string
+	Repository           string
+	Workspace            string
+	OutputDir            string
+	PRsFromDate          string // Format: YYYY-MM-DD
+	OpenPRsOnly          bool
+	Debug                bool
 }
 
 type BitbucketRepository struct {

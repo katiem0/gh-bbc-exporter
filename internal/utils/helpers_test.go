@@ -15,21 +15,21 @@ import (
 )
 
 func TestValidateExportFlags(t *testing.T) {
-
 	// Test case 1: No credentials provided
 	cmdFlags := &data.CmdFlags{}
 	err := ValidateExportFlags(cmdFlags)
 	assert.Error(t, err, "Expected error when no credentials are provided")
+	assert.Contains(t, err.Error(), "authentication credentials required")
 
 	// Test case 2: Token provided
 	cmdFlags = &data.CmdFlags{}
-	cmdFlags.BitbucketToken = "testtoken"
+	cmdFlags.BitbucketAccessToken = "testtoken"
 	err = ValidateExportFlags(cmdFlags)
 	assert.NoError(t, err, "Expected no error when token is provided")
 
 	// Test case 3: Username and app password provided
 	cmdFlags = &data.CmdFlags{}
-	cmdFlags.BitbucketToken = ""
+	cmdFlags.BitbucketAccessToken = ""
 	cmdFlags.BitbucketUser = "testuser"
 	cmdFlags.BitbucketAppPass = "testpass"
 	err = ValidateExportFlags(cmdFlags)
@@ -37,30 +37,87 @@ func TestValidateExportFlags(t *testing.T) {
 
 	// Test case 4: Only username provided (missing app password)
 	cmdFlags = &data.CmdFlags{}
-	cmdFlags.BitbucketToken = ""
+	cmdFlags.BitbucketAccessToken = ""
 	cmdFlags.BitbucketUser = "testuser"
 	cmdFlags.BitbucketAppPass = ""
 	err = ValidateExportFlags(cmdFlags)
 	assert.Error(t, err, "Expected error when only username is provided")
+	// The actual error message is the general authentication error, not the specific one
+	assert.Contains(t, err.Error(), "authentication credentials required")
 
 	// Test case 5: Only app password provided (missing username)
 	cmdFlags = &data.CmdFlags{}
-	cmdFlags.BitbucketToken = ""
+	cmdFlags.BitbucketAccessToken = ""
 	cmdFlags.BitbucketUser = ""
 	cmdFlags.BitbucketAppPass = "testpass"
 	err = ValidateExportFlags(cmdFlags)
 	assert.Error(t, err, "Expected error when only app password is provided")
+	// The actual error message is the general authentication error, not the specific one
+	assert.Contains(t, err.Error(), "authentication credentials required")
 
-	// Test case 6: Valid date format for PRsFromDate
+	// Test case 6: API token and email provided
 	cmdFlags = &data.CmdFlags{}
-	cmdFlags.BitbucketToken = "testtoken"
+	cmdFlags.BitbucketAPIToken = "testapitoken"
+	cmdFlags.BitbucketEmail = "test@example.com"
+	err = ValidateExportFlags(cmdFlags)
+	assert.NoError(t, err, "Expected no error when API token and email are provided")
+
+	// Test case 7: Only API token provided (missing email)
+	cmdFlags = &data.CmdFlags{}
+	cmdFlags.BitbucketAPIToken = "testapitoken"
+	cmdFlags.BitbucketEmail = ""
+	err = ValidateExportFlags(cmdFlags)
+	assert.Error(t, err, "Expected error when only API token is provided")
+	// The actual error message is the general authentication error, not the specific one
+	assert.Contains(t, err.Error(), "authentication credentials required")
+
+	// Test case 8: Only email provided (missing API token)
+	cmdFlags = &data.CmdFlags{}
+	cmdFlags.BitbucketAPIToken = ""
+	cmdFlags.BitbucketEmail = "test@example.com"
+	err = ValidateExportFlags(cmdFlags)
+	assert.Error(t, err, "Expected error when only email is provided")
+	// The actual error message is the general authentication error, not the specific one
+	assert.Contains(t, err.Error(), "authentication credentials required")
+
+	// Test case 9: Mixed authentication methods - access token with username/password
+	cmdFlags = &data.CmdFlags{}
+	cmdFlags.BitbucketAccessToken = "testtoken"
+	cmdFlags.BitbucketUser = "testuser"
+	cmdFlags.BitbucketAppPass = "testpass"
+	err = ValidateExportFlags(cmdFlags)
+	assert.Error(t, err, "Expected error when multiple authentication methods are provided")
+	assert.Contains(t, err.Error(), "mixed authentication methods")
+
+	// Test case 9b: Mixed authentication methods - access token with API token/email
+	cmdFlags = &data.CmdFlags{}
+	cmdFlags.BitbucketAccessToken = "testtoken"
+	cmdFlags.BitbucketAPIToken = "testapitoken"
+	cmdFlags.BitbucketEmail = "test@example.com"
+	err = ValidateExportFlags(cmdFlags)
+	assert.Error(t, err, "Expected error when multiple authentication methods are provided")
+	assert.Contains(t, err.Error(), "mixed authentication methods")
+
+	// Test case 9c: Mixed authentication methods - API token/email with username/password
+	cmdFlags = &data.CmdFlags{}
+	cmdFlags.BitbucketAPIToken = "testapitoken"
+	cmdFlags.BitbucketEmail = "test@example.com"
+	cmdFlags.BitbucketUser = "testuser"
+	cmdFlags.BitbucketAppPass = "testpass"
+	err = ValidateExportFlags(cmdFlags)
+	assert.Error(t, err, "Expected error when multiple authentication methods are provided")
+	assert.Contains(t, err.Error(), "mixed authentication methods")
+
+	// Test case 10: Valid date format for PRsFromDate
+	cmdFlags = &data.CmdFlags{}
+	cmdFlags.BitbucketAccessToken = "testtoken"
 	cmdFlags.PRsFromDate = "2023-01-01"
 	err = ValidateExportFlags(cmdFlags)
 	assert.NoError(t, err, "Expected no error with valid date format")
 
-	// Test case 7: Invalid date format for PRsFromDate
+	// Test case 11: Invalid date format for PRsFromDate
 	cmdFlags = &data.CmdFlags{}
-	cmdFlags.BitbucketToken = "testtoken"
+	cmdFlags.BitbucketAccessToken = "testtoken"
 	cmdFlags.PRsFromDate = "01/01/2023"
 	err = ValidateExportFlags(cmdFlags)
 	assert.Error(t, err, "Expected error with invalid date format")
@@ -70,12 +127,33 @@ func TestValidateExportFlags(t *testing.T) {
 func TestSetupEnvironmentCredentials(t *testing.T) {
 	cmdFlags := &data.CmdFlags{}
 
+	// Clean up any existing environment variables first
+	if err := os.Unsetenv("BITBUCKET_USERNAME"); err != nil {
+		t.Fatalf("Failed to unset environment variable: %v", err)
+	}
+	if err := os.Unsetenv("BITBUCKET_APP_PASSWORD"); err != nil {
+		t.Fatalf("Failed to unset environment variable: %v", err)
+	}
+	if err := os.Unsetenv("BITBUCKET_ACCESS_TOKEN"); err != nil {
+		t.Fatalf("Failed to unset environment variable: %v", err)
+	}
+	if err := os.Unsetenv("BITBUCKET_API_TOKEN"); err != nil {
+		t.Fatalf("Failed to unset environment variable: %v", err)
+	}
+	if err := os.Unsetenv("BITBUCKET_EMAIL"); err != nil {
+		t.Fatalf("Failed to unset environment variable: %v", err)
+	}
+
 	// Set environment variables
 	err := os.Setenv("BITBUCKET_USERNAME", "envuser")
 	assert.NoError(t, err)
 	err = os.Setenv("BITBUCKET_APP_PASSWORD", "envpass")
 	assert.NoError(t, err)
-	err = os.Setenv("BITBUCKET_TOKEN", "envtoken")
+	err = os.Setenv("BITBUCKET_ACCESS_TOKEN", "envtoken") // Corrected from BITBUCKET_TOKEN
+	assert.NoError(t, err)
+	err = os.Setenv("BITBUCKET_API_TOKEN", "envapitoken") // Added API token
+	assert.NoError(t, err)
+	err = os.Setenv("BITBUCKET_EMAIL", "user@example.com") // Added email
 	assert.NoError(t, err)
 
 	// Call the function
@@ -84,14 +162,20 @@ func TestSetupEnvironmentCredentials(t *testing.T) {
 	// Assert that the values are set correctly
 	assert.Equal(t, "envuser", cmdFlags.BitbucketUser, "Expected username to be set from environment")
 	assert.Equal(t, "envpass", cmdFlags.BitbucketAppPass, "Expected app password to be set from environment")
-	assert.Equal(t, "envtoken", cmdFlags.BitbucketToken, "Expected token to be set from environment")
+	assert.Equal(t, "envtoken", cmdFlags.BitbucketAccessToken, "Expected access token to be set from environment")
+	assert.Equal(t, "envapitoken", cmdFlags.BitbucketAPIToken, "Expected API token to be set from environment")
+	assert.Equal(t, "user@example.com", cmdFlags.BitbucketEmail, "Expected email to be set from environment")
 
 	// Clean up environment variables
 	err = os.Unsetenv("BITBUCKET_USERNAME")
 	assert.NoError(t, err)
 	err = os.Unsetenv("BITBUCKET_APP_PASSWORD")
 	assert.NoError(t, err)
-	err = os.Unsetenv("BITBUCKET_TOKEN")
+	err = os.Unsetenv("BITBUCKET_ACCESS_TOKEN")
+	assert.NoError(t, err)
+	err = os.Unsetenv("BITBUCKET_API_TOKEN")
+	assert.NoError(t, err)
+	err = os.Unsetenv("BITBUCKET_EMAIL")
 	assert.NoError(t, err)
 }
 
@@ -507,8 +591,8 @@ func TestPRDateValidation(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			cmdFlags := &data.CmdFlags{
-				BitbucketToken: "test-token", // Add required auth
-				PRsFromDate:    tc.dateStr,
+				BitbucketAccessToken: "test-token", // Add required auth
+				PRsFromDate:          tc.dateStr,
 			}
 
 			err := ValidateExportFlags(cmdFlags)
@@ -623,10 +707,10 @@ func TestAuthenticationMethods(t *testing.T) {
 
 	// Test with token authentication
 	tokenClient := &Client{
-		baseURL:    testServer.URL,
-		httpClient: testServer.Client(),
-		token:      "test-token",
-		logger:     logger,
+		baseURL:     testServer.URL,
+		httpClient:  testServer.Client(),
+		accessToken: "test-token",
+		logger:      logger,
 	}
 
 	var result map[string]interface{}

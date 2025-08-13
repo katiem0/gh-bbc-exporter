@@ -40,10 +40,36 @@ For more information: [`gh extension install`](https://cli.github.com/manual/gh_
 
 Bitbucket Cloud provides two authentication methods for their API:
 
-- Basic Authentication
-- Access Token (premium membership)
+- API Tokens (recommended)
+- Workspace Access Tokens (premium membership)
+- Basic Authentication with App Passwords (deprecated, will be discontinued after September 9, 2025)
 
-#### Basic Authentication
+#### API Tokens
+
+API tokens are the recommended authentication method and will replace app passwords.
+To create an API token:
+
+1. Log in to Bitbucket Cloud
+2. Click on your profile avatar in the top right
+3. Select **Atlassian account settings**
+4. In the top navigation section, select **Security**
+5. Click **Create and manage API tokens**
+6. Select **Create API token with scopes**
+7. Give your token a name and expiration date
+8. Select Bitbucket API token app and select the following permissions:
+   - `read:account`
+   - `read:pullrequest:bitbucket`
+   - `read:repository:bitbucket`
+   - `read:workspace:bitbucket`
+9. Click **Next**, review scopes and click **Create**
+10. Copy the token immediately as you won't be able to see it again
+
+#### Basic Authentication with App Passwords
+
+> [!Warning]
+> App passwords will be discontinued after September 9, 2025. Creation of new app passwords
+> will stop after that date, and existing app passwords will stop working on June 9, 2026.
+> Please migrate to API tokens instead.
 
 For basic authentication with this tool your account username and an app password
 are needed. Your Bitbucket username can be found by following:
@@ -89,17 +115,19 @@ Usage:
   bbc-exporter [flags]
 
 Flags:
-  -p, --app-password string    Bitbucket app password for basic authentication (env: BITBUCKET_APP_PASSWORD)
   -a, --bbc-api-url string     Bitbucket API to use (default "https://api.bitbucket.org/2.0")
+  -t, --access-token string    Bitbucket workspace access token for authentication (env: BITBUCKET_ACCESS_TOKEN)
+      --api-token string       Bitbucket API token for authentication (env: BITBUCKET_API_TOKEN)
+  -e, --email string           Atlassian account email for API token authentication (env: BITBUCKET_EMAIL)
+  -u, --user string            Bitbucket username for basic authentication (env: BITBUCKET_USERNAME)
+  -p, --app-password string    Bitbucket app password for basic authentication (env: BITBUCKET_APP_PASSWORD)
+  -w, --workspace string       Bitbucket workspace name
+  -r, --repo string            Name of the repository to export from Bitbucket Cloud
+  -o, --output string          Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)
+      --open-prs-only          Export only open pull requests and ignore closed/merged ones
+      --prs-from-date string   Export pull requests created on or after this date (format: YYYY-MM-DD).
   -d, --debug                  Enable debug logging
   -h, --help                   help for bbc-exporter
-      --open-prs-only          Export only open pull requests and ignore closed/merged ones
-  -o, --output string          Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)
-      --prs-from-date string   Export pull requests created on or after this date (format: YYYY-MM-DD)
-  -r, --repo string            Name of the repository to export from Bitbucket Cloud
-  -t, --token string           Bitbucket access token for authentication (env: BITBUCKET_TOKEN)
-  -u, --user string            Bitbucket username for basic authentication (env: BITBUCKET_USERNAME)
-  -w, --workspace string       Bitbucket workspace name
 ```
 
 ### Authentication Methods
@@ -109,11 +137,16 @@ Flags:
 This tool supports the use of environment variables instead of command-line flags:
 
 ```sh
-# Token authentication
-export BITBUCKET_TOKEN="your-token-here"
+# API token authentication with email (recommended)
+export BITBUCKET_API_TOKEN="your-api-token-here"
+export BITBUCKET_EMAIL="your-atlassian-email@example.com"
 gh bbc-exporter -w your-workspace -r your-repo
 
-# Basic authentication
+# Workspace token authentication
+export BITBUCKET_ACCESS_TOKEN="your-workspace-token-here"
+gh bbc-exporter -w your-workspace -r your-repo
+
+# Basic authentication (soon to be deprecated)
 export BITBUCKET_USERNAME="your-username"
 export BITBUCKET_APP_PASSWORD="your-app-password"
 gh bbc-exporter -w your-workspace -r your-repo
@@ -124,12 +157,13 @@ gh bbc-exporter -w your-workspace -r your-repo
 Example Command
 
 ```sh
-gh bbc-exporter -w your-workspace -r your-repo -t your-bitbucket-token
-```
+# Using API token with email (recommended)
+gh bbc-exporter -w your-workspace -r your-repo --api-token your-api-token --email your-atlassian-email@example.com
 
-Or with basic authentication:
+# Using workspace access token
+gh bbc-exporter -w your-workspace -r your-repo -t your-workspace-token
 
-```sh
+# Using basic authentication (soon to be deprecated)
 gh bbc-exporter -w your-workspace -r your-repo -u your-username -p your-app-password
 ```
 
