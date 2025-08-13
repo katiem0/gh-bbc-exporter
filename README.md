@@ -66,7 +66,7 @@ To create an API token:
 
 #### Basic Authentication with App Passwords
 
-> [!Warning] 
+> [!Warning]
 > App passwords will be discontinued after September 9, 2025. Creation of new app passwords
 > will stop after that date, and existing app passwords will stop working on June 9, 2026.
 > Please migrate to API tokens instead.

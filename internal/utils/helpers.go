@@ -302,7 +302,7 @@ func SetupEnvironmentCredentials(cmdFlags *data.CmdFlags) {
 	// Add deprecation warning for app passwords
 	if cmdFlags.BitbucketAppPass != "" {
 		fmt.Fprintf(os.Stderr, "Warning: Bitbucket app passwords are deprecated and will be discontinued after September 9, 2025.\n"+
-			"Please consider switching to Bitbucket API tokens instead. See https://support.atlassian.com/bitbucket-cloud/docs/create-an-app-password/\n")
+			"Please consider switching to Bitbucket API tokens instead. See https://support.atlassian.com/bitbucket-cloud/docs/create-an-api-token/\n")
 	}
 }
 
