@@ -18,23 +18,34 @@ import (
 type Client struct {
 	baseURL        string
 	httpClient     *http.Client
-	token          string
-	username       string
-	appPass        string
+	accessToken    string // Workspace Access Token
+	apiToken       string // API Token replacing AppPass after Sept 2025
+	email          string // Will replace username after Sept 2025
+	username       string // Will be removed after Sept 2025 with appPass
+	appPass        string // To be deprecated Sept 2025
 	logger         *zap.Logger
 	commitSHACache map[string]string
 }
 
-func NewClient(baseURL, token, username, appPass string, logger *zap.Logger) *Client {
+func NewClient(baseURL, accessToken, apiToken, email, username, appPass string, logger *zap.Logger) *Client {
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	if !strings.Contains(baseURL, "/2.0") && strings.Contains(baseURL, "api.bitbucket.org") {
 		baseURL = baseURL + "/2.0"
 	}
 
-	if token != "" {
-		logger.Debug("Creating Bitbucket client with token authentication",
+	if accessToken != "" {
+		logger.Debug("Creating Bitbucket client with workspace access token authentication",
 			zap.String("baseURL", baseURL))
+	} else if apiToken != "" {
+		if email != "" {
+			logger.Debug("Creating Bitbucket client with API token authentication",
+				zap.String("baseURL", baseURL),
+				zap.String("email", email))
+		} else {
+			logger.Debug("Creating Bitbucket client with API token authentication using x-bitbucket-api-token-auth",
+				zap.String("baseURL", baseURL))
+		}
 	} else if username != "" && appPass != "" {
 		logger.Debug("Creating Bitbucket client with basic authentication",
 			zap.String("baseURL", baseURL),
@@ -47,7 +58,9 @@ func NewClient(baseURL, token, username, appPass string, logger *zap.Logger) *Cl
 	return &Client{
 		baseURL:        baseURL,
 		httpClient:     &http.Client{},
-		token:          token,
+		accessToken:    accessToken,
+		apiToken:       apiToken,
+		email:          email,
 		username:       username,
 		appPass:        appPass,
 		logger:         logger,
@@ -118,9 +131,19 @@ func (c *Client) makeRequest(method, endpoint string, v interface{}) error {
 			return err
 		}
 
-		if c.token != "" {
-			c.logger.Debug("Using token authentication")
-			req.Header.Set("Authorization", "Bearer "+c.token)
+		if c.accessToken != "" {
+			c.logger.Debug("Using workspace access token authentication")
+			req.Header.Set("Authorization", "Bearer "+c.accessToken)
+		} else if c.apiToken != "" {
+			c.logger.Debug("Using API token authentication")
+			// For API tokens, we use Basic auth with either the email or x-bitbucket-api-token-auth
+			if c.email != "" {
+				c.logger.Debug("Using Atlassian account email with API token")
+				req.SetBasicAuth(c.email, c.apiToken)
+			} else {
+				c.logger.Debug("Using x-bitbucket-api-token-auth with API token")
+				req.SetBasicAuth("x-bitbucket-api-token-auth", c.apiToken)
+			}
 		} else if c.username != "" && c.appPass != "" {
 			c.logger.Debug("Using basic authentication")
 			req.SetBasicAuth(c.username, c.appPass)

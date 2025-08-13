@@ -155,7 +155,7 @@ func TestCmdFlagsDefaults(t *testing.T) {
 	assert.Empty(t, flags.Workspace)
 	assert.Empty(t, flags.Repository)
 	assert.Empty(t, flags.OutputDir)
-	assert.Empty(t, flags.BitbucketToken)
+	assert.Empty(t, flags.BitbucketAccessToken)
 	assert.Empty(t, flags.BitbucketUser)
 	assert.Empty(t, flags.BitbucketAppPass)
 	assert.Empty(t, flags.BitbucketAPIURL)

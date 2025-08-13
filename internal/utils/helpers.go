@@ -217,15 +217,50 @@ func (e *Exporter) updateRepositoryField(repoSlug string, field string, value in
 }
 
 func ValidateExportFlags(cmdFlags *data.CmdFlags) error {
-	hasToken := cmdFlags.BitbucketToken != ""
+	hasToken := cmdFlags.BitbucketAccessToken != ""
+	hasAPIToken := cmdFlags.BitbucketAPIToken != ""
+	hasEmail := cmdFlags.BitbucketEmail != ""
 	hasBasicAuth := cmdFlags.BitbucketUser != "" && cmdFlags.BitbucketAppPass != ""
 
-	if !hasToken && !hasBasicAuth {
-		return fmt.Errorf("authentication credentials required: either provide an access token with --token or both username (--user) and app password (--app-password)")
+	hasValidAuth := hasToken || (hasAPIToken && hasEmail) || hasBasicAuth
+	if !hasValidAuth {
+		return fmt.Errorf("authentication credentials required: either provide a workspace access token with --access-token, an API token with email (--api-token and --email), or both username (--user) and app password (--app-password)")
 	}
 
-	if hasToken && (cmdFlags.BitbucketUser != "" || cmdFlags.BitbucketAppPass != "") {
-		return fmt.Errorf("mixed authentication methods: provide either token OR username/app-password, not both")
+	// Check for mixed auth methods
+	authMethodsCount := 0
+	if hasToken {
+		authMethodsCount++
+	}
+	if hasAPIToken && hasEmail {
+		authMethodsCount++
+	}
+	if hasBasicAuth {
+		authMethodsCount++
+	}
+
+	if authMethodsCount > 1 {
+		return fmt.Errorf("mixed authentication methods: provide either workspace token OR (API token + email) OR (username + app-password), not multiple types")
+	}
+
+	// Validate that API token comes with email
+	if hasAPIToken && !hasEmail {
+		return fmt.Errorf("email is required when using API token authentication. Please provide it with --email or BITBUCKET_EMAIL environment variable")
+	}
+
+	// Validate that email comes with API token
+	if hasEmail && !hasAPIToken {
+		return fmt.Errorf("API token is required when using email authentication. Please provide it with --api-token or BITBUCKET_API_TOKEN environment variable")
+	}
+
+	// Validate that username comes with app password
+	if cmdFlags.BitbucketUser != "" && cmdFlags.BitbucketAppPass == "" {
+		return fmt.Errorf("app password is required when using username authentication. Please provide it with --app-password or BITBUCKET_APP_PASSWORD environment variable")
+	}
+
+	// Validate that app password comes with username
+	if cmdFlags.BitbucketAppPass != "" && cmdFlags.BitbucketUser == "" {
+		return fmt.Errorf("username is required when using app password authentication. Please provide it with --user or BITBUCKET_USERNAME environment variable")
 	}
 
 	// Validate PRsFromDate format if provided
@@ -245,12 +280,29 @@ func SetupEnvironmentCredentials(cmdFlags *data.CmdFlags) {
 	if cmdFlags.BitbucketAppPass == "" {
 		cmdFlags.BitbucketAppPass = os.Getenv("BITBUCKET_APP_PASSWORD")
 	}
-	if cmdFlags.BitbucketToken == "" {
-		cmdFlags.BitbucketToken = os.Getenv("BITBUCKET_TOKEN")
+	if cmdFlags.BitbucketAccessToken == "" {
+		cmdFlags.BitbucketAccessToken = os.Getenv("BITBUCKET_ACCESS_TOKEN")
+	}
+	if cmdFlags.BitbucketAPIToken == "" {
+		cmdFlags.BitbucketAPIToken = os.Getenv("BITBUCKET_API_TOKEN")
+	}
+	if cmdFlags.BitbucketEmail == "" {
+		cmdFlags.BitbucketEmail = os.Getenv("BITBUCKET_EMAIL")
 	}
 
-	if cmdFlags.BitbucketToken != "" && cmdFlags.BitbucketUser != "" && cmdFlags.BitbucketAppPass != "" {
-		fmt.Fprintf(os.Stderr, "Warning: Both token and username/password are set. Token authentication will be used.\n")
+	// Add warning for multiple auth methods
+	if cmdFlags.BitbucketAccessToken != "" &&
+		((cmdFlags.BitbucketUser != "" && cmdFlags.BitbucketAppPass != "") || (cmdFlags.BitbucketAPIToken != "" && cmdFlags.BitbucketEmail != "")) {
+		fmt.Fprintf(os.Stderr, "Warning: Multiple authentication methods detected. Workspace access token authentication will be used.\n")
+	} else if (cmdFlags.BitbucketAPIToken != "" && cmdFlags.BitbucketEmail != "") &&
+		(cmdFlags.BitbucketUser != "" && cmdFlags.BitbucketAppPass != "") {
+		fmt.Fprintf(os.Stderr, "Warning: Both API token and username/password are set. API token authentication will be used.\n")
+	}
+
+	// Add deprecation warning for app passwords
+	if cmdFlags.BitbucketAppPass != "" {
+		fmt.Fprintf(os.Stderr, "Warning: Bitbucket app passwords are deprecated and will be discontinued after September 9, 2025.\n"+
+			"Please consider switching to Bitbucket API tokens instead. See https://support.atlassian.com/bitbucket-cloud/docs/create-an-app-password/\n")
 	}
 }
 

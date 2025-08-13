@@ -45,18 +45,28 @@ func NewCmdRoot() *cobra.Command {
 	exportCmd.PersistentFlags().SortFlags = false
 
 	// Configure flags for command
-	exportCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketAPIURL, "bbc-api-url", "a", "https://api.bitbucket.org/2.0", "Bitbucket API to use")
-	exportCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketToken, "token", "t", "",
-		"Bitbucket access token for authentication (env: BITBUCKET_TOKEN)")
+	exportCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketAPIURL, "bbc-api-url", "a",
+		"https://api.bitbucket.org/2.0", "Bitbucket API to use")
+	exportCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketAccessToken, "access-token", "t", "",
+		"Bitbucket workspace access token for authentication (env: BITBUCKET_ACCESS_TOKEN)")
+	exportCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketAPIToken, "api-token", "", "",
+		"Bitbucket API token for authentication (env: BITBUCKET_API_TOKEN)")
+	exportCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketEmail, "email", "e", "",
+		"Atlassian account email for API token authentication (env: BITBUCKET_EMAIL)")
 	exportCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketUser, "user", "u", "",
 		"Bitbucket username for basic authentication (env: BITBUCKET_USERNAME)")
 	exportCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketAppPass, "app-password", "p", "",
 		"Bitbucket app password for basic authentication (env: BITBUCKET_APP_PASSWORD)")
-	exportCmd.PersistentFlags().StringVarP(&cmdFlags.Workspace, "workspace", "w", "", "Bitbucket workspace name")
-	exportCmd.PersistentFlags().StringVarP(&cmdFlags.Repository, "repo", "r", "", "Name of the repository to export from Bitbucket Cloud")
-	exportCmd.PersistentFlags().StringVarP(&cmdFlags.OutputDir, "output", "o", "", "Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)")
-	exportCmd.PersistentFlags().BoolVar(&cmdFlags.OpenPRsOnly, "open-prs-only", false, "Export only open pull requests and ignore closed/merged ones")
-	exportCmd.PersistentFlags().StringVarP(&cmdFlags.PRsFromDate, "prs-from-date", "", "", "Export pull requests created on or after this date (format: YYYY-MM-DD).")
+	exportCmd.PersistentFlags().StringVarP(&cmdFlags.Workspace, "workspace", "w", "",
+		"Bitbucket workspace name")
+	exportCmd.PersistentFlags().StringVarP(&cmdFlags.Repository, "repo", "r", "",
+		"Name of the repository to export from Bitbucket Cloud")
+	exportCmd.PersistentFlags().StringVarP(&cmdFlags.OutputDir, "output", "o", "",
+		"Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)")
+	exportCmd.PersistentFlags().BoolVar(&cmdFlags.OpenPRsOnly, "open-prs-only", false,
+		"Export only open pull requests and ignore closed/merged ones")
+	exportCmd.PersistentFlags().StringVarP(&cmdFlags.PRsFromDate, "prs-from-date", "", "",
+		"Export pull requests created on or after this date (format: YYYY-MM-DD).")
 	exportCmd.PersistentFlags().BoolVarP(&cmdFlags.Debug, "debug", "d", false, "Enable debug logging")
 	// Mark required flags
 	if err := exportCmd.MarkPersistentFlagRequired("workspace"); err != nil {
@@ -81,8 +91,10 @@ func runCmdExport(cmdFlags *data.CmdFlags, logger *zap.Logger) error {
 		return err
 	}
 
-	if cmdFlags.BitbucketToken != "" {
-		logger.Info("Using token authentication")
+	if cmdFlags.BitbucketAccessToken != "" {
+		logger.Info("Using workspace access token authentication")
+	} else if cmdFlags.BitbucketAPIToken != "" {
+		logger.Info("Using API token authentication")
 	} else if cmdFlags.BitbucketUser != "" && cmdFlags.BitbucketAppPass != "" {
 		logger.Info("Using basic authentication",
 			zap.String("username", cmdFlags.BitbucketUser))
@@ -91,7 +103,9 @@ func runCmdExport(cmdFlags *data.CmdFlags, logger *zap.Logger) error {
 	// Create Bitbucket client and exporter
 	client := utils.NewClient(
 		cmdFlags.BitbucketAPIURL,
-		cmdFlags.BitbucketToken,
+		cmdFlags.BitbucketAccessToken,
+		cmdFlags.BitbucketAPIToken,
+		cmdFlags.BitbucketEmail,
 		cmdFlags.BitbucketUser,
 		cmdFlags.BitbucketAppPass,
 		logger,

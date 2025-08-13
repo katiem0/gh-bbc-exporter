@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -72,17 +73,42 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 	}
 
 	var cloneURL string
-	if e.client.token != "" {
+	if e.client.accessToken != "" {
+		// For workspace access tokens
 		cloneURL = fmt.Sprintf("https://x-token-auth:%s@bitbucket.org/%s/%s.git",
-			e.client.token, workspace, repoSlug)
+			url.QueryEscape(e.client.accessToken), workspace, repoSlug)
+	} else if e.client.apiToken != "" {
+		// For API tokens, always use x-bitbucket-api-token-auth as the username
+		// This is the recommended approach per Bitbucket documentation
+		cloneURL = fmt.Sprintf("https://x-bitbucket-api-token-auth:%s@bitbucket.org/%s/%s.git",
+			url.QueryEscape(e.client.apiToken), workspace, repoSlug)
 	} else {
+		// Basic auth with username and app password
+		encodedUsername := url.QueryEscape(e.client.username)
+		encodedAppPass := url.QueryEscape(e.client.appPass)
 		cloneURL = fmt.Sprintf("https://%s:%s@bitbucket.org/%s/%s.git",
-			e.client.username, e.client.appPass, workspace, repoSlug)
+			encodedUsername, encodedAppPass, workspace, repoSlug)
 	}
+
+	e.logger.Debug("Attempting to clone repository",
+		zap.String("repository", repoSlug))
+
 	if err := e.CloneRepository(workspace, repoSlug, cloneURL); err != nil {
+		// Include more detailed error information to help diagnose authentication issues
 		e.logger.Warn("Failed to clone repository, creating empty repository structure",
 			zap.String("repo", repoSlug),
 			zap.Error(err))
+
+		// If authentication failed, add more specific logging
+		if strings.Contains(err.Error(), "Authentication failed") ||
+			strings.Contains(err.Error(), "401") ||
+			strings.Contains(err.Error(), "403") {
+			e.logger.Error("Authentication failed when cloning repository",
+				zap.String("workspace", workspace),
+				zap.String("repository", repoSlug),
+				zap.String("auth_method", getAuthMethodDescription(e.client)))
+		}
+
 		if err := e.createEmptyRepository(workspace, repoSlug); err != nil {
 			return fmt.Errorf("failed to create empty repository structure: %w", err)
 		}
@@ -773,4 +799,18 @@ func (e *Exporter) addFileToArchive(tarWriter *tar.Writer, path, relPath string,
 	}
 
 	return nil
+}
+
+func getAuthMethodDescription(c *Client) string {
+	if c.accessToken != "" {
+		return "workspace access token"
+	} else if c.apiToken != "" {
+		if c.email != "" {
+			return "API token with email"
+		}
+		return "API token with x-bitbucket-api-token-auth"
+	} else if c.username != "" && c.appPass != "" {
+		return "username and app password"
+	}
+	return "no authentication"
 }

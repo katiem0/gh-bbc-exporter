@@ -28,11 +28,13 @@ func writeResponse(t *testing.T, w http.ResponseWriter, data []byte) {
 
 func TestNewClient(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
-	client := NewClient("https://example.com", "token", "user", "pass", logger)
+	client := NewClient("https://example.com", "token", "api-token", "email", "user", "pass", logger)
 
 	assert.NotNil(t, client)
 	assert.Equal(t, "https://example.com", client.baseURL)
-	assert.Equal(t, "token", client.token)
+	assert.Equal(t, "token", client.accessToken)
+	assert.Equal(t, "api-token", client.apiToken)
+	assert.Equal(t, "email", client.email)
 	assert.Equal(t, "user", client.username)
 	assert.Equal(t, "pass", client.appPass)
 	assert.NotNil(t, client.httpClient)
@@ -918,7 +920,7 @@ func TestGetFullCommitSHAWithAPICall(t *testing.T) {
 		baseURL:        testServer.URL,
 		httpClient:     testServer.Client(),
 		logger:         logger,
-		token:          "test-token",
+		accessToken:    "test-token",
 		commitSHACache: make(map[string]string),
 	}
 
