@@ -11,7 +11,6 @@ repositories into a format compatible with GitHub Enterprise migrations.
 
 > [!Caution]
 > **Breaking changes have been introduced in [version v2.0.0](https://github.com/katiem0/gh-bbc-exporter/releases/tag/v2.0.0)**
->
 > - Bitbucket is deprecating the use of App Passwords [in favor of API Tokens](https://www.atlassian.com/blog/bitbucket/bitbucket-cloud-transitions-to-api-tokens-enhancing-security-with-app-password-deprecation)
 > - `--token` has been updated to `--access-token` with looking for Bitbucket workspace access token
 > `env: BITBUCKET_ACCESS_TOKEN` in preparation with new authentication type `--api-token`
