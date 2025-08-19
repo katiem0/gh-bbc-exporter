@@ -26,6 +26,8 @@ type Exporter struct {
 	prsFromDate string
 }
 
+var repoNameInvalidCharsRegex = regexp.MustCompile(`[^a-zA-Z0-9\-\._]|^\.|\.$/`)
+
 func NewExporter(client *Client, outputDir string, logger *zap.Logger, openPRsOnly bool, prsFromDate string) *Exporter {
 	return &Exporter{
 		client:      client,
@@ -463,11 +465,10 @@ func (e *Exporter) createOrganizationData(workspace string) []data.Organization 
 }
 
 func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, workspace string) []data.Repository {
-
 	createdAt := formatDateToZ(repo.CreatedOn)
 	repoName := repo.Name
-	invalidCharsRegex := regexp.MustCompile(`[^a-zA-Z0-9\-\._]|^\.|\.$/`)
-	hasInvalidChars := invalidCharsRegex.MatchString(repo.Name)
+
+	hasInvalidChars := repoNameInvalidCharsRegex.MatchString(repo.Name)
 	namesDifferIgnoringCase := !strings.EqualFold(repo.Name, repo.Slug)
 
 	if hasInvalidChars || namesDifferIgnoringCase {
