@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestValidateExportFlags(t *testing.T) {
@@ -811,4 +813,77 @@ func TestGetOutputPath(t *testing.T) {
 	exporter = NewExporter(&Client{}, "", logger, false, "")
 	path := exporter.GetOutputPath()
 	assert.Equal(t, "", path, "Empty output dir should remain empty until Export() is called")
+}
+
+func TestUpdateRepositoryFieldCaseInsensitive(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "update-repo-field-case-")
+	assert.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+	}()
+
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+
+	// Create a test case with different capitalization
+	repos := []data.Repository{
+		{
+			Type:          "repository",
+			Name:          "RepositoryUIName", // Capitalized name
+			Slug:          "repositoryuiname", // Lowercase slug
+			DefaultBranch: "main",
+			GitURL:        "",
+		},
+		{
+			Type:          "repository",
+			Name:          "another-repo",
+			Slug:          "another-repo",
+			DefaultBranch: "main",
+			GitURL:        "",
+		},
+	}
+	err = exporter.writeJSONFile("repositories_000001.json", repos)
+	assert.NoError(t, err)
+
+	// Test case 1: Update using the capitalized name
+	exporter.updateRepositoryField("RepositoryUIName", "default_branch", "develop")
+
+	// Read back and verify
+	b, err := os.ReadFile(filepath.Join(tempDir, "repositories_000001.json"))
+	assert.NoError(t, err)
+	var updatedRepos []data.Repository
+	assert.NoError(t, json.Unmarshal(b, &updatedRepos))
+
+	// Verify capitalized name repo was updated
+	assert.Equal(t, "develop", updatedRepos[0].DefaultBranch)
+	assert.Equal(t, "main", updatedRepos[1].DefaultBranch) // Other repo unchanged
+
+	// Test case 2: Update using the lowercase slug
+	exporter.updateRepositoryField("repositoryuiname", "git_url", "tarball://root/repositories/workspace/RepositoryUIName.git")
+
+	// Read back and verify
+	b, err = os.ReadFile(filepath.Join(tempDir, "repositories_000001.json"))
+	assert.NoError(t, err)
+	updatedRepos = nil
+	assert.NoError(t, json.Unmarshal(b, &updatedRepos))
+
+	// Verify both fields were updated correctly
+	assert.Equal(t, "develop", updatedRepos[0].DefaultBranch)
+	assert.Equal(t, "tarball://root/repositories/workspace/RepositoryUIName.git", updatedRepos[0].GitURL)
+
+	// Test case 3: Try to update a non-existent repository
+	// Create an observable logger to check for warning messages
+	core, observedLogs := observer.New(zap.WarnLevel)
+	observableLogger := zap.New(core)
+	exporterWithObserver := NewExporter(&Client{}, tempDir, observableLogger, false, "")
+
+	exporterWithObserver.updateRepositoryField("non-existent-repo", "default_branch", "master")
+
+	// Verify warning was logged
+	logs := observedLogs.All()
+	assert.GreaterOrEqual(t, len(logs), 1)
+	assert.Contains(t, logs[0].Message, "Repository not found")
+	assert.Equal(t, "non-existent-repo", logs[0].ContextMap()["repo"])
 }

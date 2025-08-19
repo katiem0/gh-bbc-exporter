@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -464,11 +465,16 @@ func (e *Exporter) createOrganizationData(workspace string) []data.Organization 
 func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, workspace string) []data.Repository {
 
 	createdAt := formatDateToZ(repo.CreatedOn)
+	repoName := repo.Name
+	invalidCharsRegex := regexp.MustCompile(`[^a-zA-Z0-9\-\._]|^\.|\.$/`)
+	hasInvalidChars := invalidCharsRegex.MatchString(repo.Name)
+	namesDifferIgnoringCase := !strings.EqualFold(repo.Name, repo.Slug)
 
-	if repo.Name != repo.Slug {
+	if hasInvalidChars || namesDifferIgnoringCase {
 		e.logger.Debug("Repository name contains special characters, using slug for compatibility",
 			zap.String("name", repo.Name),
 			zap.String("slug", repo.Slug))
+		repoName = repo.Slug
 	}
 
 	return []data.Repository{
@@ -476,7 +482,7 @@ func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, worksp
 			Type:             "repository",
 			URL:              formatURL("repository", workspace, repo.Slug),
 			Owner:            formatURL("user", workspace, ""),
-			Name:             repo.Slug,
+			Name:             repoName,
 			Slug:             repo.Slug,
 			Description:      repo.Description,
 			Private:          repo.IsPrivate,

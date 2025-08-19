@@ -182,7 +182,8 @@ func (e *Exporter) updateRepositoryField(repoSlug string, field string, value in
 
 	repoUpdated := false
 	for i, repo := range repositories {
-		if repo.Name == repoSlug {
+		// Case-insensitive comparison for name, exact match for slug (always lowercase)
+		if strings.EqualFold(repo.Name, repoSlug) || repo.Slug == repoSlug {
 			switch field {
 			case "default_branch":
 				repositories[i].DefaultBranch = value.(string)
