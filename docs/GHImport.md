@@ -4,13 +4,13 @@ This import process can utilize multiple storage options:
 
 1. Azure Storage Blobs
 2. AWS S3 Buckets
-3. [GitHub-owned storage (private preview)](https://github.blog/changelog/2024-11-21-migrate-repositories-with-github-enterprise-importer-using-github-owned-blob-storage-private-preview/)
+3. [GitHub-owned storage (public preview)][gh-storage]
 
 Each option provides a pathway for migrating Bitbucket Cloud repositories to
 GitHub Enterprise Cloud using the GitHub Enterprise Importer (GEI).
 
 > [!Note]
-> The GitHub-owned storage functionality is in private preview and subject to change.
+> The GitHub-owned storage functionality is in public preview and accessible to all.
 
 ## Limitations
 
@@ -70,8 +70,10 @@ gh gei migrate-repo \
 
 ### Using GitHub-owned storage
 
-If you have access to the
-[private preview of GitHub-owned storage][private-storage], use this command:
+This functionality is now in public review and accessible to all.
+
+To use the
+[public preview of GitHub-owned storage][private-storage], use this command:
 
 ```sh
 gh gei migrate-repo \
@@ -487,3 +489,4 @@ to get your operations up and running. Additional post-migration steps that shou
 [migration-state]: https://docs.github.com/en/enterprise-cloud@latest/graphql/reference/enums#migrationstate
 [migration-logs]: https://docs.github.com/en/migrations/using-github-enterprise-importer/completing-your-migration-with-github-enterprise-importer/accessing-your-migration-logs-for-github-enterprise-importer
 [reclaim-mannequin]: https://docs.github.com/en/migrations/using-github-enterprise-importer/completing-your-migration-with-github-enterprise-importer/reclaiming-mannequins-for-github-enterprise-importer
+[gh-storage]: https://github.blog/changelog/2025-08-18-migrate-repositories-with-github-owned-blob-storage

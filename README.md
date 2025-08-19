@@ -216,6 +216,15 @@ using GitHub owned storage and GEI. Detailed documentation can be found in
 - [Archives larger than 40 GiB][storage-increase] are not supported by GitHub-owned storage
 - GitHub Enterprise Cloud with data residency is not supported
 
+### Repository Name Handling
+
+When exporting repositories with special characters in their names:
+
+- The tool will preserve capitalization in repository names (e.g., `RepositoryUIName`)
+- If a repository name contains special characters that aren't allowed in GitHub repository names
+  (e.g., `@group-test/ui`), the tool will use the Bitbucket slug (e.g., `group-test-ui`) for compatibility
+- Repository slugs are always used for directory names and internal references to ensure consistency
+
 ## Troubleshooting
 
 ### Common Issues
