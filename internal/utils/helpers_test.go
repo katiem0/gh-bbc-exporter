@@ -824,7 +824,8 @@ func TestUpdateRepositoryFieldCaseInsensitive(t *testing.T) {
 		}
 	}()
 
-	logger, _ := zap.NewDevelopment()
+	logger, err := zap.NewDevelopment()
+	assert.NoError(t, err)
 	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
 
 	// Create a test case with different capitalization
