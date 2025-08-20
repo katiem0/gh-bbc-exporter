@@ -329,12 +329,7 @@ func HashString(s string) string {
 }
 
 func NormalizePath(path string) string {
-	path = filepath.FromSlash(path)
-	// Then normalize to forward slashes for consistency in archives
-	if runtime.GOOS == "windows" {
-		path = strings.ReplaceAll(path, "\\", "/")
-	}
-	return path
+	return strings.ReplaceAll(path, "\\", "/")
 }
 
 func ToUnixPath(path string) string {
