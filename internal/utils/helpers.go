@@ -328,12 +328,12 @@ func HashString(s string) string {
 	return fmt.Sprintf("%x", h.Sum32())
 }
 
-func NormalizePath(path string) string {
+func ToUnixPath(path string) string {
 	return strings.ReplaceAll(path, "\\", "/")
 }
 
-func ToUnixPath(path string) string {
-	return strings.ReplaceAll(path, "\\", "/")
+func NormalizePath(path string) string {
+	return ToUnixPath(path)
 }
 
 func ToNativePath(path string) string {
@@ -343,13 +343,19 @@ func ToNativePath(path string) string {
 	return path
 }
 
-func ExecuteCommand(command string, args []string, workingDir string) ([]byte, error) {
+func ExecuteCommand(command string, args []string, workingDir string, skipSSLVerify bool) ([]byte, error) {
 	var cmd *exec.Cmd
 
 	if runtime.GOOS == "windows" {
-		// Use cmd.exe on Windows to handle path issues
-		allArgs := append([]string{"/C", command}, args...)
-		cmd = exec.Command("cmd.exe", allArgs...)
+		// Check if the command is an executable or needs cmd.exe
+		if strings.HasSuffix(command, ".exe") || isExecutableInPath(command) {
+			// Direct executable, no need for cmd.exe wrapper
+			cmd = exec.Command(command, args...)
+		} else {
+			// Use cmd.exe to handle built-in commands and path issues
+			allArgs := append([]string{"/C", command}, args...)
+			cmd = exec.Command("cmd.exe", allArgs...)
+		}
 	} else {
 		cmd = exec.Command(command, args...)
 	}
@@ -357,9 +363,19 @@ func ExecuteCommand(command string, args []string, workingDir string) ([]byte, e
 	cmd.Dir = workingDir
 
 	// Add environment variables
-	cmd.Env = append(os.Environ(),
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_SSL_NO_VERIFY=true")
+	env := append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+
+	// Only add SSL verification bypass if requested
+	if skipSSLVerify {
+		env = append(env, "GIT_SSL_NO_VERIFY=true")
+	}
+
+	cmd.Env = env
 
 	return cmd.CombinedOutput()
+}
+
+func isExecutableInPath(command string) bool {
+	_, err := exec.LookPath(command)
+	return err == nil
 }

@@ -1000,9 +1000,9 @@ func TestExecuteCommand(t *testing.T) {
 	var err error
 
 	if runtime.GOOS == "windows" {
-		cmdOutput, err = ExecuteCommand("cmd.exe", []string{"/C", "echo", "test"}, "")
+		cmdOutput, err = ExecuteCommand("echo", []string{"test"}, "", false)
 	} else {
-		cmdOutput, err = ExecuteCommand("echo", []string{"test"}, "")
+		cmdOutput, err = ExecuteCommand("echo", []string{"test"}, "", false)
 	}
 	assert.NoError(t, err)
 	assert.Contains(t, string(cmdOutput), "test")
@@ -1016,47 +1016,66 @@ func TestExecuteCommand(t *testing.T) {
 		}
 	}()
 
+	// Create a test file in the temp directory
+	testFilePath := filepath.Join(tempDir, "testfile.txt")
+	err = os.WriteFile(testFilePath, []byte("test content"), 0644)
+	assert.NoError(t, err)
+
+	// Use 'dir' on Windows and 'ls' on other platforms
 	var dirCmd string
 	var dirArgs []string
 	if runtime.GOOS == "windows" {
-		dirCmd = "cmd.exe"
-		dirArgs = []string{"/C", "dir"}
-	} else {
-		dirCmd = "pwd"
+		dirCmd = "dir" // Using dir directly to test cmd.exe wrapping
 		dirArgs = []string{}
-	}
-
-	cmdOutput, err = ExecuteCommand(dirCmd, dirArgs, tempDir)
-	assert.NoError(t, err)
-
-	// Normalize paths for comparison (handles Windows/Unix differences)
-	normalizedOutput := strings.TrimSpace(string(cmdOutput))
-	normalizedTempDir := ToUnixPath(tempDir)
-	if runtime.GOOS == "windows" {
-		// On Windows, just verify we got some output
-		assert.NotEmpty(t, normalizedOutput)
 	} else {
-		// On Unix systems, we can check the exact path
-		assert.Contains(t, normalizedOutput, normalizedTempDir)
+		dirCmd = "ls"
+		dirArgs = []string{"-la"}
 	}
+
+	cmdOutput, err = ExecuteCommand(dirCmd, dirArgs, tempDir, false)
+	assert.NoError(t, err)
+	assert.Contains(t, string(cmdOutput), "testfile.txt")
+
+	// Test with an executable that should exist on PATH
+	var execCmd string
+	var execArgs []string
+	if runtime.GOOS == "windows" {
+		// 'where' is Windows' equivalent of 'which'
+		execCmd = "where"
+		execArgs = []string{"cmd"}
+	} else {
+		execCmd = "which"
+		execArgs = []string{"ls"}
+	}
+
+	cmdOutput, err = ExecuteCommand(execCmd, execArgs, "", false)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, string(cmdOutput))
 
 	// Test command that doesn't exist
-	_, err = ExecuteCommand("command-that-does-not-exist", []string{}, "")
+	_, err = ExecuteCommand("command-that-does-not-exist", []string{}, "", false)
 	assert.Error(t, err)
 
 	// Test command that returns non-zero exit code
 	var badCmd string
 	var badArgs []string
 	if runtime.GOOS == "windows" {
-		badCmd = "cmd.exe"
-		badArgs = []string{"/C", "dir", "/nonexistent/directory"}
+		badCmd = "dir" // Using dir directly without cmd.exe
+		badArgs = []string{"/nonexistent/directory"}
 	} else {
 		badCmd = "ls"
 		badArgs = []string{"/nonexistent/directory"}
 	}
 
-	_, err = ExecuteCommand(badCmd, badArgs, "")
+	_, err = ExecuteCommand(badCmd, badArgs, "", false)
 	assert.Error(t, err)
+
+	// Test with SSL verification bypass
+	cmdOutput, err = ExecuteCommand("git", []string{"--version"}, "", true)
+	if err == nil {
+		assert.NotEmpty(t, string(cmdOutput))
+		assert.Contains(t, string(cmdOutput), "git version")
+	}
 }
 
 func TestCreateRepositoryInfoFiles(t *testing.T) {
