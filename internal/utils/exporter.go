@@ -193,11 +193,12 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 }
 
 func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string) error {
-	repoDir := filepath.Join(e.outputDir, "repositories", workspace, repoSlug+".git")
+	repoPath := filepath.Join(e.outputDir, "repositories", workspace, repoSlug+".git")
+	repoDir := ToNativePath(repoPath)
 
 	e.logger.Info("Cloning repository",
 		zap.String("repository", repoSlug),
-		zap.String("destination", repoDir))
+		zap.String("destination", repoPath))
 
 	e.logger.Debug("Fetching repository details from Bitbucket API")
 	repoDetails, err := e.client.GetRepository(workspace, repoSlug)
@@ -714,10 +715,10 @@ func (e *Exporter) addFileToArchive(tarWriter *tar.Writer, path, relPath string,
 		return fmt.Errorf("failed to create tar header: %w", err)
 	}
 
-	header.Name = relPath
+	// Normalize path for consistent archive entries regardless of platform
+	header.Name = ToUnixPath(relPath)
 
 	// Only include regular files and directories
-	// Convert any other type to a regular file or skip based on file type
 	switch header.Typeflag {
 	case tar.TypeDir:
 		// Keep directories as-is
@@ -731,59 +732,60 @@ func (e *Exporter) addFileToArchive(tarWriter *tar.Writer, path, relPath string,
 		header.Typeflag = tar.TypeReg
 		header.Linkname = ""
 	case tar.TypeXHeader, tar.TypeXGlobalHeader:
-		// Skip extended headers completely as they're not supported by GitHub's importer
+		// Skip extended headers completely
 		e.logger.Warn("Skipping extended header to ensure compatibility",
 			zap.String("path", path),
 			zap.String("typeflag", string(header.Typeflag)))
 		return nil
 	default:
 		// For all other types (char devices, block devices, FIFOs, etc.)
-		// Log and skip these files to avoid incompatibility
 		e.logger.Warn("Skipping unsupported file type to ensure compatibility",
 			zap.String("path", path),
 			zap.String("typeflag", string(header.Typeflag)))
 		return nil
 	}
 
-	// Use USTAR format instead of PAX to avoid extended headers
+	// Use USTAR format for most files
 	header.Format = tar.FormatUSTAR
 
-	// Explicitly set owner and group to avoid extended headers for user/group names
-	header.Uid = 0
-	header.Gid = 0
-	header.Uname = ""
-	header.Gname = ""
-
-	// Reset timestamps to a format compatible with USTAR
-	modTime := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	header.ModTime = modTime
-	header.AccessTime = time.Time{}
-	header.ChangeTime = time.Time{}
-
-	// Check if file is in a Git repository - if so, we'll use a different approach
+	// Handle Git repository files specially to preserve exact paths
 	isInGitRepo := strings.Contains(header.Name, ".git/") || strings.HasSuffix(header.Name, ".git")
 
-	// For Git repository files, we should NOT modify the paths at all
-	// GitHub's importer expects exact path structures for Git repositories
+	// For Git repository files, we need to preserve the full path structure
 	if isInGitRepo {
 		// If path is over 100 chars (USTAR limit), switch to GNU format
-		// This will preserve the full path structure exactly as is
 		if len(header.Name) > 100 {
-			// Set header format to GNU format which supports longer paths
 			header.Format = tar.FormatGNU
 			e.logger.Debug("Using GNU format for long Git path",
 				zap.String("path", header.Name))
 		}
 	} else if len(header.Name) > 100 {
-		baseName := filepath.Base(header.Name)
-		if len(baseName) > 100 {
-			baseName = baseName[:97] + "..."
+		// For non-Git files, we can be more aggressive with truncation if needed
+		dir, file := filepath.Split(header.Name)
+		if len(file) > 80 {
+			file = file[:77] + "..."
 		}
-		header.Name = baseName
+		// Keep the immediate parent directory for context
+		parentDir := filepath.Base(dir)
+		if parentDir != "" && parentDir != "." {
+			header.Name = filepath.Join(parentDir, file)
+		} else {
+			header.Name = file
+		}
 		e.logger.Warn("Path was too long and has been truncated",
 			zap.String("original", relPath),
 			zap.String("truncated", header.Name))
 	}
+
+	// Ensure consistent timestamps and ownership
+	modTime := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	header.ModTime = modTime
+	header.AccessTime = time.Time{}
+	header.ChangeTime = time.Time{}
+	header.Uid = 0
+	header.Gid = 0
+	header.Uname = ""
+	header.Gname = ""
 
 	if err := tarWriter.WriteHeader(header); err != nil {
 		return fmt.Errorf("failed to write tar header: %w", err)

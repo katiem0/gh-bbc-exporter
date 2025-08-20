@@ -4,14 +4,17 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
 	"github.com/stretchr/testify/assert"
@@ -886,4 +889,120 @@ func TestGetAuthMethodDescription(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestPathHandling(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "path-handling-test-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	logger, _ := zap.NewDevelopment()
+	client := &Client{}
+	exporter := NewExporter(client, tempDir, logger, false, "")
+
+	// Test repository directory creation with mixed paths
+	workspace := "test-workspace"
+	repoSlug := "test-repo"
+
+	// Create paths with mixed slashes
+	mixedPath := filepath.Join(tempDir, "repositories", workspace) + "\\mixed\\path"
+	err = os.MkdirAll(ToNativePath(mixedPath), 0755)
+	assert.NoError(t, err)
+
+	// Test creating repository info files
+	err = exporter.createRepositoryInfoFiles(workspace, repoSlug)
+	assert.NoError(t, err)
+
+	// Verify that files were created with correct paths
+	infoDir := filepath.Join(tempDir, "repositories", workspace, repoSlug+".git", "info")
+	assert.DirExists(t, infoDir)
+
+	// Check nwo file
+	nwoPath := filepath.Join(infoDir, "nwo")
+	assert.FileExists(t, nwoPath)
+	nwoContent, err := os.ReadFile(nwoPath)
+	assert.NoError(t, err)
+	assert.Equal(t, fmt.Sprintf("%s/%s\n", workspace, repoSlug), string(nwoContent))
+
+	// Check last-sync file
+	syncPath := filepath.Join(infoDir, "last-sync")
+	assert.FileExists(t, syncPath)
+	syncContent, err := os.ReadFile(syncPath)
+	assert.NoError(t, err)
+	_, err = time.Parse("2006-01-02T15:04:05", string(syncContent))
+	assert.NoError(t, err)
+}
+
+func TestPathConversionFunctions(t *testing.T) {
+	// Test cases for all path conversion functions
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+		function func(string) string
+	}{
+		{
+			name:     "NormalizePath - Windows backslashes",
+			input:    "repositories\\workspace\\repo.git\\objects\\pack",
+			expected: "repositories/workspace/repo.git/objects/pack",
+			function: NormalizePath,
+		},
+		{
+			name:     "NormalizePath - Already normalized",
+			input:    "repositories/workspace/repo.git/objects/pack",
+			expected: "repositories/workspace/repo.git/objects/pack",
+			function: NormalizePath,
+		},
+		{
+			name:     "NormalizePath - Mixed slashes",
+			input:    "repositories/workspace\\repo.git/objects\\pack",
+			expected: "repositories/workspace/repo.git/objects/pack",
+			function: NormalizePath,
+		},
+		{
+			name:     "ToUnixPath - Windows backslashes",
+			input:    "repositories\\workspace\\repo.git",
+			expected: "repositories/workspace/repo.git",
+			function: ToUnixPath,
+		},
+		{
+			name:     "ToUnixPath - Already Unix path",
+			input:    "repositories/workspace/repo.git",
+			expected: "repositories/workspace/repo.git",
+			function: ToUnixPath,
+		},
+		{
+			name:     "ToUnixPath - Mixed slashes",
+			input:    "repositories/workspace\\repo.git",
+			expected: "repositories/workspace/repo.git",
+			function: ToUnixPath,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := tc.function(tc.input)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+
+	// Test ToNativePath separately since it's OS-dependent
+	t.Run("ToNativePath - Unix to native", func(t *testing.T) {
+		input := "repositories/workspace/repo.git"
+		var expected string
+		if runtime.GOOS == "windows" {
+			expected = "repositories\\workspace\\repo.git"
+		} else {
+			expected = "repositories/workspace/repo.git"
+		}
+		result := ToNativePath(input)
+		assert.Equal(t, expected, result)
+	})
+
+	// Test round-trip conversion
+	t.Run("Round-trip conversion", func(t *testing.T) {
+		original := "repositories/workspace/repo.git"
+		roundTrip := ToUnixPath(ToNativePath(original))
+		assert.Equal(t, original, roundTrip)
+	})
 }

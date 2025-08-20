@@ -2,10 +2,12 @@ package utils
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -887,4 +889,297 @@ func TestUpdateRepositoryFieldCaseInsensitive(t *testing.T) {
 	assert.GreaterOrEqual(t, len(logs), 1)
 	assert.Contains(t, logs[0].Message, "Repository not found")
 	assert.Equal(t, "non-existent-repo", logs[0].ContextMap()["repo"])
+}
+
+func TestNormalizePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Windows backslash path",
+			input:    "repositories\\mecapplicationdevelopment\\bottlerportaladmin.git\\objects\\pack\\pack-123.idx",
+			expected: "repositories/mecapplicationdevelopment/bottlerportaladmin.git/objects/pack/pack-123.idx",
+		},
+		{
+			name:     "Already normalized path",
+			input:    "repositories/mecapplicationdevelopment/bottlerportaladmin.git/objects/pack/pack-123.idx",
+			expected: "repositories/mecapplicationdevelopment/bottlerportaladmin.git/objects/pack/pack-123.idx",
+		},
+		{
+			name:     "Mixed path",
+			input:    "repositories/mecapplicationdevelopment\\bottlerportaladmin.git/objects\\pack/pack-123.idx",
+			expected: "repositories/mecapplicationdevelopment/bottlerportaladmin.git/objects/pack/pack-123.idx",
+		},
+		{
+			name:     "Path with spaces",
+			input:    "repositories\\mecapplication development\\bottler portal admin.git\\objects\\pack\\pack-123.idx",
+			expected: "repositories/mecapplication development/bottler portal admin.git/objects/pack/pack-123.idx",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := NormalizePath(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestToUnixPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Windows backslash path",
+			input:    "repositories\\mecapplicationdevelopment\\bottlerportaladmin.git",
+			expected: "repositories/mecapplicationdevelopment/bottlerportaladmin.git",
+		},
+		{
+			name:     "Already Unix path",
+			input:    "repositories/mecapplicationdevelopment/bottlerportaladmin.git",
+			expected: "repositories/mecapplicationdevelopment/bottlerportaladmin.git",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ToUnixPath(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestToNativePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:  "Unix path on Windows",
+			input: "repositories/mecapplicationdevelopment/bottlerportaladmin.git",
+			expected: func() string {
+				if runtime.GOOS == "windows" {
+					return "repositories\\mecapplicationdevelopment\\bottlerportaladmin.git"
+				}
+				return "repositories/mecapplicationdevelopment/bottlerportaladmin.git"
+			}(),
+		},
+		{
+			name: "Already native path",
+			input: func() string {
+				if runtime.GOOS == "windows" {
+					return "repositories\\mecapplicationdevelopment\\bottlerportaladmin.git"
+				}
+				return "repositories/mecapplicationdevelopment/bottlerportaladmin.git"
+			}(),
+			expected: func() string {
+				if runtime.GOOS == "windows" {
+					return "repositories\\mecapplicationdevelopment\\bottlerportaladmin.git"
+				}
+				return "repositories/mecapplicationdevelopment/bottlerportaladmin.git"
+			}(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ToNativePath(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestExecuteCommand(t *testing.T) {
+	// Test basic command execution
+	var cmdOutput []byte
+	var err error
+
+	if runtime.GOOS == "windows" {
+		cmdOutput, err = ExecuteCommand("echo", []string{"test"}, "", false)
+	} else {
+		cmdOutput, err = ExecuteCommand("echo", []string{"test"}, "", false)
+	}
+	assert.NoError(t, err)
+	assert.Contains(t, string(cmdOutput), "test")
+
+	// Test with working directory
+	tempDir, err := os.MkdirTemp("", "execute-command-test")
+	assert.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+	}()
+
+	// Create a test file in the temp directory
+	testFilePath := filepath.Join(tempDir, "testfile.txt")
+	err = os.WriteFile(testFilePath, []byte("test content"), 0644)
+	assert.NoError(t, err)
+
+	// Use 'dir' on Windows and 'ls' on other platforms
+	var dirCmd string
+	var dirArgs []string
+	if runtime.GOOS == "windows" {
+		dirCmd = "dir" // Using dir directly to test cmd.exe wrapping
+		dirArgs = []string{}
+	} else {
+		dirCmd = "ls"
+		dirArgs = []string{"-la"}
+	}
+
+	cmdOutput, err = ExecuteCommand(dirCmd, dirArgs, tempDir, false)
+	assert.NoError(t, err)
+	assert.Contains(t, string(cmdOutput), "testfile.txt")
+
+	// Test with an executable that should exist on PATH
+	var execCmd string
+	var execArgs []string
+	if runtime.GOOS == "windows" {
+		// 'where' is Windows' equivalent of 'which'
+		execCmd = "where"
+		execArgs = []string{"cmd"}
+	} else {
+		execCmd = "which"
+		execArgs = []string{"ls"}
+	}
+
+	cmdOutput, err = ExecuteCommand(execCmd, execArgs, "", false)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, string(cmdOutput))
+
+	// Test command that doesn't exist
+	_, err = ExecuteCommand("command-that-does-not-exist", []string{}, "", false)
+	assert.Error(t, err)
+
+	// Test command that returns non-zero exit code
+	var badCmd string
+	var badArgs []string
+	if runtime.GOOS == "windows" {
+		badCmd = "dir" // Using dir directly without cmd.exe
+		badArgs = []string{"/nonexistent/directory"}
+	} else {
+		badCmd = "ls"
+		badArgs = []string{"/nonexistent/directory"}
+	}
+
+	_, err = ExecuteCommand(badCmd, badArgs, "", false)
+	assert.Error(t, err)
+
+	// Test with SSL verification bypass
+	cmdOutput, err = ExecuteCommand("git", []string{"--version"}, "", true)
+	if err == nil {
+		assert.NotEmpty(t, string(cmdOutput))
+		assert.Contains(t, string(cmdOutput), "git version")
+	}
+}
+
+func TestCreateRepositoryInfoFiles(t *testing.T) {
+	// Setup
+	tempDir, err := os.MkdirTemp("", "repo-info-test")
+	assert.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+	}()
+
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+
+	// Test repository info file creation
+	workspace := "test-workspace"
+	repoSlug := "test-repo"
+
+	err = exporter.createRepositoryInfoFiles(workspace, repoSlug)
+	assert.NoError(t, err)
+
+	// Verify nwo file was created with correct content
+	nwoPath := filepath.Join(tempDir, "repositories", workspace, repoSlug+".git", "info", "nwo")
+	assert.FileExists(t, nwoPath)
+
+	nwoContent, err := os.ReadFile(nwoPath)
+	assert.NoError(t, err)
+	assert.Equal(t, fmt.Sprintf("%s/%s\n", workspace, repoSlug), string(nwoContent))
+
+	// Verify last-sync file was created
+	syncPath := filepath.Join(tempDir, "repositories", workspace, repoSlug+".git", "info", "last-sync")
+	assert.FileExists(t, syncPath)
+
+	syncContent, err := os.ReadFile(syncPath)
+	assert.NoError(t, err)
+
+	// Verify last-sync has expected format (date string)
+	_, err = time.Parse("2006-01-02T15:04:05", string(syncContent))
+	assert.NoError(t, err)
+
+	// Test with invalid directory that cannot be created
+	if runtime.GOOS != "windows" { // Skip on Windows as permission model is different
+		readOnlyDir, err := os.MkdirTemp("", "readonly-test")
+		assert.NoError(t, err)
+		defer func() {
+			if err := os.RemoveAll(readOnlyDir); err != nil {
+				t.Logf("Warning: Failed to remove readonly dir: %v", err)
+			}
+		}()
+
+		// Make directory read-only
+		err = os.Chmod(readOnlyDir, 0500)
+		assert.NoError(t, err)
+
+		readOnlyExporter := NewExporter(&Client{}, readOnlyDir, logger, false, "")
+		err = readOnlyExporter.createRepositoryInfoFiles(workspace, repoSlug)
+		assert.Error(t, err)
+	}
+}
+
+func TestPathOperations(t *testing.T) {
+	// Create a mixed path for testing
+	mixedPath := "repositories/workspace\\repo/path\\to/file.txt"
+
+	// Test NormalizePath
+	normalizedPath := NormalizePath(mixedPath)
+	assert.Equal(t, "repositories/workspace/repo/path/to/file.txt", normalizedPath)
+
+	// Test ToUnixPath
+	unixPath := ToUnixPath(mixedPath)
+	assert.Equal(t, "repositories/workspace/repo/path/to/file.txt", unixPath)
+
+	// Test ToNativePath - this needs to check OS
+	nativePath := ToNativePath(unixPath)
+	if runtime.GOOS == "windows" {
+		assert.Equal(t, "repositories\\workspace\\repo\\path\\to\\file.txt", nativePath)
+	} else {
+		assert.Equal(t, "repositories/workspace/repo/path/to/file.txt", nativePath)
+	}
+
+	// Test round-trip conversion (Unix -> Native -> Unix)
+	roundTripPath := ToUnixPath(ToNativePath(unixPath))
+	assert.Equal(t, unixPath, roundTripPath)
+}
+
+func TestOSSpecificPathConversion(t *testing.T) {
+	// Test absolute paths which may differ by OS
+	var absPath string
+	if runtime.GOOS == "windows" {
+		absPath = "C:\\Users\\user\\Documents\\file.txt"
+	} else {
+		absPath = "/home/user/Documents/file.txt"
+	}
+
+	// Convert to Unix path
+	unixPath := ToUnixPath(absPath)
+	if runtime.GOOS == "windows" {
+		assert.Equal(t, "C:/Users/user/Documents/file.txt", unixPath)
+	} else {
+		assert.Equal(t, "/home/user/Documents/file.txt", unixPath)
+	}
+
+	// Convert back to native path
+	nativePath := ToNativePath(unixPath)
+	assert.Equal(t, absPath, nativePath)
 }
