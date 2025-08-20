@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"hash/fnv"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -70,10 +72,14 @@ func (e *Exporter) GetOutputPath() string {
 }
 
 func (e *Exporter) createRepositoryInfoFiles(workspace, repoSlug string) error {
-	repoPath := filepath.Join(e.outputDir, "repositories", workspace, repoSlug+".git")
+	// Always use forward slashes for the repository path
+	repoPath := ToUnixPath(filepath.Join(e.outputDir, "repositories", workspace, repoSlug+".git"))
+
+	// Create native path for file operations
+	nativePath := ToNativePath(repoPath)
 
 	// Create info directory
-	infoDir := filepath.Join(repoPath, "info")
+	infoDir := filepath.Join(nativePath, "info")
 	if err := os.MkdirAll(infoDir, 0755); err != nil {
 		return fmt.Errorf("failed to create info directory: %w", err)
 	}
@@ -320,4 +326,45 @@ func HashString(s string) string {
 	h := fnv.New32a()
 	h.Write([]byte(s))
 	return fmt.Sprintf("%x", h.Sum32())
+}
+
+func NormalizePath(path string) string {
+	path = filepath.FromSlash(path)
+	// Then normalize to forward slashes for consistency in archives
+	if runtime.GOOS == "windows" {
+		path = strings.ReplaceAll(path, "\\", "/")
+	}
+	return path
+}
+
+func ToUnixPath(path string) string {
+	return strings.ReplaceAll(path, "\\", "/")
+}
+
+func ToNativePath(path string) string {
+	if runtime.GOOS == "windows" {
+		return strings.ReplaceAll(path, "/", "\\")
+	}
+	return path
+}
+
+func ExecuteCommand(command string, args []string, workingDir string) ([]byte, error) {
+	var cmd *exec.Cmd
+
+	if runtime.GOOS == "windows" {
+		// Use cmd.exe on Windows to handle path issues
+		allArgs := append([]string{"/C", command}, args...)
+		cmd = exec.Command("cmd.exe", allArgs...)
+	} else {
+		cmd = exec.Command(command, args...)
+	}
+
+	cmd.Dir = workingDir
+
+	// Add environment variables
+	cmd.Env = append(os.Environ(),
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_SSL_NO_VERIFY=true")
+
+	return cmd.CombinedOutput()
 }
