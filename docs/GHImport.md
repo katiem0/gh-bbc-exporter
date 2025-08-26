@@ -40,6 +40,7 @@ For all options, the following variable values should be used:
 
 > [!Important]
 > **Prerequisites:**
+>
 > 1. Upload your `bitbucket-export-*.tar.gz` archive to Azure Blob Storage first
 > 2. Generate a SAS URL or configure your connection string for access
 > 3. Note the blob path/URL for the archive
@@ -59,13 +60,14 @@ gh gei migrate-repo \
 ```
 
 > [!Note]
-> The `--git-archive-path` and `--metadata-archive-path` should reference the blob path 
+> The `--git-archive-path` and `--metadata-archive-path` should reference the blob path
 > within your Azure container, not a local file path.
 
 ### Using AWS S3 Buckets
 
 > [!Important]
 > **Prerequisites:**
+>
 > 1. Upload your `bitbucket-export-*.tar.gz` archive to an S3 bucket first
 > 2. Configure AWS credentials with access to the bucket
 > 3. Note the S3 object key/path for the archive
@@ -98,7 +100,6 @@ gh gei migrate-repo \
 > [!Important]
 > **Key Difference:** With GitHub-owned storage, you reference your local archive file
 > and it gets uploaded automatically during the migration process.
-
 
 This functionality is now in public review and accessible to all.
 
