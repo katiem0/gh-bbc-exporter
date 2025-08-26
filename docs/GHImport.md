@@ -38,6 +38,12 @@ For all options, the following variable values should be used:
 
 ### Using Azure Storage Blobs
 
+> [!Important]
+> **Prerequisites:**
+> 1. Upload your `bitbucket-export-*.tar.gz` archive to Azure Blob Storage first
+> 2. Generate a SAS URL or configure your connection string for access
+> 3. Note the blob path/URL for the archive
+
 For Azure Storage, you'll need to configure your [connection string][azure-string]
 and then run:
 
@@ -52,12 +58,27 @@ gh gei migrate-repo \
   --metadata-archive-path AZURE_PATH.tar.gz
 ```
 
+> [!Note]
+> The `--git-archive-path` and `--metadata-archive-path` should reference the blob path 
+> within your Azure container, not a local file path.
+
 ### Using AWS S3 Buckets
+
+> [!Important]
+> **Prerequisites:**
+> 1. Upload your `bitbucket-export-*.tar.gz` archive to an S3 bucket first
+> 2. Configure AWS credentials with access to the bucket
+> 3. Note the S3 object key/path for the archive
 
 For AWS S3, you'll need to provide your
 [AWS credentials][aws-credentials] and then run:
 
 ```sh
+# First, upload your archive to S3 (example using AWS CLI)
+aws s3 cp bitbucket-export-YYYYMMDD-HHMMSS.tar.gz \
+  s3://YOUR_BUCKET_NAME/bitbucket-export-YYYYMMDD-HHMMSS.tar.gz
+
+# Then run the migration referencing the uploaded archive
 gh gei migrate-repo \
   --github-source-org SOURCE_ORG \
   --source-repo SOURCE_REPO \
@@ -68,7 +89,16 @@ gh gei migrate-repo \
   --metadata-archive-path S3_PATH.tar.gz
 ```
 
+> [!Note]
+> The `--git-archive-path` and `--metadata-archive-path` should reference the object key
+> within your S3 bucket, not a local file path.
+
 ### Using GitHub-owned storage
+
+> [!Important]
+> **Key Difference:** With GitHub-owned storage, you reference your local archive file
+> and it gets uploaded automatically during the migration process.
+
 
 This functionality is now in public review and accessible to all.
 
@@ -85,6 +115,18 @@ gh gei migrate-repo \
   --metadata-archive-path PATH_TO_ARCHIVE.tar.gz \
   --use-github-storage
 ```
+
+> [!Note]
+> The `--git-archive-path` and `--metadata-archive-path` reference **local file paths**
+> when using `--use-github-storage`. The GEI CLI handles uploading to GitHub-owned storage.
+
+## Storage Option Comparison
+
+| Storage Type | Archive Location | Upload Required | Path Type |
+|:-------------|:-----------------|:----------------|:----------|
+| **Azure Blob** | Azure container | Yes - before migration | Blob path in container |
+| **AWS S3** | S3 bucket | Yes - before migration | S3 object key |
+| **GitHub-owned** | Local filesystem | No - automatic during migration | Local file path |
 
 ## Migrating with Individual API Calls
 
