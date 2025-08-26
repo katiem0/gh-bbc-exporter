@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -968,46 +969,6 @@ func TestMakeRequestWithNoAuth(t *testing.T) {
 	assert.True(t, result["success"].(bool))
 }
 
-func TestExportUpdatesClientExportDir(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "export-dir-test-")
-	assert.NoError(t, err)
-	defer func() { _ = os.RemoveAll(tempDir) }()
-
-	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		if strings.Contains(r.URL.Path, "/repositories/") {
-			writeResponse(t, w, []byte(`{"name": "Test Repo", "mainbranch": {"name": "main"}}`))
-		} else {
-			writeResponse(t, w, []byte(`{"values": [], "next": null}`))
-		}
-	}))
-	defer testServer.Close()
-
-	logger, _ := zap.NewDevelopment()
-	client := &Client{
-		baseURL:        testServer.URL,
-		httpClient:     testServer.Client(),
-		logger:         logger,
-		commitSHACache: make(map[string]string),
-		exportDir:      "",
-	}
-
-	// Test with auto-generated output dir
-	exporter := NewExporter(client, "", logger, false, "")
-
-	// Before Export, client.exportDir should be empty
-	assert.Empty(t, client.exportDir)
-
-	err = exporter.Export("workspace", "repo")
-	assert.NoError(t, err)
-
-	// After Export, client.exportDir should be set to exporter.outputDir
-	assert.NotEmpty(t, client.exportDir)
-	assert.Equal(t, "./"+exporter.outputDir, client.exportDir+".tar.gz")
-	assert.Contains(t, client.exportDir, "./bitbucket-export-")
-	assert.NotContains(t, client.exportDir, ".tar.gz")
-}
-
 func TestGetPullRequestCommentsConcurrent(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 
@@ -1068,4 +1029,64 @@ func TestGetPullRequestCommentsConcurrent(t *testing.T) {
 
 	// Log the actual time for debugging
 	t.Logf("Fetching comments for %d PRs took %v", len(prs), elapsed)
+}
+
+func TestExportUpdatesClientExportDir(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "export-dir-test-")
+	assert.NoError(t, err)
+	defer func() {
+		// Clean up the temp directory
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+
+		// Clean up any bitbucket-export-* directories created by the test
+		matches, _ := filepath.Glob("./bitbucket-export-*")
+		for _, match := range matches {
+			// Remove directory
+			if err := os.RemoveAll(match); err != nil {
+				t.Logf("Warning: Failed to remove %s: %v", match, err)
+			}
+			// Remove corresponding archive if it exists
+			archivePath := match + ".tar.gz"
+			if _, err := os.Stat(archivePath); err == nil {
+				if err := os.Remove(archivePath); err != nil {
+					t.Logf("Warning: Failed to remove archive %s: %v", archivePath, err)
+				}
+			}
+		}
+	}()
+
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if strings.Contains(r.URL.Path, "/repositories/") {
+			writeResponse(t, w, []byte(`{"name": "Test Repo", "mainbranch": {"name": "main"}}`))
+		} else {
+			writeResponse(t, w, []byte(`{"values": [], "next": null}`))
+		}
+	}))
+	defer testServer.Close()
+
+	logger, _ := zap.NewDevelopment()
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		commitSHACache: make(map[string]string),
+		exportDir:      "", // Start with empty exportDir
+	}
+
+	// Test with auto-generated output dir
+	exporter := NewExporter(client, "", logger, false, "")
+
+	// Before Export, client.exportDir should be empty
+	assert.Empty(t, client.exportDir)
+
+	err = exporter.Export("workspace", "repo")
+	assert.NoError(t, err)
+
+	assert.NotEmpty(t, client.exportDir)
+	assert.Equal(t, "./"+exporter.outputDir, client.exportDir+".tar.gz")
+	assert.Contains(t, client.exportDir, "bitbucket-export-")
+	assert.NotContains(t, client.exportDir, ".tar.gz")
 }

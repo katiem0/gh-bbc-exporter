@@ -1165,8 +1165,13 @@ func TestWriteJSONFilePermissionError(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "write-perm-test-")
 	assert.NoError(t, err)
 	defer func() {
-		os.Chmod(tempDir, 0755) // Restore permissions before removal
-		os.RemoveAll(tempDir)
+		// Restore permissions before removal
+		if err := os.Chmod(tempDir, 0755); err != nil {
+			t.Logf("Warning: Failed to restore permissions: %v", err)
+		}
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
 	}()
 
 	logger, _ := zap.NewDevelopment()
