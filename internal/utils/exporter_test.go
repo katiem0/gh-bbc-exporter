@@ -1006,3 +1006,83 @@ func TestPathConversionFunctions(t *testing.T) {
 		assert.Equal(t, original, roundTrip)
 	})
 }
+
+func TestCloneRepositoryAuthenticationError(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "clone-auth-test-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	logger, _ := zap.NewDevelopment()
+
+	// Mock a server for repository details
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		writeResponse(t, w, []byte(`{"name": "Test Repo", "mainbranch": {"name": "main"}}`))
+	}))
+	defer testServer.Close()
+
+	client := &Client{
+		baseURL:     testServer.URL,
+		httpClient:  testServer.Client(),
+		logger:      logger,
+		accessToken: "invalid-token",
+	}
+
+	exporter := NewExporter(client, tempDir, logger, false, "")
+
+	// This will fail with authentication error
+	err = exporter.CloneRepository("workspace", "repo", "https://invalid-auth@bitbucket.org/workspace/repo.git")
+
+	// CloneRepository SHOULD return an error when it fails
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to clone repository")
+
+	// The repository directory should NOT exist after a failed clone
+	repoPath := filepath.Join(tempDir, "repositories", "workspace", "repo.git")
+	assert.NoDirExists(t, repoPath)
+}
+
+func TestExportWithCloneFailure(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "export-clone-fail-test-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	// Mock server that returns repository info but we'll use an invalid clone URL
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if strings.Contains(r.URL.Path, "/repositories/") && !strings.Contains(r.URL.Path, "pullrequests") {
+			writeResponse(t, w, []byte(`{"name": "Test Repo", "mainbranch": {"name": "main"}}`))
+		} else {
+			writeResponse(t, w, []byte(`{"values": [], "next": null}`))
+		}
+	}))
+	defer testServer.Close()
+
+	logger, _ := zap.NewDevelopment()
+
+	// Create a client with invalid credentials that will cause clone to fail
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		accessToken:    "invalid-token-that-will-fail",
+		commitSHACache: make(map[string]string),
+	}
+
+	exporter := NewExporter(client, tempDir, logger, false, "")
+
+	// Export should succeed even though clone fails (it creates empty repo)
+	err = exporter.Export("workspace", "repo")
+	assert.NoError(t, err)
+
+	// Verify empty repository was created
+	repoPath := filepath.Join(tempDir, "repositories", "workspace", "repo.git")
+	assert.DirExists(t, repoPath)
+
+	// Verify it's a valid git repository
+	cmd := exec.Command("git", "rev-parse", "--git-dir")
+	cmd.Dir = repoPath
+	output, err := cmd.Output()
+	assert.NoError(t, err)
+	assert.Contains(t, string(output), ".")
+}

@@ -109,6 +109,7 @@ func runCmdExport(cmdFlags *data.CmdFlags, logger *zap.Logger) error {
 		cmdFlags.BitbucketUser,
 		cmdFlags.BitbucketAppPass,
 		logger,
+		cmdFlags.OutputDir,
 	)
 
 	if cmdFlags.OpenPRsOnly {
