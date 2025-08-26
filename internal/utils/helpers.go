@@ -45,6 +45,27 @@ func formatDateToZ(inputDate string) string {
 	return ""
 }
 
+func GetFullCommitSHAFromLocalRepo(repoPath string, shortSHA string) (string, error) {
+	if len(shortSHA) == 40 {
+		return shortSHA, nil
+	}
+
+	// Use git rev-parse to convert short SHA to full SHA
+	cmd := exec.Command("git", "rev-parse", shortSHA)
+	cmd.Dir = repoPath
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get full commit SHA from local repo: %w", err)
+	}
+
+	fullSHA := strings.TrimSpace(string(output))
+	if len(fullSHA) == 40 {
+		return fullSHA, nil
+	}
+
+	return "", fmt.Errorf("unexpected output from git rev-parse: %s", fullSHA)
+}
+
 func (e *Exporter) writeJSONFile(filename string, data interface{}) error {
 	filepath := filepath.Join(e.outputDir, filename)
 	e.logger.Debug("Writing file", zap.String("path", filepath))

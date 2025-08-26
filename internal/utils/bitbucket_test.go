@@ -1,10 +1,12 @@
 package utils
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,7 +30,7 @@ func writeResponse(t *testing.T, w http.ResponseWriter, data []byte) {
 
 func TestNewClient(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
-	client := NewClient("https://example.com", "token", "api-token", "email", "user", "pass", logger)
+	client := NewClient("https://example.com", "token", "api-token", "email", "user", "pass", logger, "/path/to/export")
 
 	assert.NotNil(t, client)
 	assert.Equal(t, "https://example.com", client.baseURL)
@@ -39,6 +41,7 @@ func TestNewClient(t *testing.T) {
 	assert.Equal(t, "pass", client.appPass)
 	assert.NotNil(t, client.httpClient)
 	assert.NotNil(t, client.logger)
+	assert.Equal(t, "/path/to/export", client.exportDir)
 }
 
 func TestGetPullRequests(t *testing.T) {
@@ -963,4 +966,106 @@ func TestMakeRequestWithNoAuth(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.True(t, result["success"].(bool))
+}
+
+func TestExportUpdatesClientExportDir(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "export-dir-test-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if strings.Contains(r.URL.Path, "/repositories/") {
+			writeResponse(t, w, []byte(`{"name": "Test Repo", "mainbranch": {"name": "main"}}`))
+		} else {
+			writeResponse(t, w, []byte(`{"values": [], "next": null}`))
+		}
+	}))
+	defer testServer.Close()
+
+	logger, _ := zap.NewDevelopment()
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		commitSHACache: make(map[string]string),
+		exportDir:      "",
+	}
+
+	// Test with auto-generated output dir
+	exporter := NewExporter(client, "", logger, false, "")
+
+	// Before Export, client.exportDir should be empty
+	assert.Empty(t, client.exportDir)
+
+	err = exporter.Export("workspace", "repo")
+	assert.NoError(t, err)
+
+	// After Export, client.exportDir should be set to exporter.outputDir
+	assert.NotEmpty(t, client.exportDir)
+	assert.Equal(t, "./"+exporter.outputDir, client.exportDir+".tar.gz")
+	assert.Contains(t, client.exportDir, "./bitbucket-export-")
+	assert.NotContains(t, client.exportDir, ".tar.gz")
+}
+
+func TestGetPullRequestCommentsConcurrent(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	requestCount := 0
+	mu := sync.Mutex{}
+
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requestCount++
+		mu.Unlock()
+
+		// Reduce processing time to make test more reliable
+		time.Sleep(50 * time.Millisecond)
+
+		w.WriteHeader(http.StatusOK)
+		writeResponse(t, w, []byte(`{
+            "values": [
+                {
+                    "id": 1,
+                    "content": {"raw": "Test comment"},
+                    "created_on": "2023-01-01T12:00:00Z",
+                    "updated_on": "2023-01-01T12:00:00Z",
+                    "user": {"uuid": "{test-uuid}"}
+                }
+            ],
+            "next": null
+        }`))
+	}))
+	defer testServer.Close()
+
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		commitSHACache: make(map[string]string),
+	}
+
+	// Create multiple PRs to test
+	prs := []data.PullRequest{}
+	for i := 1; i <= 5; i++ {
+		prs = append(prs, data.PullRequest{
+			URL:  fmt.Sprintf("https://bitbucket.org/workspace/repo/pull/%d", i),
+			Head: data.PRBranch{Sha: "abc123"},
+		})
+	}
+
+	start := time.Now()
+	regularComments, reviewComments, err := client.GetPullRequestComments("workspace", "repo", prs)
+	elapsed := time.Since(start)
+
+	assert.NoError(t, err)
+	assert.Equal(t, 5, requestCount, "Should make one request per PR")
+	assert.Len(t, regularComments, 5, "Should have one comment per PR")
+	assert.Empty(t, reviewComments, "Should have no review comments")
+
+	// Since the current implementation is sequential, expect at least 250ms (5 * 50ms)
+	assert.GreaterOrEqual(t, elapsed, 250*time.Millisecond, "Should take at least 5*50ms")
+
+	// Log the actual time for debugging
+	t.Logf("Fetching comments for %d PRs took %v", len(prs), elapsed)
 }

@@ -39,10 +39,15 @@ func NewExporter(client *Client, outputDir string, logger *zap.Logger, openPRsOn
 }
 
 func (e *Exporter) Export(workspace, repoSlug string) error {
+	e.logger.Info("Starting export",
+		zap.String("workspace", workspace),
+		zap.String("repository", repoSlug))
+
 	if e.outputDir == "" {
 		timestamp := time.Now().Format("20060102-150405")
 		e.outputDir = fmt.Sprintf("./bitbucket-export-%s", timestamp)
 	}
+	e.client.exportDir = e.outputDir
 
 	e.logger.Debug("Creating output directory", zap.String("path", e.outputDir))
 	if err := os.MkdirAll(e.outputDir, 0755); err != nil {
@@ -52,10 +57,6 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 	reposDir := filepath.Join(e.outputDir, "repositories", workspace, repoSlug+".git")
 	if err := os.MkdirAll(reposDir, 0755); err != nil {
 		return fmt.Errorf("failed to create repositories directory: %w", err)
-	}
-
-	if err := e.createRepositoryInfoFiles(workspace, repoSlug); err != nil {
-		return fmt.Errorf("failed to create repository info files: %w", err)
 	}
 
 	repo, err := e.client.GetRepository(workspace, repoSlug)
@@ -77,16 +78,12 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 
 	var cloneURL string
 	if e.client.accessToken != "" {
-		// For workspace access tokens
 		cloneURL = fmt.Sprintf("https://x-token-auth:%s@bitbucket.org/%s/%s.git",
 			url.QueryEscape(e.client.accessToken), workspace, repoSlug)
 	} else if e.client.apiToken != "" {
-		// For API tokens, always use x-bitbucket-api-token-auth as the username
-		// This is the recommended approach per Bitbucket documentation
 		cloneURL = fmt.Sprintf("https://x-bitbucket-api-token-auth:%s@bitbucket.org/%s/%s.git",
 			url.QueryEscape(e.client.apiToken), workspace, repoSlug)
 	} else {
-		// Basic auth with username and app password
 		encodedUsername := url.QueryEscape(e.client.username)
 		encodedAppPass := url.QueryEscape(e.client.appPass)
 		cloneURL = fmt.Sprintf("https://%s:%s@bitbucket.org/%s/%s.git",
@@ -97,7 +94,6 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 		zap.String("repository", repoSlug))
 
 	if err := e.CloneRepository(workspace, repoSlug, cloneURL); err != nil {
-		// Include more detailed error information to help diagnose authentication issues
 		e.logger.Warn("Failed to clone repository, creating empty repository structure",
 			zap.String("repo", repoSlug),
 			zap.Error(err))
@@ -115,8 +111,17 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 		if err := e.createEmptyRepository(workspace, repoSlug); err != nil {
 			return fmt.Errorf("failed to create empty repository structure: %w", err)
 		}
+	} else {
+		e.logger.Info("Repository clone successful")
+		// Repository was cloned successfully, create repo info files
+		if err := e.createRepositoryInfoFiles(workspace, repoSlug); err != nil {
+			e.logger.Warn("Failed to create repository info files",
+				zap.String("repository", repoSlug),
+				zap.Error(err))
+		}
 	}
 
+	e.logger.Debug("Fetching users")
 	users, err := e.client.GetUsers(workspace, repoSlug)
 	if err != nil {
 		e.logger.Warn("Failed to fetch users", zap.Error(err))
@@ -152,6 +157,10 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 	if err != nil {
 		e.logger.Warn("Failed to fetch pull request comments", zap.Error(err))
 	} else {
+		e.logger.Info("Successfully fetched pull request comments",
+			zap.Int("regular_comments", len(regularComments)),
+			zap.Int("review_comments", len(reviewComments)),
+			zap.Int("total_comments", len(regularComments)+len(reviewComments)))
 		if len(regularComments) > 0 {
 			if err := e.writeJSONFile("issue_comments_000001.json", regularComments); err != nil {
 				e.logger.Warn("Failed to write issue comments", zap.Error(err))

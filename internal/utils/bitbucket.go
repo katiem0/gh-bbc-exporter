@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -25,9 +27,10 @@ type Client struct {
 	appPass        string // To be deprecated Sept 2025
 	logger         *zap.Logger
 	commitSHACache map[string]string
+	exportDir      string
 }
 
-func NewClient(baseURL, accessToken, apiToken, email, username, appPass string, logger *zap.Logger) *Client {
+func NewClient(baseURL, accessToken, apiToken, email, username, appPass string, logger *zap.Logger, exportDir string) *Client {
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	if !strings.Contains(baseURL, "/2.0") && strings.Contains(baseURL, "api.bitbucket.org") {
@@ -65,6 +68,7 @@ func NewClient(baseURL, accessToken, apiToken, email, username, appPass string, 
 		appPass:        appPass,
 		logger:         logger,
 		commitSHACache: make(map[string]string), // Initialize commit cache
+		exportDir:      exportDir,
 	}
 }
 
@@ -322,28 +326,6 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, p
 			zap.String("field_used", "created_on"))
 	}
 
-	getFullSHA := func(shortSHA string) string {
-		if len(shortSHA) == 40 {
-			return shortSHA
-		}
-
-		if fullSHA, exists := c.commitSHACache[shortSHA]; exists {
-			return fullSHA
-		}
-
-		fullSHA, err := c.GetFullCommitSHA(workspace, repoSlug, shortSHA)
-		if err == nil && len(fullSHA) == 40 {
-			c.commitSHACache[shortSHA] = fullSHA
-			return fullSHA
-		}
-
-		c.logger.Warn("Failed to get full commit SHA",
-			zap.String("original", shortSHA),
-			zap.Error(err))
-
-		return shortSHA
-	}
-
 	for hasMore {
 		baseURL, parseErr := url.Parse(fmt.Sprintf("repositories/%s/%s/pullrequests", workspace, repoSlug))
 		if parseErr != nil {
@@ -439,8 +421,11 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, p
 			baseSHA := pr.Destination.Commit.Hash
 			headSHA := pr.Source.Commit.Hash
 
-			baseSHA = getFullSHA(baseSHA)
-			headSHA = getFullSHA(headSHA)
+			c.logger.Debug("Getting full commit SHA",
+				zap.String("base_sha", baseSHA),
+				zap.String("head_sha", headSHA))
+			baseSHA, _ = c.GetFullCommitSHA(workspace, repoSlug, baseSHA)
+			headSHA, _ = c.GetFullCommitSHA(workspace, repoSlug, headSHA)
 
 			description := ""
 			if pr.Description != nil {
@@ -450,7 +435,7 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, p
 			// Format merge commit SHA if available
 			var mergeCommitSha *string
 			if pr.MergeCommit != nil && pr.State == "MERGED" {
-				fullMergeSHA := getFullSHA(pr.MergeCommit.Hash)
+				fullMergeSHA, _ := c.GetFullCommitSHA(workspace, repoSlug, pr.MergeCommit.Hash)
 				mergeCommitSha = &fullMergeSHA
 			}
 
@@ -512,6 +497,20 @@ func (c *Client) GetFullCommitSHA(workspace, repoSlug, commitHash string) (strin
 		return fullSHA, nil
 	}
 
+	repoPath := filepath.Join(c.exportDir, "repositories", workspace, repoSlug+".git")
+	if _, err := os.Stat(repoPath); err == nil {
+		// Repository exists locally
+		fullSHA, err := GetFullCommitSHAFromLocalRepo(repoPath, commitHash)
+		if err == nil {
+			// Cache the result
+			c.commitSHACache[commitHash] = fullSHA
+			return fullSHA, nil
+		}
+		// If local lookup fails, log and fall back to API
+		c.logger.Debug("Failed to get full SHA from local repo, falling back to API",
+			zap.String("shortSHA", commitHash),
+			zap.Error(err))
+	}
 	endpoint := fmt.Sprintf("repositories/%s/%s/commit/%s", workspace, repoSlug, commitHash)
 
 	var response struct {
@@ -551,33 +550,7 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 		}
 	}
 
-	getFullSHA := func(shortSHA string) string {
-		if len(shortSHA) == 40 {
-			return shortSHA
-		}
-
-		if fullSHA, exists := c.commitSHACache[shortSHA]; exists {
-			return fullSHA
-		}
-
-		fullSHA, err := c.GetFullCommitSHA(workspace, repoSlug, shortSHA)
-		if err == nil && len(fullSHA) == 40 {
-			c.commitSHACache[shortSHA] = fullSHA
-			return fullSHA
-		}
-
-		c.logger.Warn("Failed to get full commit SHA",
-			zap.String("original", shortSHA),
-			zap.Error(err))
-
-		return shortSHA
-	}
-
-	// Fetch full SHAs for all PRs before processing comments
-	for prID, shortSHA := range prCommitMap {
-		prCommitMap[prID] = getFullSHA(shortSHA)
-	}
-
+	resolvedSHAs := make(map[int]bool)
 	for prID := range prURLMap {
 		page := 1
 		pageLen := 100
@@ -615,6 +588,25 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 				// Check if this is an inline comment
 				if comment.Inline != nil && comment.Inline.Path != "" {
 					// This is an inline review comment
+					if !resolvedSHAs[prID] {
+						shortSHA := prCommitMap[prID]
+						fullSHA, err := c.GetFullCommitSHA(workspace, repoSlug, shortSHA)
+						if err != nil {
+							c.logger.Warn("Failed to resolve full SHA for PR",
+								zap.Int("pr_id", prID),
+								zap.String("short_sha", shortSHA),
+								zap.Error(err))
+							// Use the short SHA as fallback
+							fullSHA = shortSHA
+						}
+						prCommitMap[prID] = fullSHA
+						resolvedSHAs[prID] = true
+
+						c.logger.Debug("Resolved SHA for PR with inline comment",
+							zap.Int("pr_id", prID),
+							zap.String("full_sha", fullSHA))
+					}
+
 					lineNumber := 1
 					if comment.Inline.To != nil {
 						lineNumber = *comment.Inline.To

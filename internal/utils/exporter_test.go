@@ -1006,3 +1006,37 @@ func TestPathConversionFunctions(t *testing.T) {
 		assert.Equal(t, original, roundTrip)
 	})
 }
+
+func TestCloneRepositoryAuthenticationError(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "clone-auth-test-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	logger, _ := zap.NewDevelopment()
+
+	// Mock a server for repository details
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		writeResponse(t, w, []byte(`{"name": "Test Repo", "mainbranch": {"name": "main"}}`))
+	}))
+	defer testServer.Close()
+
+	client := &Client{
+		baseURL:     testServer.URL,
+		httpClient:  testServer.Client(),
+		logger:      logger,
+		accessToken: "invalid-token",
+	}
+
+	exporter := NewExporter(client, tempDir, logger, false, "")
+
+	// This will fail with authentication error
+	err = exporter.CloneRepository("workspace", "repo", "https://invalid-auth@bitbucket.org/workspace/repo.git")
+
+	// Should not return error - it creates empty repo on clone failure
+	assert.NoError(t, err)
+
+	// Verify empty repository was created
+	repoPath := filepath.Join(tempDir, "repositories", "workspace", "repo.git")
+	assert.DirExists(t, repoPath)
+}
