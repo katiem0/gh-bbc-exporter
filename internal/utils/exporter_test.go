@@ -764,6 +764,13 @@ func TestGetAuthMethodDescription(t *testing.T) {
 		expected string
 	}{
 		{
+			name: "no credentials",
+			client: &Client{
+				logger: logger,
+			},
+			expected: "no authentication",
+		},
+		{
 			name: "workspace access token",
 			client: &Client{
 				accessToken: "token",
@@ -789,20 +796,13 @@ func TestGetAuthMethodDescription(t *testing.T) {
 			expected: "API token with email",
 		},
 		{
-			name: "username and app password",
+			name: "basic authentication",
 			client: &Client{
 				username: "user",
 				appPass:  "pass",
 				logger:   logger,
 			},
 			expected: "username and app password",
-		},
-		{
-			name: "no authentication",
-			client: &Client{
-				logger: logger,
-			},
-			expected: "no authentication",
 		},
 	}
 
@@ -1365,4 +1365,28 @@ func TestSanitizeDescriptionEdgeCases(t *testing.T) {
 			assert.Equal(t, tc.expected, result)
 		})
 	}
+}
+
+func TestCreateEmptyRepositoryWithPermissionError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on Windows as permission handling differs")
+	}
+
+	// Create a temporary directory
+	tempDir, err := os.MkdirTemp("", "repo-perm-test")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// Make the temp dir read-only to force permission error
+	err = os.Chmod(tempDir, 0500) // read + execute, but no write
+	assert.NoError(t, err)
+	defer os.Chmod(tempDir, 0700) // restore permissions for cleanup
+
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+
+	// This should fail with permission error when trying to create directories
+	err = exporter.createEmptyRepository("workspace", "repo")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to create")
 }
