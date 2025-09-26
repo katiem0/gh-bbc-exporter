@@ -3,6 +3,7 @@ package utils
 import (
 	"archive/tar"
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -94,11 +95,17 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 		zap.String("repository", repoSlug))
 
 	if err := e.CloneRepository(workspace, repoSlug, cloneURL); err != nil {
-		e.logger.Warn("Failed to clone repository, creating empty repository structure",
-			zap.String("repo", repoSlug),
-			zap.Error(err))
+		// Check if this is an ambiguous reference error - if so, fail immediately
+		if strings.Contains(err.Error(), "ambiguous") ||
+			strings.Contains(err.Error(), "repository validation failed") {
+			e.logger.Error("Export cancelled due to ambiguous Git references",
+				zap.String("workspace", workspace),
+				zap.String("repository", repoSlug),
+				zap.Error(err))
+			return fmt.Errorf("export failed: %w", err)
+		}
 
-		// If authentication failed, add more specific logging
+		// Check if this is an authentication error - fail immediately
 		if strings.Contains(err.Error(), "Authentication failed") ||
 			strings.Contains(err.Error(), "401") ||
 			strings.Contains(err.Error(), "403") {
@@ -106,19 +113,23 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 				zap.String("workspace", workspace),
 				zap.String("repository", repoSlug),
 				zap.String("auth_method", getAuthMethodDescription(e.client)))
+			return fmt.Errorf("export failed due to authentication error: %w", err)
 		}
 
-		if err := e.createEmptyRepository(workspace, repoSlug); err != nil {
-			return fmt.Errorf("failed to create empty repository structure: %w", err)
-		}
-	} else {
-		e.logger.Info("Repository clone successful")
-		// Repository was cloned successfully, create repo info files
-		if err := e.createRepositoryInfoFiles(workspace, repoSlug); err != nil {
-			e.logger.Warn("Failed to create repository info files",
-				zap.String("repository", repoSlug),
-				zap.Error(err))
-		}
+		// For any other clone error, fail the export instead of creating empty repo
+		e.logger.Error("Failed to clone repository",
+			zap.String("workspace", workspace),
+			zap.String("repository", repoSlug),
+			zap.Error(err))
+		return fmt.Errorf("export failed: unable to clone repository: %w", err)
+	}
+
+	e.logger.Info("Repository clone successful")
+	// Repository was cloned successfully, create repo info files
+	if err := e.createRepositoryInfoFiles(workspace, repoSlug); err != nil {
+		e.logger.Warn("Failed to create repository info files",
+			zap.String("repository", repoSlug),
+			zap.Error(err))
 	}
 
 	e.logger.Debug("Fetching users")
@@ -186,6 +197,10 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 				e.logger.Warn("Failed to write reviews", zap.Error(err))
 			}
 		}
+	}
+
+	if err := e.validateExportData(); err != nil {
+		e.logger.Warn("Export validation issues detected", zap.Error(err))
 	}
 
 	archivePath, err := e.CreateArchive()
@@ -257,6 +272,14 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string) error {
 
 	e.logger.Debug("Clone to temporary directory successful",
 		zap.String("output", string(output)))
+
+	if err := e.validateGitReferences(tempDir); err != nil {
+		e.logger.Error("Repository contains ambiguous references",
+			zap.String("repository", repoSlug),
+			zap.Error(err))
+		return fmt.Errorf("repository validation failed: %w", err)
+	}
+
 	if _, err := os.Stat(repoDir); err == nil {
 		if err := os.RemoveAll(repoDir); err != nil {
 			return fmt.Errorf("failed to remove existing repository directory: %w", err)
@@ -310,6 +333,13 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string) error {
 	} else {
 		e.logger.Debug("Verified default branch exists",
 			zap.String("branch", defaultBranch))
+	}
+
+	if err := validateGitReference(defaultBranch); err != nil {
+		e.logger.Error("Invalid branch reference",
+			zap.String("branch", defaultBranch),
+			zap.Error(err))
+		return fmt.Errorf("invalid branch reference: %w", err)
 	}
 
 	headFile := filepath.Join(repoDir, "HEAD")
@@ -488,6 +518,13 @@ func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, worksp
 		repoName = repo.Slug
 	}
 
+	sanitizedDescription := sanitizeDescription(repo.Description)
+	if sanitizedDescription != repo.Description {
+		e.logger.Debug("Sanitized repository description",
+			zap.String("original", repo.Description),
+			zap.String("sanitized", sanitizedDescription))
+	}
+
 	return []data.Repository{
 		{
 			Type:             "repository",
@@ -495,7 +532,7 @@ func (e *Exporter) createRepositoriesData(repo *data.BitbucketRepository, worksp
 			Owner:            formatURL("user", workspace, ""),
 			Name:             repoName,
 			Slug:             repo.Slug,
-			Description:      repo.Description,
+			Description:      sanitizedDescription,
 			Private:          repo.IsPrivate,
 			HasIssues:        true,
 			HasWiki:          true,
@@ -831,4 +868,99 @@ func getAuthMethodDescription(c *Client) string {
 		return "username and app password"
 	}
 	return "no authentication"
+}
+
+func sanitizeDescription(description string) string {
+	re := regexp.MustCompile(`\s+`)
+	sanitized := re.ReplaceAllString(description, " ")
+	return strings.TrimSpace(sanitized)
+}
+
+func (e *Exporter) validateExportData() error {
+	// 1. Handle repository description newlines (existing functionality)
+	repoFilePath := filepath.Join(e.outputDir, "repositories_000001.json")
+	if _, err := os.Stat(repoFilePath); err == nil {
+		var repos []data.Repository
+		fileData, err := os.ReadFile(repoFilePath)
+		if err != nil {
+			return fmt.Errorf("failed to read repositories file: %w", err)
+		}
+
+		if err := json.Unmarshal(fileData, &repos); err != nil {
+			return fmt.Errorf("failed to parse repositories data: %w", err)
+		}
+
+		for i, repo := range repos {
+			repos[i].Description = sanitizeDescription(repo.Description)
+		}
+
+		updatedData, err := json.MarshalIndent(repos, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to encode repositories data: %w", err)
+		}
+
+		if err := os.WriteFile(repoFilePath, updatedData, 0644); err != nil {
+			return fmt.Errorf("failed to write updated repositories file: %w", err)
+		}
+	}
+
+	// 2. Check for ambiguous Git references in pull request files
+	pullRequestsPath := filepath.Join(e.outputDir, "pull_requests_000001.json")
+	if _, err := os.Stat(pullRequestsPath); err == nil {
+		var prs []data.PullRequest
+		fileData, err := os.ReadFile(pullRequestsPath)
+		if err != nil {
+			return fmt.Errorf("failed to read pull requests file: %w", err)
+		}
+
+		if err := json.Unmarshal(fileData, &prs); err != nil {
+			return fmt.Errorf("failed to parse pull requests data: %w", err)
+		}
+
+		for _, pr := range prs {
+			// Use validateGitReference for consistent validation
+			if err := validateGitReference(pr.Base.Ref); err != nil && strings.Contains(err.Error(), "ambiguous") {
+				e.logger.Error("Export cancelled: Ambiguous base branch/tag name detected",
+					zap.String("pr_URL", pr.URL),
+					zap.String("ref", pr.Base.Ref))
+				return fmt.Errorf("ambiguous Git reference detected in PR base: %v", err)
+			}
+
+			if err := validateGitReference(pr.Head.Ref); err != nil && strings.Contains(err.Error(), "ambiguous") {
+				e.logger.Error("Export cancelled: Ambiguous head branch/tag name detected",
+					zap.String("pr_URL", pr.URL),
+					zap.String("ref", pr.Head.Ref))
+				return fmt.Errorf("ambiguous Git reference detected in PR head: %v", err)
+			}
+		}
+	}
+
+	// 3. Check Git repositories for ambiguous references
+	reposDir := filepath.Join(e.outputDir, "repositories")
+	if _, err := os.Stat(reposDir); err == nil {
+		// Walk through each repository and validate its references
+		entries, err := os.ReadDir(reposDir)
+		if err == nil {
+			for _, workspaceEntry := range entries {
+				if workspaceEntry.IsDir() {
+					workspacePath := filepath.Join(reposDir, workspaceEntry.Name())
+					repoEntries, err := os.ReadDir(workspacePath)
+					if err != nil {
+						continue
+					}
+
+					for _, repoEntry := range repoEntries {
+						if strings.HasSuffix(repoEntry.Name(), ".git") {
+							repoPath := filepath.Join(workspacePath, repoEntry.Name())
+							if err := e.validateGitReferences(repoPath); err != nil {
+								return err
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return nil
 }

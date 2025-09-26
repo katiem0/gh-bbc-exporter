@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -399,4 +400,159 @@ func ExecuteCommand(command string, args []string, workingDir string, skipSSLVer
 func isExecutableInPath(command string) bool {
 	_, err := exec.LookPath(command)
 	return err == nil
+}
+
+func validateGitReference(reference string) error {
+	if reference == "" {
+		return fmt.Errorf("empty reference")
+	}
+
+	// Check if the reference is exactly 40 hex characters (SHA-1 format)
+	// This is ambiguous because Git can't determine if it's a branch name or commit SHA
+	hexPattern := regexp.MustCompile(`^[0-9a-f]{40}$`)
+	if hexPattern.MatchString(reference) {
+		return fmt.Errorf("ambiguous git reference: %s (exactly 40 hex characters)", reference)
+	}
+
+	// Check for other invalid characters in branch names
+	// Git branch names cannot contain: space, ~, ^, :, ?, *, [, \, .., @{, //
+	invalidPatterns := []string{
+		" ", "~", "^", ":", "?", "*", "[", "\\", "..", "@{", "//",
+	}
+	for _, pattern := range invalidPatterns {
+		if strings.Contains(reference, pattern) {
+			return fmt.Errorf("invalid git reference: %s (contains '%s')", reference, pattern)
+		}
+	}
+
+	// Check if reference starts or ends with invalid characters
+	if strings.HasPrefix(reference, ".") || strings.HasSuffix(reference, ".") {
+		return fmt.Errorf("invalid git reference: %s (cannot start or end with '.')", reference)
+	}
+
+	if strings.HasPrefix(reference, "/") || strings.HasSuffix(reference, "/") {
+		return fmt.Errorf("invalid git reference: %s (cannot start or end with '/')", reference)
+	}
+
+	if strings.HasSuffix(reference, ".lock") {
+		return fmt.Errorf("invalid git reference: %s (cannot end with '.lock')", reference)
+	}
+
+	return nil
+}
+
+func (e *Exporter) validateGitReferences(repoPath string) error {
+	hexPattern := regexp.MustCompile(`^[0-9a-f]{40}$`)
+	var ambiguousRefs []string
+
+	// Check all branches using git command
+	cmd := exec.Command("git", "for-each-ref", "--format=%(refname:short)", "refs/heads/")
+	cmd.Dir = repoPath
+	output, err := cmd.Output()
+	if err != nil {
+		e.logger.Warn("Failed to list branches", zap.Error(err))
+	} else {
+		branches := strings.Split(strings.TrimSpace(string(output)), "\n")
+		for _, branch := range branches {
+			branch = strings.TrimSpace(branch)
+			if branch == "" {
+				continue
+			}
+
+			// Use the existing validateGitReference for comprehensive validation
+			if err := validateGitReference(branch); err != nil {
+				// Only handle ambiguous references as errors, log other issues as warnings
+				if strings.Contains(err.Error(), "ambiguous") {
+					ambiguousRefs = append(ambiguousRefs, fmt.Sprintf("branch '%s'", branch))
+					e.logger.Error("Found ambiguous branch name",
+						zap.String("branch", branch))
+				} else {
+					e.logger.Warn("Branch name has validation issues",
+						zap.String("branch", branch),
+						zap.Error(err))
+				}
+			}
+		}
+	}
+
+	// Check all tags using git command
+	cmd = exec.Command("git", "for-each-ref", "--format=%(refname:short)", "refs/tags/")
+	cmd.Dir = repoPath
+	output, err = cmd.Output()
+	if err != nil {
+		e.logger.Warn("Failed to list tags", zap.Error(err))
+	} else {
+		tags := strings.Split(strings.TrimSpace(string(output)), "\n")
+		for _, tag := range tags {
+			tag = strings.TrimSpace(tag)
+			if tag == "" {
+				continue
+			}
+
+			// Use the existing validateGitReference for comprehensive validation
+			if err := validateGitReference(tag); err != nil {
+				// Only handle ambiguous references as errors
+				if strings.Contains(err.Error(), "ambiguous") {
+					ambiguousRefs = append(ambiguousRefs, fmt.Sprintf("tag '%s'", tag))
+					e.logger.Error("Found ambiguous tag name",
+						zap.String("tag", tag))
+				} else {
+					e.logger.Warn("Tag name has validation issues",
+						zap.String("tag", tag),
+						zap.Error(err))
+				}
+			}
+		}
+	}
+
+	// Also check by walking the refs directory directly as a fallback
+	refsDir := filepath.Join(repoPath, "refs")
+	if _, err := os.Stat(refsDir); err == nil {
+		err = filepath.Walk(refsDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil // Continue walking even if there's an error
+			}
+
+			if !info.IsDir() {
+				refName := info.Name()
+				// Only check for ambiguous hex patterns in file-based refs
+				if hexPattern.MatchString(refName) {
+					refType := "ref"
+					if strings.Contains(path, "refs/heads") {
+						refType = "branch"
+					} else if strings.Contains(path, "refs/tags") {
+						refType = "tag"
+					}
+
+					// Check if we already found this ref
+					refStr := fmt.Sprintf("%s '%s'", refType, refName)
+					found := false
+					for _, ref := range ambiguousRefs {
+						if ref == refStr {
+							found = true
+							break
+						}
+					}
+					if !found {
+						ambiguousRefs = append(ambiguousRefs, refStr)
+						e.logger.Error("Found ambiguous reference in filesystem",
+							zap.String("path", path),
+							zap.String("ref", refName))
+					}
+				}
+			}
+			return nil
+		})
+
+		if err != nil {
+			e.logger.Warn("Error walking refs directory", zap.Error(err))
+		}
+	}
+
+	if len(ambiguousRefs) > 0 {
+		return fmt.Errorf("ambiguous Git references detected - the following branches/tags have names that are exactly 40 hex characters and could be mistaken for commit SHAs:\n%s\n\nPlease rename these branches/tags in Bitbucket before exporting",
+			strings.Join(ambiguousRefs, "\n"))
+	}
+
+	return nil
 }
