@@ -1306,8 +1306,14 @@ func TestRootCmdWithAuthValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Set and clean up environment variables
 			for k, v := range tc.envVars {
-				os.Setenv(k, v)
-				defer os.Unsetenv(k)
+				if err := os.Setenv(k, v); err != nil {
+					t.Fatalf("Failed to set environment variable %s: %v", k, err)
+				}
+				defer func(key string) {
+					if err := os.Unsetenv(key); err != nil {
+						t.Logf("Failed to unset environment variable %s: %v", key, err)
+					}
+				}(k)
 			}
 
 			cmd := NewCmdRoot()

@@ -1375,12 +1375,21 @@ func TestCreateEmptyRepositoryWithPermissionError(t *testing.T) {
 	// Create a temporary directory
 	tempDir, err := os.MkdirTemp("", "repo-perm-test")
 	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	// Make the temp dir read-only to force permission error
 	err = os.Chmod(tempDir, 0500) // read + execute, but no write
 	assert.NoError(t, err)
-	defer os.Chmod(tempDir, 0700) // restore permissions for cleanup
+	defer func() {
+		// restore permissions for cleanup
+		if err := os.Chmod(tempDir, 0700); err != nil {
+			t.Logf("Warning: Failed to restore permissions: %v", err)
+		}
+	}()
 
 	logger, _ := zap.NewDevelopment()
 	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
