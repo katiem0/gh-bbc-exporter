@@ -209,6 +209,7 @@ using GitHub owned storage and GEI. Detailed documentation can be found in
 
 ## Limitations
 
+- API rate limits may affect large exports
 - Wiki content is not included in the export
 - Issues are not exported (Bitbucket issues have a different structure from GitHub issues)
 - Repository and Pull request labels have not been implemented
@@ -225,6 +226,21 @@ When exporting repositories with special characters in their names:
   (e.g., `@group-test/ui`), the tool will use the Bitbucket slug (e.g., `group-test-ui`) for compatibility
 - Repository slugs are always used for directory names and internal references to ensure consistency
 
+### Git Reference Validation
+
+The exporter validates Git references (branch and tag names) to prevent ambiguous references that
+could cause issues during GitHub import. The following validations are performed:
+
+- **Ambiguous references**: Branch or tag names that are exactly 40 hexadecimal characters
+  are rejected, as they could be mistaken for commit SHAs
+- **Invalid characters**: References containing special characters like spaces,
+  `~`, `^`, `:`, `?`, `*`, `[`, `\`, `..`, `@{`, or `//` are flagged
+- **Invalid formats**: References that start or end with `.`, `/`, or end
+  with `.lock` are considered invalid
+
+If any ambiguous references are detected, the export will fail with a clear error message
+indicating which references need to be renamed in Bitbucket before attempting the export again.
+
 ## Troubleshooting
 
 ### Common Issues
@@ -240,6 +256,13 @@ When exporting repositories with special characters in their names:
 4. **Migration Fails in GitHub Enterprise Importer**
    Check the error logging repository that's created during migration for detailed
    information about any failures.
+5. **Export Fails Due to Ambiguous Git References**
+   If your repository has branches or tags with names that are exactly 40
+   hexadecimal characters (e.g., `1234567890abcdef1234567890abcdef12345678`), the export
+   will fail. These references are ambiguous because Git cannot determine if they refer to a
+   branch/tag name or a commit SHA. To resolve:
+   - Rename the problematic branches/tags in Bitbucket to use non-ambiguous names
+   - Re-run the export after renaming
 
 ## Development
 

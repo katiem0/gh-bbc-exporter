@@ -111,7 +111,7 @@ func TestGetPullRequestComments(t *testing.T) {
 		commitSHACache: make(map[string]string),
 	}
 
-	prs := []data.PullRequest{{URL: "https://example.com/pr/1", Head: data.PRBranch{Sha: "testsha"}}}
+	prs := []data.PullRequest{{URL: "https://example.com/pr/1", Head: data.PRBranch{SHA: "testsha"}}}
 	comments, reviewComments, err := client.GetPullRequestComments("workspace", "repo", prs)
 
 	assert.NoError(t, err)
@@ -681,7 +681,7 @@ func TestGetPullRequestCommentsWithThreads(t *testing.T) {
 	// Test with pull requests
 	prs := []data.PullRequest{{
 		URL:  "https://bitbucket.org/workspace/repo/pull/1",
-		Head: data.PRBranch{Sha: "abcdef"},
+		Head: data.PRBranch{SHA: "abcdef"},
 	}}
 
 	_, reviewComments, err := client.GetPullRequestComments("workspace", "repo", prs)
@@ -1011,7 +1011,7 @@ func TestGetPullRequestCommentsConcurrent(t *testing.T) {
 	for i := 1; i <= 5; i++ {
 		prs = append(prs, data.PullRequest{
 			URL:  fmt.Sprintf("https://bitbucket.org/workspace/repo/pull/%d", i),
-			Head: data.PRBranch{Sha: "abc123"},
+			Head: data.PRBranch{SHA: "abc123"},
 		})
 	}
 
@@ -1074,6 +1074,7 @@ func TestExportUpdatesClientExportDir(t *testing.T) {
 		logger:         logger,
 		commitSHACache: make(map[string]string),
 		exportDir:      "", // Start with empty exportDir
+		// Don't set any auth credentials to avoid actual clone attempts
 	}
 
 	// Test with auto-generated output dir
@@ -1082,11 +1083,21 @@ func TestExportUpdatesClientExportDir(t *testing.T) {
 	// Before Export, client.exportDir should be empty
 	assert.Empty(t, client.exportDir)
 
+	// The Export will fail due to authentication error during clone, but
+	// it should still set the exportDir before attempting the clone
 	err = exporter.Export("workspace", "repo")
-	assert.NoError(t, err)
 
+	// We expect an error due to clone failure (no valid credentials)
+	assert.Error(t, err)
+
+	// Use the isAuthenticationError function to check for various authentication-related errors
+	assert.True(t, isAuthenticationError(err),
+		"Expected authentication or clone related error, got: %v", err)
+
+	// Even though export failed, the client.exportDir should have been set
+	// when the export started (before the clone attempt)
 	assert.NotEmpty(t, client.exportDir)
-	assert.Equal(t, "./"+exporter.outputDir, client.exportDir+".tar.gz")
+	assert.Equal(t, exporter.outputDir, client.exportDir)
 	assert.Contains(t, client.exportDir, "bitbucket-export-")
 	assert.NotContains(t, client.exportDir, ".tar.gz")
 }

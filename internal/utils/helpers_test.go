@@ -1185,3 +1185,232 @@ func TestWriteJSONFilePermissionError(t *testing.T) {
 	err = exporter.writeJSONFile("test.json", testData)
 	assert.Error(t, err)
 }
+
+func TestValidateGitReference(t *testing.T) {
+	testCases := []struct {
+		name        string
+		reference   string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "Valid branch name",
+			reference:   "main",
+			expectError: false,
+		},
+		{
+			name:        "Valid branch with slash",
+			reference:   "feature/new-feature",
+			expectError: false,
+		},
+		{
+			name:        "Empty reference",
+			reference:   "",
+			expectError: true,
+			errorMsg:    "empty reference",
+		},
+		{
+			name:        "Exactly 40 hex characters (ambiguous)",
+			reference:   "1234567890abcdef1234567890abcdef12345678",
+			expectError: true,
+			errorMsg:    "ambiguous git reference",
+		},
+		{
+			name:        "39 hex characters (valid)",
+			reference:   "1234567890abcdef1234567890abcdef1234567",
+			expectError: false,
+		},
+		{
+			name:        "41 hex characters (valid)",
+			reference:   "1234567890abcdef1234567890abcdef123456789",
+			expectError: false,
+		},
+		{
+			name:        "Contains space",
+			reference:   "feature branch",
+			expectError: true,
+			errorMsg:    "contains ' '",
+		},
+		{
+			name:        "Contains tilde",
+			reference:   "feature~1",
+			expectError: true,
+			errorMsg:    "contains '~'",
+		},
+		{
+			name:        "Contains caret",
+			reference:   "feature^1",
+			expectError: true,
+			errorMsg:    "contains '^'",
+		},
+		{
+			name:        "Contains colon",
+			reference:   "feature:test",
+			expectError: true,
+			errorMsg:    "contains ':'",
+		},
+		{
+			name:        "Contains question mark",
+			reference:   "feature?",
+			expectError: true,
+			errorMsg:    "contains '?'",
+		},
+		{
+			name:        "Contains asterisk",
+			reference:   "feature*",
+			expectError: true,
+			errorMsg:    "contains '*'",
+		},
+		{
+			name:        "Contains bracket",
+			reference:   "feature[1]",
+			expectError: true,
+			errorMsg:    "contains '['",
+		},
+		{
+			name:        "Starts with dot",
+			reference:   ".feature",
+			expectError: true,
+			errorMsg:    "cannot start or end with '.'",
+		},
+		{
+			name:        "Ends with dot",
+			reference:   "feature.",
+			expectError: true,
+			errorMsg:    "cannot start or end with '.'",
+		},
+		{
+			name:        "Starts with slash",
+			reference:   "/feature",
+			expectError: true,
+			errorMsg:    "cannot start or end with '/'",
+		},
+		{
+			name:        "Ends with slash",
+			reference:   "feature/",
+			expectError: true,
+			errorMsg:    "cannot start or end with '/'",
+		},
+		{
+			name:        "Ends with .lock",
+			reference:   "feature.lock",
+			expectError: true,
+			errorMsg:    "cannot end with '.lock'",
+		},
+		{
+			name:        "Contains double dot",
+			reference:   "feature..test",
+			expectError: true,
+			errorMsg:    "contains '..'",
+		},
+		{
+			name:        "Contains @{",
+			reference:   "feature@{upstream}",
+			expectError: true,
+			errorMsg:    "contains '@{'",
+		},
+		{
+			name:        "Contains double slash",
+			reference:   "feature//test",
+			expectError: true,
+			errorMsg:    "contains '//'",
+		},
+		{
+			name:        "Valid complex branch name",
+			reference:   "feature/JIRA-1234_fix-bug",
+			expectError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateGitReference(tc.reference)
+			if tc.expectError {
+				assert.Error(t, err)
+				if tc.errorMsg != "" {
+					assert.Contains(t, err.Error(), tc.errorMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidateExportDataIntegration(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "validate-export-")
+	assert.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+	}()
+
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+
+	// Test Case 1: Repository with newlines in description
+	repos := []data.Repository{
+		{
+			Name:        "test-repo",
+			Description: "Line 1\nLine 2\r\nLine 3",
+		},
+	}
+	err = exporter.writeJSONFile("repositories_000001.json", repos)
+	assert.NoError(t, err)
+
+	// Test Case 2: Pull requests - ambiguous refs should have been filtered during fetch
+	// So we'll only include valid PRs
+	prs := []data.PullRequest{
+		{
+			URL: "https://example.com/pr/2",
+			Base: data.PRBranch{
+				Ref: "main",         // Valid branch name
+				SHA: "normalsha123", // Valid SHA (not 40 hex chars)
+			},
+			Head: data.PRBranch{
+				Ref: "feature-branch", // Valid branch name
+				SHA: "anothersha456",  // Valid SHA (not 40 hex chars)
+			},
+		},
+	}
+	err = exporter.writeJSONFile("pull_requests_000001.json", prs)
+	assert.NoError(t, err)
+
+	// Test Case 3: Create a Git repository without ambiguous branch name
+	gitRepoPath := filepath.Join(tempDir, "repositories", "workspace", "repo.git")
+	err = os.MkdirAll(gitRepoPath, 0755)
+	assert.NoError(t, err)
+
+	headFile := filepath.Join(gitRepoPath, "HEAD")
+	// Use a valid branch name instead of an ambiguous one
+	err = os.WriteFile(headFile, []byte("ref: refs/heads/main\n"), 0644)
+	assert.NoError(t, err)
+
+	// Run validation
+	err = exporter.validateExportData()
+	assert.NoError(t, err)
+
+	// Verify fixes were applied
+	// Check repository description
+	repoData, err := os.ReadFile(filepath.Join(tempDir, "repositories_000001.json"))
+	assert.NoError(t, err)
+	var fixedRepos []data.Repository
+	err = json.Unmarshal(repoData, &fixedRepos)
+	assert.NoError(t, err)
+	assert.Equal(t, "Line 1 Line 2 Line 3", fixedRepos[0].Description)
+
+	// Check pull requests remain unchanged (since we only included valid ones)
+	prData, err := os.ReadFile(filepath.Join(tempDir, "pull_requests_000001.json"))
+	assert.NoError(t, err)
+	var fixedPRs []data.PullRequest
+	err = json.Unmarshal(prData, &fixedPRs)
+	assert.NoError(t, err)
+	assert.Equal(t, "normalsha123", fixedPRs[0].Base.SHA)  // Unchanged
+	assert.Equal(t, "anothersha456", fixedPRs[0].Head.SHA) // Unchanged
+
+	// Check Git HEAD file remains unchanged
+	headContent, err := os.ReadFile(headFile)
+	assert.NoError(t, err)
+	assert.Equal(t, "ref: refs/heads/main\n", string(headContent))
+}

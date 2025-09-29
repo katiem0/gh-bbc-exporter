@@ -45,7 +45,11 @@ provides guidelines and instructions for contributing.
 
 ## Coding Standards
 
-- Follow Go standard formatting and idioms
+- Follow Go best practices and conventions
+- Write clear, self-documenting code with comments where necessary
+- Ensure all exported functions and types have proper documentation
+- Add unit tests for new functionality (aim for >70% coverage)
+- Use structured logging with zap for all log messages
 - Use `go fmt` to format your code
 - Use `golint` and `go vet` to check your code quality
 - Write meaningful commit messages following [Conventional Commits](https://www.conventionalcommits.org/)

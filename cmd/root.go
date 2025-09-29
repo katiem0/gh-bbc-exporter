@@ -28,6 +28,7 @@ func NewCmdRoot() *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			cmd.SilenceUsage = true
 			logger, err := log.NewLogger(cmdFlags.Debug)
 			if err != nil {
 				return fmt.Errorf("failed to initialize logger: %w", err)
@@ -123,7 +124,7 @@ func runCmdExport(cmdFlags *data.CmdFlags, logger *zap.Logger) error {
 
 	// Run export
 	if err := exporter.Export(cmdFlags.Workspace, cmdFlags.Repository); err != nil {
-		logger.Error("Export failed", zap.Error(err))
+		logger.Error("Export failed")
 		return err
 	}
 

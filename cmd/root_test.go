@@ -1245,3 +1245,83 @@ func TestAuthMethodDeprecationWarnings(t *testing.T) {
 		})
 	}
 }
+
+func TestRootCmdWithMissingRequiredFlags(t *testing.T) {
+	testCases := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name:    "No workspace",
+			args:    []string{"--repo", "test-repo"},
+			wantErr: "a Bitbucket Workspace must be specified",
+		},
+		{
+			name:    "No repository",
+			args:    []string{"--workspace", "test-workspace"},
+			wantErr: "a Bitbucket repository must be specified",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := NewCmdRoot()
+			cmd.SetArgs(tc.args)
+			err := cmd.Execute()
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestRootCmdWithAuthValidation(t *testing.T) {
+	// Test validation of authentication methods
+	testCases := []struct {
+		name    string
+		args    []string
+		envVars map[string]string
+		wantErr string
+	}{
+		{
+			name: "No auth credentials",
+			args: []string{
+				"--workspace", "test-workspace",
+				"--repo", "test-repo",
+			},
+			wantErr: "authentication credentials required",
+		},
+		{
+			name: "Username without app password",
+			args: []string{
+				"--workspace", "test-workspace",
+				"--repo", "test-repo",
+				"--user", "testuser",
+			},
+			wantErr: "authentication credentials required",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Set and clean up environment variables
+			for k, v := range tc.envVars {
+				if err := os.Setenv(k, v); err != nil {
+					t.Fatalf("Failed to set environment variable %s: %v", k, err)
+				}
+				defer func(key string) {
+					if err := os.Unsetenv(key); err != nil {
+						t.Logf("Failed to unset environment variable %s: %v", key, err)
+					}
+				}(k)
+			}
+
+			cmd := NewCmdRoot()
+			cmd.SetArgs(tc.args)
+			// This will call PreRunE but not RunE
+			err := cmd.Execute()
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}

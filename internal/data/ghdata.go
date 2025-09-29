@@ -139,12 +139,12 @@ type PullRequest struct {
 	ReviewRequests       []string `json:"review_requests"`
 	CloseIssueReferences []string `json:"close_issue_references"`
 	WorkInProgress       bool     `json:"work_in_progress"`
-	MergeCommitSha       *string  `json:"merge_commit_sha"`
+	MergeCommitSHA       *string  `json:"merge_commit_sha"`
 }
 
 type PRBranch struct {
 	Ref  string `json:"ref"`
-	Sha  string `json:"sha"`
+	SHA  string `json:"sha"`
 	User string `json:"user"`
 	Repo string `json:"repo"`
 }

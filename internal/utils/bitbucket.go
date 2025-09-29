@@ -378,6 +378,25 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, p
 			zap.String("next_url", response.Next))
 
 		for _, pr := range response.Values {
+
+			if hexPatternRegex.MatchString(pr.Source.Branch.Name) {
+				c.logger.Warn("Skipping PR with ambiguous source branch name",
+					zap.Int("pr_id", pr.ID),
+					zap.String("pr_title", pr.Title),
+					zap.String("branch_name", pr.Source.Branch.Name),
+					zap.String("reason", "Source branch name is exactly 40 hex characters and could be mistaken for a commit SHA"))
+				continue
+			}
+
+			if hexPatternRegex.MatchString(pr.Destination.Branch.Name) {
+				c.logger.Warn("Skipping PR with ambiguous destination branch name",
+					zap.Int("pr_id", pr.ID),
+					zap.String("pr_title", pr.Title),
+					zap.String("branch_name", pr.Destination.Branch.Name),
+					zap.String("reason", "Destination branch name is exactly 40 hex characters and could be mistaken for a commit SHA"))
+				continue
+			}
+
 			if fromDateProvided {
 				prCreatedAt, err := time.Parse(time.RFC3339, pr.CreatedOn)
 				if err != nil {
@@ -396,11 +415,13 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, p
 						zap.Time("filter_date", fromDate))
 					continue
 				}
+
 				c.logger.Debug("Including PR: creation date meets filter criteria",
 					zap.Int("pr_id", pr.ID),
 					zap.String("pr_title", pr.Title),
 					zap.Time("pr_created_at", prCreatedAt))
 			}
+
 			var mergedAt, closedAt *string
 			switch pr.State {
 			case "MERGED":
@@ -418,14 +439,13 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, p
 			repoURL := formatURL("repository", workspace, repoSlug)
 			prUser := formatURL("user", workspace, "")
 
-			baseSHA := pr.Destination.Commit.Hash
-			headSHA := pr.Source.Commit.Hash
+			// Resolve commit SHAs
+			baseSHA, _ := c.GetFullCommitSHA(workspace, repoSlug, pr.Destination.Commit.Hash)
+			headSHA, _ := c.GetFullCommitSHA(workspace, repoSlug, pr.Source.Commit.Hash)
 
 			c.logger.Debug("Getting full commit SHA",
 				zap.String("base_sha", baseSHA),
 				zap.String("head_sha", headSHA))
-			baseSHA, _ = c.GetFullCommitSHA(workspace, repoSlug, baseSHA)
-			headSHA, _ = c.GetFullCommitSHA(workspace, repoSlug, headSHA)
 
 			description := ""
 			if pr.Description != nil {
@@ -433,14 +453,11 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, p
 			}
 
 			// Format merge commit SHA if available
-			var mergeCommitSha *string
+			var mergeCommitSHA *string
 			if pr.MergeCommit != nil && pr.State == "MERGED" {
 				fullMergeSHA, _ := c.GetFullCommitSHA(workspace, repoSlug, pr.MergeCommit.Hash)
-				mergeCommitSha = &fullMergeSHA
+				mergeCommitSHA = &fullMergeSHA
 			}
-
-			// Create empty labels for PR
-			labels := []string{}
 
 			// Create the Pull Request with GitHub-compatible structure
 			pullRequest := data.PullRequest{
@@ -452,17 +469,17 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, p
 				Body:       description,
 				Base: data.PRBranch{
 					Ref:  pr.Destination.Branch.Name,
-					Sha:  baseSHA,
+					SHA:  baseSHA,
 					User: prUser,
 					Repo: repoURL,
 				},
 				Head: data.PRBranch{
 					Ref:  pr.Source.Branch.Name,
-					Sha:  headSHA,
+					SHA:  headSHA,
 					User: prUser,
 					Repo: repoURL,
 				},
-				Labels:               labels,
+				Labels:               []string{},
 				MergedAt:             mergedAt,
 				ClosedAt:             closedAt,
 				CreatedAt:            formatDateToZ(pr.CreatedOn),
@@ -473,7 +490,7 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, p
 				ReviewRequests:       []string{},
 				CloseIssueReferences: []string{},
 				WorkInProgress:       pr.Draft,
-				MergeCommitSha:       mergeCommitSha,
+				MergeCommitSHA:       mergeCommitSHA,
 			}
 
 			pullRequests = append(pullRequests, pullRequest)
@@ -545,7 +562,7 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 			prID, err := strconv.Atoi(parts[len(parts)-1])
 			if err == nil {
 				prURLMap[prID] = pr.URL
-				prCommitMap[prID] = pr.Head.Sha
+				prCommitMap[prID] = pr.Head.SHA
 			}
 		}
 	}
@@ -720,10 +737,7 @@ func (c *Client) transformCommentBody(body, workspace, repoSlug string) string {
 	re := regexp.MustCompile(pattern)
 	transformedBody := re.ReplaceAllString(body, replacement)
 
-	prPattern := `\b#(\d+)\b`
-
-	prRe := regexp.MustCompile(prPattern)
-	transformedBody = prRe.ReplaceAllStringFunc(transformedBody, func(match string) string {
+	transformedBody = prNumberPattern.ReplaceAllStringFunc(transformedBody, func(match string) string {
 		numStr := match[1:] // Remove the # prefix
 		return fmt.Sprintf("[%s](%s)", match, fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%s",
 			workspace, repoSlug, numStr))

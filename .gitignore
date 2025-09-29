@@ -9,3 +9,4 @@ output/
 
 *.out
 utils/repositories/
+coverage.*

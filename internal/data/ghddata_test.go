@@ -47,7 +47,7 @@ func TestPullRequestJSON(t *testing.T) {
 	createdAt := "2023-01-01T00:00:00Z"
 	mergedAt := "2023-01-02T00:00:00Z"
 	closedAt := "2023-01-02T00:00:00Z"
-	mergeCommitSha := "abcdef1234567890"
+	mergeCommitSHA := "abcdef1234567890"
 
 	pr := PullRequest{
 		Type:       "pull_request",
@@ -58,13 +58,13 @@ func TestPullRequestJSON(t *testing.T) {
 		Body:       "Test PR body",
 		Base: PRBranch{
 			Ref:  "main",
-			Sha:  "0123456789abcdef",
+			SHA:  "0123456789abcdef",
 			User: "https://example.com/user/1",
 			Repo: "https://example.com/repo/1",
 		},
 		Head: PRBranch{
 			Ref:  "feature",
-			Sha:  "fedcba9876543210",
+			SHA:  "fedcba9876543210",
 			User: "https://example.com/user/1",
 			Repo: "https://example.com/repo/1",
 		},
@@ -79,7 +79,7 @@ func TestPullRequestJSON(t *testing.T) {
 		ReviewRequests:       []string{},
 		CloseIssueReferences: []string{},
 		WorkInProgress:       false,
-		MergeCommitSha:       &mergeCommitSha,
+		MergeCommitSHA:       &mergeCommitSHA,
 	}
 
 	jsonData, err := json.Marshal(pr)

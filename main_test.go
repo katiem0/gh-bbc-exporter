@@ -12,16 +12,35 @@ func TestMainWithHelpFlag(t *testing.T) {
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
 
-	// Set test args
+	// Provide --help so cobra prints usage and returns nil (PreRunE not enforced)
 	os.Args = []string{"gh-bbc-exporter", "--help"}
 
-	// In a real test you'd capture stdout and check the output
-	// but since main() calls os.Exit, we'll need to use a helper
-	// This is just to demonstrate the approach
-	// Alternatively, refactor main.go to make it more testable
 	assert.NotPanics(t, func() {
-		// This would actually exit the test, so we'd need to
-		// refactor main to accept args and return an error
-		// main()
+		main() // Executes the help path; should not call os.Exit(1)
 	})
+}
+
+func TestMainWithInvalidArgs(t *testing.T) {
+	// Save original args
+	oldArgs := os.Args
+	// Save original osExit function
+	oldOsExit := osExit
+
+	// Override os.Exit to capture exit code instead of terminating
+	var exitCode int
+	osExit = func(code int) {
+		exitCode = code
+		// Don't actually exit
+	}
+
+	defer func() {
+		os.Args = oldArgs
+		osExit = oldOsExit
+	}()
+
+	// Provide invalid flags to trigger error
+	os.Args = []string{"gh-bbc-exporter", "--invalid-flag"}
+
+	main()
+	assert.Equal(t, 1, exitCode, "Expected exit code 1 on error")
 }

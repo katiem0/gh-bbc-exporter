@@ -6,10 +6,11 @@ import (
 	"github.com/katiem0/gh-bbc-exporter/cmd"
 )
 
-func main() {
+var osExit = os.Exit
 
+func main() {
 	cmd := cmd.NewCmdRoot()
 	if err := cmd.Execute(); err != nil {
-		os.Exit(1)
+		osExit(1)
 	}
 }
