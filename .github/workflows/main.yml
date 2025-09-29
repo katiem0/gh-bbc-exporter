@@ -1,7 +1,9 @@
 name: PR Checks
 
-on: 
+on:
   push:
+    branches:
+      - '*'
   pull_request:
 
 permissions:
