@@ -95,11 +95,10 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 		// Check if this is an ambiguous reference error - if so, fail immediately
 		if strings.Contains(err.Error(), "ambiguous") ||
 			strings.Contains(err.Error(), "repository validation failed") {
-			e.logger.Error("Export cancelled due to ambiguous Git references",
+			e.logger.Debug("Export cancelled due to ambiguous Git references",
 				zap.String("workspace", workspace),
-				zap.String("repository", repoSlug),
-				zap.Error(err))
-			return fmt.Errorf("export failed: %w", err)
+				zap.String("repository", repoSlug))
+			return err
 		}
 
 		// Check if this is an authentication error - fail immediately
@@ -110,7 +109,7 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 				zap.String("workspace", workspace),
 				zap.String("repository", repoSlug),
 				zap.String("auth_method", getAuthMethodDescription(e.client)))
-			return fmt.Errorf("export failed due to authentication error: %w", err)
+			return err
 		}
 
 		// For any other clone error, fail the export instead of creating empty repo
@@ -118,7 +117,7 @@ func (e *Exporter) Export(workspace, repoSlug string) error {
 			zap.String("workspace", workspace),
 			zap.String("repository", repoSlug),
 			zap.Error(err))
-		return fmt.Errorf("export failed: unable to clone repository: %w", err)
+		return err
 	}
 
 	e.logger.Info("Repository clone successful")
@@ -271,10 +270,7 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string) error {
 		zap.String("output", string(output)))
 
 	if err := e.validateGitReferences(tempDir); err != nil {
-		e.logger.Error("Repository contains ambiguous references",
-			zap.String("repository", repoSlug),
-			zap.Error(err))
-		return fmt.Errorf("repository validation failed: %w", err)
+		return err
 	}
 
 	if _, err := os.Stat(repoDir); err == nil {

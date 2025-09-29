@@ -210,7 +210,7 @@ using GitHub owned storage and GEI. Detailed documentation can be found in
 ## Limitations
 
 - API rate limits may affect large exports
-- - Wiki content is not included in the export
+- Wiki content is not included in the export
 - Issues are not exported (Bitbucket issues have a different structure from GitHub issues)
 - Repository and Pull request labels have not been implemented
 - User information is limited to what's available from Bitbucket API

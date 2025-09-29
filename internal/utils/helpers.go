@@ -450,67 +450,151 @@ func validateGitReference(reference string) error {
 func (e *Exporter) validateGitReferences(repoPath string) error {
 	var ambiguousRefs []string
 
-	// Check all branches using git command
-	cmd := exec.Command("git", "for-each-ref", "--format=%(refname:short)", "refs/heads/")
-	cmd.Dir = repoPath
-	output, err := cmd.Output()
+	// Track all reference names to detect duplicates across different types
+	refNameMap := make(map[string][]string) // name -> [ref types]
+
+	// 1. Get all branches
+	branchCmd := exec.Command("git", "for-each-ref", "--format=%(refname)", "refs/heads/")
+	branchCmd.Dir = repoPath
+	branchOutput, err := branchCmd.Output()
 	if err != nil {
 		e.logger.Warn("Failed to list branches", zap.Error(err))
 	} else {
-		branches := strings.Split(strings.TrimSpace(string(output)), "\n")
-		for _, branch := range branches {
-			branch = strings.TrimSpace(branch)
-			if branch == "" {
+		branchRefs := strings.Split(strings.TrimSpace(string(branchOutput)), "\n")
+		for _, fullRef := range branchRefs {
+			fullRef = strings.TrimSpace(fullRef)
+			if fullRef == "" {
 				continue
 			}
 
-			// Use the existing validateGitReference for comprehensive validation
-			if err := validateGitReference(branch); err != nil {
-				// Only handle ambiguous references as errors, log other issues as warnings
-				if strings.Contains(err.Error(), "ambiguous") {
-					ambiguousRefs = append(ambiguousRefs, fmt.Sprintf("branch '%s'", branch))
-					e.logger.Error("Found ambiguous branch name",
-						zap.String("branch", branch))
+			// Extract short name and store with type
+			refName := strings.TrimPrefix(fullRef, "refs/heads/")
+			refNameMap[refName] = append(refNameMap[refName], "branch")
+
+			// Continue with existing validation for SHA-like patterns
+			if err := validateGitReference(refName); err != nil {
+				if strings.Contains(err.Error(), "ambiguous git reference") {
+					ambiguousRefs = append(ambiguousRefs, fmt.Sprintf("branch '%s'", refName))
+					e.logger.Error("Found ambiguous branch name", zap.String("branch", refName))
 				} else {
 					e.logger.Warn("Branch name has validation issues",
-						zap.String("branch", branch),
-						zap.Error(err))
+						zap.String("branch", refName), zap.Error(err))
 				}
 			}
 		}
 	}
 
-	// Check all tags using git command
-	cmd = exec.Command("git", "for-each-ref", "--format=%(refname:short)", "refs/tags/")
-	cmd.Dir = repoPath
-	output, err = cmd.Output()
+	// 2. Get all tags
+	tagCmd := exec.Command("git", "for-each-ref", "--format=%(refname)", "refs/tags/")
+	tagCmd.Dir = repoPath
+	tagOutput, err := tagCmd.Output()
 	if err != nil {
 		e.logger.Warn("Failed to list tags", zap.Error(err))
 	} else {
-		tags := strings.Split(strings.TrimSpace(string(output)), "\n")
-		for _, tag := range tags {
-			tag = strings.TrimSpace(tag)
-			if tag == "" {
+		tagRefs := strings.Split(strings.TrimSpace(string(tagOutput)), "\n")
+		for _, fullRef := range tagRefs {
+			fullRef = strings.TrimSpace(fullRef)
+			if fullRef == "" {
 				continue
 			}
 
-			// Use the existing validateGitReference for comprehensive validation
-			if err := validateGitReference(tag); err != nil {
-				// Only handle ambiguous references as errors
-				if strings.Contains(err.Error(), "ambiguous") {
-					ambiguousRefs = append(ambiguousRefs, fmt.Sprintf("tag '%s'", tag))
-					e.logger.Error("Found ambiguous tag name",
-						zap.String("tag", tag))
+			// Extract short name and store with type
+			refName := strings.TrimPrefix(fullRef, "refs/tags/")
+			refNameMap[refName] = append(refNameMap[refName], "tag")
+
+			// Continue with existing validation for SHA-like patterns
+			if err := validateGitReference(refName); err != nil {
+				if strings.Contains(err.Error(), "ambiguous git reference") {
+					ambiguousRefs = append(ambiguousRefs, fmt.Sprintf("tag '%s'", refName))
+					e.logger.Error("Found ambiguous tag name", zap.String("tag", refName))
 				} else {
 					e.logger.Warn("Tag name has validation issues",
-						zap.String("tag", tag),
-						zap.Error(err))
+						zap.String("tag", refName), zap.Error(err))
 				}
 			}
 		}
 	}
 
-	// Also check by walking the refs directory directly as a fallback
+	// 3. Get all remote references
+	remoteCmd := exec.Command("git", "for-each-ref", "--format=%(refname)", "refs/remotes/")
+	remoteCmd.Dir = repoPath
+	remoteOutput, err := remoteCmd.Output()
+	if err != nil {
+		e.logger.Warn("Failed to list remote references", zap.Error(err))
+	} else {
+		remoteRefs := strings.Split(strings.TrimSpace(string(remoteOutput)), "\n")
+		for _, fullRef := range remoteRefs {
+			fullRef = strings.TrimSpace(fullRef)
+			if fullRef == "" {
+				continue
+			}
+
+			// Extract short name and store with type
+			refName := strings.TrimPrefix(fullRef, "refs/remotes/")
+
+			// Store the remote name (e.g., "origin/master")
+			refNameMap[refName] = append(refNameMap[refName], "remote")
+
+			// Also store just the branch part for checking against local branches
+			parts := strings.SplitN(refName, "/", 2)
+			if len(parts) == 2 {
+				localBranchName := parts[1]
+				if _, exists := refNameMap[localBranchName]; exists {
+					// This remote branch name exists as another reference
+					refNameMap[localBranchName] = append(refNameMap[localBranchName], "remote/"+parts[0])
+				}
+			}
+
+			// Check for SHA patterns in remote refs too
+			if err := validateGitReference(refName); err != nil {
+				if strings.Contains(err.Error(), "ambiguous git reference") {
+					ambiguousRefs = append(ambiguousRefs, fmt.Sprintf("remote ref '%s'", refName))
+					e.logger.Error("Found ambiguous remote reference", zap.String("ref", refName))
+				}
+			}
+		}
+	}
+
+	// 4. Check for incorrectly named remote references (refs/origin/* instead of refs/remotes/origin/*)
+	badRefsCmd := exec.Command("git", "for-each-ref", "--format=%(refname)", "refs/origin/")
+	badRefsCmd.Dir = repoPath
+	if badRefsOutput, err := badRefsCmd.Output(); err == nil && len(badRefsOutput) > 0 {
+		badRefs := strings.Split(strings.TrimSpace(string(badRefsOutput)), "\n")
+		for _, ref := range badRefs {
+			if ref == "" {
+				continue
+			}
+			refName := strings.TrimPrefix(ref, "refs/origin/")
+			ambiguousRefs = append(ambiguousRefs, fmt.Sprintf("incorrectly named remote ref 'refs/origin/%s' (should be 'refs/remotes/origin/%s')", refName, refName))
+			e.logger.Error("Found incorrectly named remote reference",
+				zap.String("actual", ref),
+				zap.String("expected", "refs/remotes/origin/"+refName))
+		}
+	}
+
+	// 5. Check for HEAD reference issues
+	if _, hasHead := refNameMap["HEAD"]; hasHead {
+		if len(refNameMap["HEAD"]) > 1 {
+			// Special warning for HEAD in multiple places
+			ambiguousRefs = append(ambiguousRefs, fmt.Sprintf("ambiguous 'HEAD' reference exists as both %s",
+				strings.Join(refNameMap["HEAD"], " and ")))
+			e.logger.Error("Found ambiguous HEAD reference",
+				zap.Strings("types", refNameMap["HEAD"]))
+		}
+	}
+
+	// 6. Check for duplicate reference names across different types
+	for name, types := range refNameMap {
+		if len(types) > 1 {
+			ambiguousRefs = append(ambiguousRefs, fmt.Sprintf("ambiguous reference '%s' exists as both %s",
+				name, strings.Join(types, " and ")))
+			e.logger.Error("Found name used for multiple reference types",
+				zap.String("name", name),
+				zap.Strings("types", types))
+		}
+	}
+
+	// 7. Continue with the existing filesystem check for additional validation
 	refsDir := filepath.Join(repoPath, "refs")
 	if _, err := os.Stat(refsDir); err == nil {
 		err = filepath.Walk(refsDir, func(path string, info os.FileInfo, err error) error {
@@ -520,13 +604,15 @@ func (e *Exporter) validateGitReferences(repoPath string) error {
 
 			if !info.IsDir() {
 				refName := info.Name()
-				// Only check for ambiguous hex patterns in file-based refs
+				// Check for ambiguous hex patterns in file-based refs
 				if hexPatternRegex.MatchString(refName) {
 					refType := "ref"
 					if strings.Contains(path, "refs/heads") {
 						refType = "branch"
 					} else if strings.Contains(path, "refs/tags") {
 						refType = "tag"
+					} else if strings.Contains(path, "refs/remotes") {
+						refType = "remote branch"
 					}
 
 					// Check if we already found this ref
@@ -554,8 +640,30 @@ func (e *Exporter) validateGitReferences(repoPath string) error {
 		}
 	}
 
+	// 8. Check for working directory file conflicts with references
+	// First, get the list of files in the working directory
+	workingDirCmd := exec.Command("git", "ls-files")
+	workingDirCmd.Dir = repoPath
+	if workingDirOutput, err := workingDirCmd.Output(); err == nil {
+		workingFiles := strings.Split(strings.TrimSpace(string(workingDirOutput)), "\n")
+		for _, file := range workingFiles {
+			file = strings.TrimSpace(file)
+			if file == "" {
+				continue
+			}
+
+			// Skip directories and focus on top-level files only
+			if !strings.Contains(file, "/") && refNameMap[file] != nil {
+				ambiguousRefs = append(ambiguousRefs, fmt.Sprintf("file '%s' conflicts with reference name", file))
+				e.logger.Error("Working directory file conflicts with reference name",
+					zap.String("file", file),
+					zap.Strings("reference_types", refNameMap[file]))
+			}
+		}
+	}
+
 	if len(ambiguousRefs) > 0 {
-		return fmt.Errorf("ambiguous Git references detected - the following branches/tags have names that are exactly 40 hex characters and could be mistaken for commit SHAs:\n%s\n\nPlease rename these branches/tags in Bitbucket before exporting",
+		return fmt.Errorf("ambiguous Git references detected:\n%s\n\nPlease resolve these reference issues in Bitbucket before exporting",
 			strings.Join(ambiguousRefs, "\n"))
 	}
 

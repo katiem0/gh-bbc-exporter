@@ -1089,7 +1089,10 @@ func TestExportUpdatesClientExportDir(t *testing.T) {
 
 	// We expect an error due to clone failure (no valid credentials)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "export failed")
+
+	// Use the isAuthenticationError function to check for various authentication-related errors
+	assert.True(t, isAuthenticationError(err),
+		"Expected authentication or clone related error, got: %v", err)
 
 	// Even though export failed, the client.exportDir should have been set
 	// when the export started (before the clone attempt)

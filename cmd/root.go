@@ -124,7 +124,7 @@ func runCmdExport(cmdFlags *data.CmdFlags, logger *zap.Logger) error {
 
 	// Run export
 	if err := exporter.Export(cmdFlags.Workspace, cmdFlags.Repository); err != nil {
-		logger.Error("Export failed", zap.Error(err))
+		logger.Error("Export failed")
 		return err
 	}
 
