@@ -378,9 +378,8 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, p
 			zap.String("next_url", response.Next))
 
 		for _, pr := range response.Values {
-			hexPattern := regexp.MustCompile(`^[0-9a-f]{40}$`)
 
-			if hexPattern.MatchString(pr.Source.Branch.Name) {
+			if hexPatternRegex.MatchString(pr.Source.Branch.Name) {
 				c.logger.Warn("Skipping PR with ambiguous source branch name",
 					zap.Int("pr_id", pr.ID),
 					zap.String("pr_title", pr.Title),
@@ -389,7 +388,7 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, p
 				continue
 			}
 
-			if hexPattern.MatchString(pr.Destination.Branch.Name) {
+			if hexPatternRegex.MatchString(pr.Destination.Branch.Name) {
 				c.logger.Warn("Skipping PR with ambiguous destination branch name",
 					zap.Int("pr_id", pr.ID),
 					zap.String("pr_title", pr.Title),
@@ -738,10 +737,7 @@ func (c *Client) transformCommentBody(body, workspace, repoSlug string) string {
 	re := regexp.MustCompile(pattern)
 	transformedBody := re.ReplaceAllString(body, replacement)
 
-	prPattern := `\b#(\d+)\b`
-
-	prRe := regexp.MustCompile(prPattern)
-	transformedBody = prRe.ReplaceAllStringFunc(transformedBody, func(match string) string {
+	transformedBody = prNumberPattern.ReplaceAllStringFunc(transformedBody, func(match string) string {
 		numStr := match[1:] // Remove the # prefix
 		return fmt.Sprintf("[%s](%s)", match, fmt.Sprintf("https://bitbucket.org/%s/%s/pull/%s",
 			workspace, repoSlug, numStr))

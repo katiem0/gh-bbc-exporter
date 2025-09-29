@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -26,8 +25,6 @@ type Exporter struct {
 	openPRsOnly bool
 	prsFromDate string
 }
-
-var repoNameInvalidCharsRegex = regexp.MustCompile(`[^a-zA-Z0-9\-\._]|^\.|\.$/`)
 
 func NewExporter(client *Client, outputDir string, logger *zap.Logger, openPRsOnly bool, prsFromDate string) *Exporter {
 	return &Exporter{
@@ -871,8 +868,7 @@ func getAuthMethodDescription(c *Client) string {
 }
 
 func sanitizeDescription(description string) string {
-	re := regexp.MustCompile(`\s+`)
-	sanitized := re.ReplaceAllString(description, " ")
+	sanitized := whitespaceRegex.ReplaceAllString(description, " ")
 	return strings.TrimSpace(sanitized)
 }
 

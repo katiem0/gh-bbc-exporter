@@ -16,6 +16,13 @@ import (
 	"go.uber.org/zap"
 )
 
+var (
+	repoNameInvalidCharsRegex = regexp.MustCompile(`[^a-zA-Z0-9\-\._]|^\.|\.$/`)
+	whitespaceRegex           = regexp.MustCompile(`\s+`)
+	hexPatternRegex           = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	prNumberPattern           = regexp.MustCompile(`\b#(\d+)\b`)
+)
+
 func formatDateToZ(inputDate string) string {
 	if inputDate == "" {
 		return ""
@@ -409,8 +416,7 @@ func validateGitReference(reference string) error {
 
 	// Check if the reference is exactly 40 hex characters (SHA-1 format)
 	// This is ambiguous because Git can't determine if it's a branch name or commit SHA
-	hexPattern := regexp.MustCompile(`^[0-9a-f]{40}$`)
-	if hexPattern.MatchString(reference) {
+	if hexPatternRegex.MatchString(reference) {
 		return fmt.Errorf("ambiguous git reference: %s (exactly 40 hex characters)", reference)
 	}
 
@@ -442,7 +448,6 @@ func validateGitReference(reference string) error {
 }
 
 func (e *Exporter) validateGitReferences(repoPath string) error {
-	hexPattern := regexp.MustCompile(`^[0-9a-f]{40}$`)
 	var ambiguousRefs []string
 
 	// Check all branches using git command
@@ -516,7 +521,7 @@ func (e *Exporter) validateGitReferences(repoPath string) error {
 			if !info.IsDir() {
 				refName := info.Name()
 				// Only check for ambiguous hex patterns in file-based refs
-				if hexPattern.MatchString(refName) {
+				if hexPatternRegex.MatchString(refName) {
 					refType := "ref"
 					if strings.Contains(path, "refs/heads") {
 						refType = "branch"
