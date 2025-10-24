@@ -4,13 +4,15 @@ Thanks for helping make these extensions safe for everyone and will ensure swift
 
 ## Reporting Security Issues
 
-If you believe you have found a security vulnerability in this repository, please report it through coordinated disclosure.
+If you believe you have found a security vulnerability in this repository,
+please report it through coordinated disclosure.
 
 Please do not report security vulnerabilities through public GitHub issues, discussions, or pull requests.
 
 Instead, please send an email to `katiem0@github.com`.
 
-Please include as much of the information listed below as you can to help us better understand and resolve the issue:
+Please include as much of the information listed below as you can to
+help us better understand and resolve the issue:
 
 - The type of issue (e.g., buffer overflow, SQL injection, or cross-site scripting)
 - Full paths of source file(s) related to the manifestation of the issue
