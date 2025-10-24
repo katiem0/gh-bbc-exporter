@@ -1,4 +1,6 @@
-# Example markdownlint configuration with all properties set to their default value
+---
+# Example markdownlint configuration with all properties
+# set to their default value
 
 # Default state for all rules
 default: true
