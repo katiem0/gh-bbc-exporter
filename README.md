@@ -205,7 +205,13 @@ bitbucket-export-YYYYMMDD-HHMMSS/
 
 After generating the migration archive, you can import it to GitHub Enterprise Cloud
 using GitHub owned storage and GEI. Detailed documentation can be found in
-[Importing Bitbucket Cloud Archive to GitHub Enterprise Cloud](./docs/GHImport.md).
+[Importing Bitbucket Cloud Archive to GitHub Enterprise Cloud](./docs/Import-with-gei.md).
+
+### Automated Migration with GitHub Actions
+
+A sample GitHub Actions workflow is available to automate the export and import process.
+See the [sample workflow](./docs/sample-migration-via-actions.yml) for an example of how to
+orchestrate the migration.
 
 ## Limitations
 

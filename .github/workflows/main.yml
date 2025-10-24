@@ -1,3 +1,4 @@
+---
 name: PR Checks
 
 on:
@@ -47,18 +48,18 @@ jobs:
           COVERAGE_PCT=$(go tool cover -func=coverage.txt | grep total | awk '{print $3}')
           echo "Coverage percentage: $COVERAGE_PCT"
           echo "coverage_percentage=$COVERAGE_PCT" >> $GITHUB_OUTPUT
-          
+
           # Set pass/fail threshold
           THRESHOLD="70.0%"
           COVERAGE_NUM=$(echo $COVERAGE_PCT | sed 's/%//')
           THRESHOLD_NUM=$(echo $THRESHOLD | sed 's/%//')
-          
+
           if (( $(echo "$COVERAGE_NUM < $THRESHOLD_NUM" | bc -l) )); then
             echo "::warning::Coverage $COVERAGE_PCT is below threshold $THRESHOLD"
           else
             echo "::notice::Coverage $COVERAGE_PCT meets threshold $THRESHOLD"
           fi
-          
+
           # Generate HTML report
           go tool cover -html=coverage.txt -o coverage.html
 

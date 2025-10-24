@@ -1,0 +1,79 @@
+---
+name: 'Bitbucket to GitHub Migration'
+
+on:
+  workflow_dispatch:
+    inputs:
+      bitbucket_workspace:
+        description: 'Bitbucket Workspace Name'
+        required: true
+        type: string
+      bitbucket_repo:
+        description: 'Bitbucket Repository Name'
+        required: true
+        type: string
+      github_target_org:
+        description: 'GitHub Target Organization'
+        required: true
+        type: string
+      github_target_repo:
+        description: 'GitHub Target Repository Name (optional, defaults to Bitbucket repo name)'
+        required: false
+        type: string
+
+jobs:
+  migrate:
+    name: 'Run Migration'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v5
+
+      - name: 'Set up Go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: 'Install gh-bbc-exporter'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          gh extension install katiem0/gh-bbc-exporter
+          gh extension install github/gh-gei
+
+      - name: 'Set target repo name'
+        id: target_repo
+        run: |
+          target_repo_name="${{ inputs.github_target_repo || inputs.bitbucket_repo }}"
+          echo "target_repo_name=$target_repo_name" >> $GITHUB_OUTPUT
+
+      - name: 'Run Bitbucket Export'
+        id: export
+        env:
+          BITBUCKET_API_TOKEN: ${{ secrets.BITBUCKET_API_TOKEN }}
+          BITBUCKET_EMAIL: ${{ secrets.BITBUCKET_EMAIL }}
+        run: |
+          ARCHIVE_NAME="bitbucket-export-${{ inputs.bitbucket_repo }}.tar.gz"
+          gh bbc-exporter \
+            --workspace "${{ inputs.bitbucket_workspace }}" \
+            --repo "${{ inputs.bitbucket_repo }}" \
+            --output "bitbucket-export-${{ inputs.bitbucket_repo }}"
+          echo "archive_path=$ARCHIVE_NAME" >> $GITHUB_OUTPUT
+      - name: Set permissions for Archive Path
+        run: chmod 644 ${{ steps.export.outputs.archive_path }}
+      - name: 'Run GitHub Import'
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          gh gei migrate-repo \
+            --github-target-pat $GH_PAT \
+            --github-source-org "${{ inputs.bitbucket_workspace }}" \
+            --source-repo "${{ inputs.bitbucket_repo }}" \
+            --github-target-org "${{ inputs.github_target_org }}" \
+            --target-repo "${{ steps.target_repo.outputs.target_repo_name }}" \
+            --git-archive-path "${{ steps.export.outputs.archive_path }}" \
+            --metadata-archive-path "${{ steps.export.outputs.archive_path }}" \
+            --use-github-storage --verbose
