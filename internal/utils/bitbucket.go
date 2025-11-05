@@ -18,19 +18,20 @@ import (
 )
 
 type Client struct {
-	baseURL        string
-	httpClient     *http.Client
-	accessToken    string // Workspace Access Token
-	apiToken       string // API Token replacing AppPass after Sept 2025
-	email          string // Will replace username after Sept 2025
-	username       string // Will be removed after Sept 2025 with appPass
-	appPass        string // To be deprecated Sept 2025
-	logger         *zap.Logger
-	commitSHACache map[string]string
-	exportDir      string
+	baseURL          string
+	httpClient       *http.Client
+	accessToken      string // Workspace Access Token
+	apiToken         string // API Token replacing AppPass after Sept 2025
+	email            string // Will replace username after Sept 2025
+	username         string // Will be removed after Sept 2025 with appPass
+	appPass          string // To be deprecated Sept 2025
+	logger           *zap.Logger
+	commitSHACache   map[string]string
+	exportDir        string
+	skipCommitLookup bool
 }
 
-func NewClient(baseURL, accessToken, apiToken, email, username, appPass string, logger *zap.Logger, exportDir string) *Client {
+func NewClient(baseURL, accessToken, apiToken, email, username, appPass string, logger *zap.Logger, exportDir string, skipCommitLookup bool) *Client {
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	if !strings.Contains(baseURL, "/2.0") && strings.Contains(baseURL, "api.bitbucket.org") {
@@ -59,16 +60,17 @@ func NewClient(baseURL, accessToken, apiToken, email, username, appPass string, 
 
 	logger.Debug("Creating Bitbucket client", zap.String("baseURL", baseURL))
 	return &Client{
-		baseURL:        baseURL,
-		httpClient:     &http.Client{},
-		accessToken:    accessToken,
-		apiToken:       apiToken,
-		email:          email,
-		username:       username,
-		appPass:        appPass,
-		logger:         logger,
-		commitSHACache: make(map[string]string), // Initialize commit cache
-		exportDir:      exportDir,
+		baseURL:          baseURL,
+		httpClient:       &http.Client{},
+		accessToken:      accessToken,
+		apiToken:         apiToken,
+		email:            email,
+		username:         username,
+		appPass:          appPass,
+		logger:           logger,
+		commitSHACache:   make(map[string]string), // Initialize commit cache
+		exportDir:        exportDir,
+		skipCommitLookup: skipCommitLookup,
 	}
 }
 
@@ -521,6 +523,9 @@ func (c *Client) GetFullCommitSHA(workspace, repoSlug, commitHash string) (strin
 		if err == nil {
 			// Cache the result
 			c.commitSHACache[commitHash] = fullSHA
+			c.logger.Debug("Resolved full SHA from local repository",
+				zap.String("shortSHA", commitHash),
+				zap.String("fullSHA", fullSHA))
 			return fullSHA, nil
 		}
 		// If local lookup fails, log and fall back to API
@@ -528,6 +533,17 @@ func (c *Client) GetFullCommitSHA(workspace, repoSlug, commitHash string) (strin
 			zap.String("shortSHA", commitHash),
 			zap.Error(err))
 	}
+
+	if c.skipCommitLookup {
+		c.logger.Debug("API commit lookup disabled, using SHA as-is",
+			zap.String("workspace", workspace),
+			zap.String("repo", repoSlug),
+			zap.String("sha", commitHash))
+		// Cache the decision to avoid repeated log messages
+		c.commitSHACache[commitHash] = commitHash
+		return commitHash, nil
+	}
+
 	endpoint := fmt.Sprintf("repositories/%s/%s/commit/%s", workspace, repoSlug, commitHash)
 
 	var response struct {

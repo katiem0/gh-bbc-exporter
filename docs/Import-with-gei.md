@@ -66,8 +66,7 @@ gh gei migrate-repo \
   --target-repo TARGET_REPO \
   --git-archive-path PATH_TO_LOCAL_ARCHIVE.tar.gz \
   --metadata-archive-path PATH_TO_LOCAL_ARCHIVE.tar.gz \
-  --use-github-storage \
-  --wait
+  --use-github-storage
 ```
 
 #### Option B: Azure Storage Blobs

@@ -12,6 +12,7 @@ type CmdFlags struct {
 	OutputDir            string
 	PRsFromDate          string // Format: YYYY-MM-DD
 	OpenPRsOnly          bool
+	SkipCommitLookup     bool // If true, do not call Bitbucket Cloud API to retrieve commit SHAs
 	Debug                bool
 }
 
