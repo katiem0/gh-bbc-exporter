@@ -132,9 +132,40 @@ Flags:
   -r, --repo string            Name of the repository to export from Bitbucket Cloud
   -o, --output string          Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)
       --open-prs-only          Export only open pull requests and ignore closed/merged ones
-      --prs-from-date string   Export pull requests created on or after this date (format: YYYY-MM-DD).
+      --prs-from-date string   Export pull requests created on or after this date (format: YYYY-MM-DD)
+      --skip-commit-lookup     Skip Bitbucket API lookups to retrieve commit SHAs (use local lookup only)
   -d, --debug                  Enable debug logging
   -h, --help                   help for bbc-exporter
+```
+
+### Advanced Options
+
+#### Skip Commit SHA Lookups
+
+The `--skip-commit-lookup` flag can be used to improve export performance by skipping
+Bitbucket API calls for resolving full commit SHAs. When enabled:
+
+- The tool will only attempt to resolve commit SHAs from the locally
+  cloned repository
+- If a full SHA cannot be resolved locally, the short SHA will be preserved
+- This can significantly reduce API calls and speed up exports for large
+  repositories with many pull request comments
+
+**When to use this flag:**
+
+- When experiencing rate limiting issues with the Bitbucket API
+- For large repositories with many pull request review comments
+- When you're confident the local repository clone contains all referenced commits
+
+> [!NOTE]
+> Some GitHub import operations may require full 40-character commit SHAs.
+> Only use this flag if you're certain that shortened SHAs won't cause issues
+> with your migration, or if the local repository contains all the necessary commit
+> history.
+
+```sh
+# Export with skip commit lookup enabled
+gh bbc-exporter -w your-workspace -r your-repo --skip-commit-lookup
 ```
 
 ### Authentication Methods
