@@ -67,7 +67,9 @@ func NewCmdRoot() *cobra.Command {
 	exportCmd.PersistentFlags().BoolVar(&cmdFlags.OpenPRsOnly, "open-prs-only", false,
 		"Export only open pull requests and ignore closed/merged ones")
 	exportCmd.PersistentFlags().StringVarP(&cmdFlags.PRsFromDate, "prs-from-date", "", "",
-		"Export pull requests created on or after this date (format: YYYY-MM-DD).")
+		"Export pull requests created on or after this date (format: YYYY-MM-DD)")
+	exportCmd.PersistentFlags().BoolVar(&cmdFlags.SkipCommitLookup, "skip-commit-lookup", false,
+		"Skip Bitbucket API lookups to retrieve commit SHAs (use local lookup only)")
 	exportCmd.PersistentFlags().BoolVarP(&cmdFlags.Debug, "debug", "d", false, "Enable debug logging")
 	// Mark required flags
 	if err := exportCmd.MarkPersistentFlagRequired("workspace"); err != nil {
@@ -111,6 +113,7 @@ func runCmdExport(cmdFlags *data.CmdFlags, logger *zap.Logger) error {
 		cmdFlags.BitbucketAppPass,
 		logger,
 		cmdFlags.OutputDir,
+		cmdFlags.SkipCommitLookup,
 	)
 
 	if cmdFlags.OpenPRsOnly {
@@ -118,6 +121,11 @@ func runCmdExport(cmdFlags *data.CmdFlags, logger *zap.Logger) error {
 	}
 	if cmdFlags.PRsFromDate != "" {
 		logger.Info("Filtering: PRs from date", zap.String("from_date", cmdFlags.PRsFromDate))
+	}
+
+	// Apply commit SHA expansion behavior
+	if cmdFlags.SkipCommitLookup {
+		logger.Info("Skipping Bitbucket API commit SHA lookups (will look locally only)")
 	}
 
 	exporter := utils.NewExporter(client, cmdFlags.OutputDir, logger, cmdFlags.OpenPRsOnly, cmdFlags.PRsFromDate)

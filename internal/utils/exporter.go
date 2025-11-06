@@ -754,24 +754,65 @@ func (e *Exporter) addFileToArchive(tarWriter *tar.Writer, path, relPath string,
 		return fmt.Errorf("failed to create tar header: %w", err)
 	}
 
-	// Normalize path for consistent archive entries regardless of platform
 	header.Name = ToUnixPath(relPath)
+	needsFileContents := false
+	var fileToRead string
 
-	// Only include regular files and directories
 	switch header.Typeflag {
 	case tar.TypeDir:
-		// Keep directories as-is
 	case tar.TypeReg:
-		// Keep regular files as-is
+		needsFileContents = true
+		fileToRead = path
 	case tar.TypeSymlink, tar.TypeLink:
-		// Convert symlinks/hardlinks to regular files
 		e.logger.Warn("Converting link to regular file to ensure compatibility",
 			zap.String("path", path),
 			zap.String("typeflag", string(header.Typeflag)))
+		if header.Typeflag == tar.TypeSymlink {
+			// Resolve the symlink to get the target path
+			targetPath, err := os.Readlink(path)
+			if err != nil {
+				e.logger.Warn("Failed to read symlink target, skipping",
+					zap.String("path", path),
+					zap.Error(err))
+				return nil
+			}
+
+			// If target is relative, make it absolute relative to symlink's directory
+			if !filepath.IsAbs(targetPath) {
+				targetPath = filepath.Join(filepath.Dir(path), targetPath)
+			}
+
+			// Get info about the target file
+			targetInfo, err := os.Stat(targetPath)
+			if err != nil {
+				e.logger.Warn("Failed to stat symlink target, skipping",
+					zap.String("path", path),
+					zap.String("target", targetPath),
+					zap.Error(err))
+				return nil
+			}
+
+			// Update header with target file's size
+			header.Size = targetInfo.Size()
+			fileToRead = targetPath
+		} else {
+			// For hardlinks, use the original path
+			fileToRead = path
+			// Get the actual file size
+			actualInfo, err := os.Stat(path)
+			if err != nil {
+				e.logger.Warn("Failed to stat hardlink, skipping",
+					zap.String("path", path),
+					zap.Error(err))
+				return nil
+			}
+			header.Size = actualInfo.Size()
+		}
+
 		header.Typeflag = tar.TypeReg
 		header.Linkname = ""
+		needsFileContents = true
 	case tar.TypeXHeader, tar.TypeXGlobalHeader:
-		// Skip extended headers completely
 		e.logger.Warn("Skipping extended header to ensure compatibility",
 			zap.String("path", path),
 			zap.String("typeflag", string(header.Typeflag)))
@@ -784,22 +825,16 @@ func (e *Exporter) addFileToArchive(tarWriter *tar.Writer, path, relPath string,
 		return nil
 	}
 
-	// Use USTAR format for most files
 	header.Format = tar.FormatUSTAR
-
-	// Handle Git repository files specially to preserve exact paths
 	isInGitRepo := strings.Contains(header.Name, ".git/") || strings.HasSuffix(header.Name, ".git")
 
-	// For Git repository files, we need to preserve the full path structure
 	if isInGitRepo {
-		// If path is over 100 chars (USTAR limit), switch to GNU format
 		if len(header.Name) > 100 {
 			header.Format = tar.FormatGNU
 			e.logger.Debug("Using GNU format for long Git path",
 				zap.String("path", header.Name))
 		}
 	} else if len(header.Name) > 100 {
-		// For non-Git files, we can be more aggressive with truncation if needed
 		dir, file := filepath.Split(header.Name)
 		if len(file) > 80 {
 			file = file[:77] + "..."
@@ -830,14 +865,14 @@ func (e *Exporter) addFileToArchive(tarWriter *tar.Writer, path, relPath string,
 		return fmt.Errorf("failed to write tar header: %w", err)
 	}
 
-	if !info.IsDir() {
-		file, err := os.Open(path)
+	if needsFileContents {
+		file, err := os.Open(fileToRead)
 		if err != nil {
-			return fmt.Errorf("failed to open file %s: %w", path, err)
+			return fmt.Errorf("failed to open file %s: %w", fileToRead, err)
 		}
 		defer func() {
 			if err := file.Close(); err != nil {
-				e.logger.Warn("Failed to close file", zap.String("path", path), zap.Error(err))
+				e.logger.Warn("Failed to close file", zap.String("path", fileToRead), zap.Error(err))
 			}
 		}()
 
@@ -852,12 +887,14 @@ func (e *Exporter) addFileToArchive(tarWriter *tar.Writer, path, relPath string,
 func getAuthMethodDescription(c *Client) string {
 	if c.accessToken != "" {
 		return "workspace access token"
-	} else if c.apiToken != "" {
+	}
+	if c.apiToken != "" {
 		if c.email != "" {
 			return "API token with email"
 		}
 		return "API token with x-bitbucket-api-token-auth"
-	} else if c.username != "" && c.appPass != "" {
+	}
+	if c.username != "" && c.appPass != "" {
 		return "username and app password"
 	}
 	return "no authentication"

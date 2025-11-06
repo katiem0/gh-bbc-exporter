@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -1413,4 +1414,102 @@ func TestValidateExportDataIntegration(t *testing.T) {
 	headContent, err := os.ReadFile(headFile)
 	assert.NoError(t, err)
 	assert.Equal(t, "ref: refs/heads/main\n", string(headContent))
+}
+
+func TestIdentifyShortSHAs(t *testing.T) {
+	testCases := []struct {
+		name    string
+		sha     string
+		isShort bool
+	}{
+		{
+			name:    "Full 40-character SHA",
+			sha:     "4101446c6322f8b5c99976986fcc49e772f9153f",
+			isShort: false,
+		},
+		{
+			name:    "12-character short SHA",
+			sha:     "4101446c6322",
+			isShort: true,
+		},
+		{
+			name:    "7-character short SHA",
+			sha:     "4101446",
+			isShort: true,
+		},
+		{
+			name:    "Empty SHA",
+			sha:     "",
+			isShort: true,
+		},
+		{
+			name:    "Invalid characters but 40 length",
+			sha:     strings.Repeat("g", 40),
+			isShort: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			isShort := len(tc.sha) < 40
+			assert.Equal(t, tc.isShort, isShort,
+				"SHA '%s' short status should be %v", tc.sha, tc.isShort)
+		})
+	}
+}
+
+func TestValidateCommitSHAs(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "validate-shas-test-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+
+	comments := []data.PullRequestReviewComment{
+		{CommitID: "abc123"},
+		{CommitID: strings.Repeat("a", 40)},
+		{CommitID: "def456789012"},
+		{CommitID: ""},
+	}
+
+	err = exporter.writeJSONFile("pull_request_review_comments_000001.json", comments)
+	assert.NoError(t, err)
+
+	var readComments []data.PullRequestReviewComment
+	content, err := os.ReadFile(filepath.Join(tempDir, "pull_request_review_comments_000001.json"))
+	assert.NoError(t, err)
+
+	err = json.Unmarshal(content, &readComments)
+	assert.NoError(t, err)
+
+	shortCount := 0
+	for _, c := range readComments {
+		if len(c.CommitID) > 0 && len(c.CommitID) < 40 {
+			shortCount++
+		}
+	}
+
+	assert.Equal(t, 2, shortCount, "Should have 2 short SHAs")
+}
+
+func TestGetFullCommitSHAFromLocalRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("Git not available for testing")
+	}
+
+	tempDir, err := os.MkdirTemp("", "local-repo-test-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	repoPath := filepath.Join(tempDir, "test.git")
+	cmd := exec.Command("git", "init", "--bare", repoPath)
+	err = cmd.Run()
+	assert.NoError(t, err)
+
+	_, err = GetFullCommitSHAFromLocalRepo(repoPath, "nonexistent")
+	assert.Error(t, err, "Should error for non-existent SHA")
+
+	_, err = GetFullCommitSHAFromLocalRepo("/invalid/path", "abc123")
+	assert.Error(t, err, "Should error for invalid repo path")
 }

@@ -1325,3 +1325,40 @@ func TestRootCmdWithAuthValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestRunCmdExport_AuthLogging(t *testing.T) {
+	core, obs := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	tempDir, err := os.MkdirTemp("", "cmd-export-test-")
+	assert.NoError(t, err)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Warning: Failed to remove temp dir: %v", err)
+		}
+	}()
+
+	cmdFlags := data.CmdFlags{
+		BitbucketAccessToken: "test-access-token",
+		Workspace:            "test-workspace",
+		Repository:           "test-repo",
+		OutputDir:            tempDir,
+	}
+
+	err = runCmdExport(&cmdFlags, logger)
+	assert.Error(t, err, "expected runCmdExport to return an error (export likely fails in tests)")
+
+	entries := obs.All()
+	foundStart := false
+	foundAuth := false
+	for _, e := range entries {
+		if e.Message == "Starting Bitbucket Cloud export" {
+			foundStart = true
+		}
+		if e.Message == "Using workspace access token authentication" {
+			foundAuth = true
+		}
+	}
+	assert.True(t, foundStart, "expected startup log from runCmdExport")
+	assert.True(t, foundAuth, "expected auth log from runCmdExport")
+}

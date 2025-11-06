@@ -31,7 +31,7 @@ func writeResponse(t *testing.T, w http.ResponseWriter, data []byte) {
 
 func TestNewClient(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
-	client := NewClient("https://example.com", "token", "api-token", "email", "user", "pass", logger, "/path/to/export")
+	client := NewClient("https://example.com", "token", "api-token", "email", "user", "pass", logger, "/path/to/export", true)
 
 	assert.NotNil(t, client)
 	assert.Equal(t, "https://example.com", client.baseURL)
@@ -43,6 +43,7 @@ func TestNewClient(t *testing.T) {
 	assert.NotNil(t, client.httpClient)
 	assert.NotNil(t, client.logger)
 	assert.Equal(t, "/path/to/export", client.exportDir)
+	assert.Equal(t, true, client.skipCommitLookup)
 }
 
 func TestGetPullRequests(t *testing.T) {
@@ -1100,4 +1101,107 @@ func TestExportUpdatesClientExportDir(t *testing.T) {
 	assert.Equal(t, exporter.outputDir, client.exportDir)
 	assert.Contains(t, client.exportDir, "bitbucket-export-")
 	assert.NotContains(t, client.exportDir, ".tar.gz")
+}
+
+func TestGetFullCommitSHAWithSkipLookup(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("API was called but skipCommitLookup was enabled")
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer testServer.Close()
+
+	client := &Client{
+		baseURL:          testServer.URL,
+		httpClient:       testServer.Client(),
+		logger:           logger,
+		commitSHACache:   make(map[string]string),
+		skipCommitLookup: true,
+		exportDir:        "/tmp/test-export",
+	}
+
+	// Test 1: Short SHA should be returned as-is
+	shortSHA := "abc123"
+	result, err := client.GetFullCommitSHA("workspace", "repo", shortSHA)
+	assert.NoError(t, err)
+	assert.Equal(t, shortSHA, result, "Short SHA should be returned as-is when skip is enabled")
+
+	// Test 2: Full SHA should still be returned unchanged
+	fullSHA := strings.Repeat("a", 40)
+	result, err = client.GetFullCommitSHA("workspace", "repo", fullSHA)
+	assert.NoError(t, err)
+	assert.Equal(t, fullSHA, result, "Full SHA should pass through unchanged")
+
+	// Test 3: Verify caching still works
+	assert.Equal(t, shortSHA, client.commitSHACache[shortSHA])
+}
+
+func TestGetPullRequestCommentsWithShortSHAs(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "comments") {
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{
+                "values": [
+                    {
+                        "id": 122,
+                        "content": {"raw": "Regular comment without inline"},
+                        "created_on": "2023-01-01T11:00:00Z",
+                        "updated_on": "2023-01-01T11:00:00Z",
+                        "user": {"uuid": "{test-uuid}"}
+                    },
+                    {
+                        "id": 123,
+                        "content": {"raw": "Review comment with inline"},
+                        "created_on": "2023-01-01T12:00:00Z",
+                        "updated_on": "2023-01-01T12:00:00Z",
+                        "user": {"uuid": "{test-uuid}"},
+                        "inline": {
+                            "path": "test.txt",
+                            "to": 10
+                        }
+                    }
+                ],
+                "next": null
+            }`))
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer testServer.Close()
+
+	client := &Client{
+		baseURL:          testServer.URL,
+		httpClient:       testServer.Client(),
+		logger:           logger,
+		commitSHACache:   make(map[string]string),
+		skipCommitLookup: true,
+	}
+
+	prs := []data.PullRequest{
+		{
+			URL: "https://bitbucket.org/workspace/repo/pull/1",
+			Head: data.PRBranch{
+				SHA: "abc123",
+			},
+		},
+	}
+
+	regularComments, reviewComments, err := client.GetPullRequestComments("workspace", "repo", prs)
+	assert.NoError(t, err)
+	assert.Len(t, regularComments, 1, "Should have 1 regular comment")
+	assert.Len(t, reviewComments, 1, "Should have 1 review comment")
+
+	for _, comment := range reviewComments {
+		if comment.CommitID != "" {
+			assert.Equal(t, 6, len(comment.CommitID), "SHA length should remain unchanged when skip is enabled")
+			assert.Equal(t, "abc123", comment.CommitID, "Commit ID should match the PR's head SHA")
+		}
+	}
+
+	for _, comment := range regularComments {
+		assert.Equal(t, "https://bitbucket.org/workspace/repo/pull/1", comment.PullRequest)
+	}
 }
