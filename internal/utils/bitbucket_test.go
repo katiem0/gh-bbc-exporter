@@ -1196,7 +1196,7 @@ func TestGetPullRequestCommentsWithShortSHAs(t *testing.T) {
 
 	for _, comment := range reviewComments {
 		if comment.CommitID != "" {
-			assert.LessOrEqual(t, len(comment.CommitID), 6, "Commit ID should be short when skip is enabled")
+			assert.Equal(t, 6, len(comment.CommitID), "SHA length should remain unchanged when skip is enabled")
 			assert.Equal(t, "abc123", comment.CommitID, "Commit ID should match the PR's head SHA")
 		}
 	}
