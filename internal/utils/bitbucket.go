@@ -38,27 +38,25 @@ func NewClient(baseURL, accessToken, apiToken, email, username, appPass string, 
 		baseURL = baseURL + "/2.0"
 	}
 
+	var authMethod string
 	if accessToken != "" {
-		logger.Debug("Creating Bitbucket client with workspace access token authentication",
-			zap.String("baseURL", baseURL))
+		authMethod = "workspace access token"
 	} else if apiToken != "" {
 		if email != "" {
-			logger.Debug("Creating Bitbucket client with API token authentication",
-				zap.String("baseURL", baseURL),
-				zap.String("email", email))
+			authMethod = "API token with email"
 		} else {
-			logger.Debug("Creating Bitbucket client with API token authentication using x-bitbucket-api-token-auth",
-				zap.String("baseURL", baseURL))
+			authMethod = "API token with x-bitbucket-api-token-auth"
 		}
 	} else if username != "" && appPass != "" {
-		logger.Debug("Creating Bitbucket client with basic authentication",
-			zap.String("baseURL", baseURL),
-			zap.String("username", username))
+		authMethod = "username and app password"
 	} else {
-		logger.Warn("Creating Bitbucket client without authentication credentials")
+		authMethod = "none"
 	}
 
-	logger.Debug("Creating Bitbucket client", zap.String("baseURL", baseURL))
+	logger.Debug("Creating Bitbucket client",
+		zap.String("baseURL", baseURL),
+		zap.String("authMethod", authMethod))
+
 	return &Client{
 		baseURL:          baseURL,
 		httpClient:       &http.Client{},
@@ -68,7 +66,7 @@ func NewClient(baseURL, accessToken, apiToken, email, username, appPass string, 
 		username:         username,
 		appPass:          appPass,
 		logger:           logger,
-		commitSHACache:   make(map[string]string), // Initialize commit cache
+		commitSHACache:   make(map[string]string),
 		exportDir:        exportDir,
 		skipCommitLookup: skipCommitLookup,
 	}
@@ -128,9 +126,11 @@ func (c *Client) makeRequest(method, endpoint string, v interface{}) error {
 			}
 		}
 
-		c.logger.Debug("Making API request",
-			zap.String("method", method),
-			zap.String("url", fullURL))
+		if attempt == 0 {
+			c.logger.Debug("Making API request",
+				zap.String("method", method),
+				zap.String("url", fullURL))
+		}
 
 		req, err := http.NewRequest(method, fullURL, nil)
 		if err != nil {
@@ -138,23 +138,15 @@ func (c *Client) makeRequest(method, endpoint string, v interface{}) error {
 		}
 
 		if c.accessToken != "" {
-			c.logger.Debug("Using workspace access token authentication")
 			req.Header.Set("Authorization", "Bearer "+c.accessToken)
 		} else if c.apiToken != "" {
-			c.logger.Debug("Using API token authentication")
-			// For API tokens, we use Basic auth with either the email or x-bitbucket-api-token-auth
 			if c.email != "" {
-				c.logger.Debug("Using Atlassian account email with API token")
 				req.SetBasicAuth(c.email, c.apiToken)
 			} else {
-				c.logger.Debug("Using x-bitbucket-api-token-auth with API token")
 				req.SetBasicAuth("x-bitbucket-api-token-auth", c.apiToken)
 			}
 		} else if c.username != "" && c.appPass != "" {
-			c.logger.Debug("Using basic authentication")
 			req.SetBasicAuth(c.username, c.appPass)
-		} else {
-			c.logger.Warn("No authentication credentials provided")
 		}
 
 		req.Header.Set("Content-Type", "application/json")
@@ -169,17 +161,25 @@ func (c *Client) makeRequest(method, endpoint string, v interface{}) error {
 				c.logger.Warn("Error closing response body", zap.Error(err))
 			}
 		}()
+
 		remaining := resp.Header.Get("X-RateLimit-Remaining")
 		limit := resp.Header.Get("X-RateLimit-Limit")
-		c.logger.Debug("Rate limit status",
-			zap.String("remaining", remaining),
-			zap.String("limit", limit))
+		if remaining != "" && limit != "" {
+			remainingInt, _ := strconv.Atoi(remaining)
+			limitInt, _ := strconv.Atoi(limit)
+			if limitInt > 0 && float64(remainingInt)/float64(limitInt) < 0.1 {
+				c.logger.Warn("Low API rate limit remaining",
+					zap.String("remaining", remaining),
+					zap.String("limit", limit))
+			}
+		}
 
-		// Log the response status
-		c.logger.Debug("API response",
-			zap.Int("status", resp.StatusCode),
-			zap.String("status_text", resp.Status))
-
+		// Only log non-successful responses
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			c.logger.Debug("API response",
+				zap.Int("status", resp.StatusCode),
+				zap.String("status_text", resp.Status))
+		}
 		if resp.StatusCode == 429 {
 			delay := baseDelay * time.Duration(1<<attempt) // Exponential backoff
 			if delay > 5*time.Minute {
@@ -322,11 +322,12 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, p
 			time.UTC)
 
 		fromDateProvided = true
-		c.logger.Info("Filtering PRs by creation date (created_on)",
-			zap.String("from_date", prsFromDate),
-			zap.Time("parsed_date", fromDate),
-			zap.String("field_used", "created_on"))
+		c.logger.Info("Filtering PRs by creation date",
+			zap.String("from_date", prsFromDate))
 	}
+
+	skippedAmbiguous := 0
+	skippedByDate := 0
 
 	for hasMore {
 		baseURL, parseErr := url.Parse(fmt.Sprintf("repositories/%s/%s/pullrequests", workspace, repoSlug))
@@ -348,10 +349,6 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, p
 		baseURL.RawQuery = queryParams.Encode()
 		endpoint := baseURL.String()
 
-		c.logger.Debug("Fetching pull requests with endpoint",
-			zap.String("endpoint", endpoint),
-			zap.Bool("open_prs_only", openPRsOnly))
-
 		var response data.BitbucketPRResponse
 		var err error
 
@@ -368,34 +365,26 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, p
 			}
 			break
 		}
-
 		if err != nil {
 			c.logger.Error("failed to fetch pull requests", zap.Error(err))
 			return nil, err
 		}
 
-		c.logger.Debug("Pull requests response",
-			zap.Int("page", page),
-			zap.Int("values_count", len(response.Values)),
-			zap.String("next_url", response.Next))
-
 		for _, pr := range response.Values {
 
 			if hexPatternRegex.MatchString(pr.Source.Branch.Name) {
-				c.logger.Warn("Skipping PR with ambiguous source branch name",
+				skippedAmbiguous++
+				c.logger.Debug("Skipping PR with ambiguous source branch",
 					zap.Int("pr_id", pr.ID),
-					zap.String("pr_title", pr.Title),
-					zap.String("branch_name", pr.Source.Branch.Name),
-					zap.String("reason", "Source branch name is exactly 40 hex characters and could be mistaken for a commit SHA"))
+					zap.String("branch_name", pr.Source.Branch.Name))
 				continue
 			}
 
 			if hexPatternRegex.MatchString(pr.Destination.Branch.Name) {
-				c.logger.Warn("Skipping PR with ambiguous destination branch name",
+				skippedAmbiguous++
+				c.logger.Debug("Skipping PR with ambiguous destination branch",
 					zap.Int("pr_id", pr.ID),
-					zap.String("pr_title", pr.Title),
-					zap.String("branch_name", pr.Destination.Branch.Name),
-					zap.String("reason", "Destination branch name is exactly 40 hex characters and could be mistaken for a commit SHA"))
+					zap.String("branch_name", pr.Destination.Branch.Name))
 				continue
 			}
 
@@ -410,11 +399,7 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, p
 				}
 
 				if prCreatedAt.Before(fromDate) {
-					c.logger.Debug("Skipping PR: created before filter date",
-						zap.Int("pr_id", pr.ID),
-						zap.String("pr_title", pr.Title),
-						zap.Time("pr_created_at", prCreatedAt),
-						zap.Time("filter_date", fromDate))
+					skippedByDate++
 					continue
 				}
 
@@ -444,10 +429,6 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, p
 			// Resolve commit SHAs
 			baseSHA, _ := c.GetFullCommitSHA(workspace, repoSlug, pr.Destination.Commit.Hash)
 			headSHA, _ := c.GetFullCommitSHA(workspace, repoSlug, pr.Source.Commit.Hash)
-
-			c.logger.Debug("Getting full commit SHA",
-				zap.String("base_sha", baseSHA),
-				zap.String("head_sha", headSHA))
 
 			description := ""
 			if pr.Description != nil {
@@ -504,6 +485,11 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, p
 		}
 	}
 
+	c.logger.Info("Pull requests fetched",
+		zap.Int("total", len(pullRequests)),
+		zap.Int("skipped_ambiguous", skippedAmbiguous),
+		zap.Int("skipped_by_date", skippedByDate))
+
 	return pullRequests, nil
 }
 
@@ -535,11 +521,12 @@ func (c *Client) GetFullCommitSHA(workspace, repoSlug, commitHash string) (strin
 	}
 
 	if c.skipCommitLookup {
-		c.logger.Debug("API commit lookup disabled, using SHA as-is",
+		c.logger.Warn("Cannot resolve full commit SHA - API lookup disabled,",
 			zap.String("workspace", workspace),
 			zap.String("repo", repoSlug),
-			zap.String("sha", commitHash))
-		// Cache the decision to avoid repeated log messages
+			zap.String("sha", commitHash),
+			zap.Int("sha_length", len(commitHash)),
+			zap.String("impact", "This may cause failures if full SHA required"))
 		c.commitSHACache[commitHash] = commitHash
 		return commitHash, nil
 	}
@@ -584,6 +571,8 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 	}
 
 	resolvedSHAs := make(map[int]bool)
+	failedPRs := 0
+
 	for prID := range prURLMap {
 		page := 1
 		pageLen := 100
@@ -593,13 +582,11 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 			baseEndpoint := fmt.Sprintf("repositories/%s/%s/pullrequests/%d/comments",
 				workspace, repoSlug, prID)
 
-			// Build query parameters properly
 			params := url.Values{}
 			params.Add("q", "deleted=false")
 			params.Add("page", strconv.Itoa(page))
 			params.Add("pagelen", strconv.Itoa(pageLen))
 
-			// Combine endpoint with encoded query parameters
 			endpoint := baseEndpoint + "?" + params.Encode()
 
 			var response data.BitbucketCommentResponse
@@ -618,9 +605,7 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 				transformedBody := c.transformCommentBody(comment.Content.Raw, workspace, repoSlug)
 				prNumber := fmt.Sprintf("%d", prID)
 
-				// Check if this is an inline comment
 				if comment.Inline != nil && comment.Inline.Path != "" {
-					// This is an inline review comment
 					if !resolvedSHAs[prID] {
 						shortSHA := prCommitMap[prID]
 						fullSHA, err := c.GetFullCommitSHA(workspace, repoSlug, shortSHA)
@@ -629,15 +614,11 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 								zap.Int("pr_id", prID),
 								zap.String("short_sha", shortSHA),
 								zap.Error(err))
-							// Use the short SHA as fallback
 							fullSHA = shortSHA
 						}
 						prCommitMap[prID] = fullSHA
 						resolvedSHAs[prID] = true
 
-						c.logger.Debug("Resolved SHA for PR with inline comment",
-							zap.Int("pr_id", prID),
-							zap.String("full_sha", fullSHA))
 					}
 
 					lineNumber := 1
@@ -724,7 +705,6 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 				}
 			}
 
-			// Check for more pages
 			hasMore = response.Next != ""
 			if hasMore {
 				page++
@@ -732,10 +712,10 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 		}
 	}
 
-	c.logger.Debug("Fetched pull request comments",
+	c.logger.Info("Pull request comments fetched",
 		zap.Int("regular_comments", len(regularComments)),
 		zap.Int("review_comments", len(reviewComments)),
-		zap.String("repository", repoSlug))
+		zap.Int("failed_prs", failedPRs))
 
 	return regularComments, reviewComments, nil
 }
