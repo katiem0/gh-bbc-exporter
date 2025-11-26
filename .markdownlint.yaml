@@ -22,4 +22,5 @@ MD013:
   strict: false
   # Stern length checking
   stern: false
-MD060: disable
+MD060: 
+  stern: false

@@ -1821,7 +1821,7 @@ func TestExporterTempDirConfiguration(t *testing.T) {
 	}
 }
 
-func TestCloneRepositoryTempDirSameVolume(t *testing.T) {
+func TestCloneRepositoryDefaultTempDirLogging(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("Git not available for testing")
 	}
