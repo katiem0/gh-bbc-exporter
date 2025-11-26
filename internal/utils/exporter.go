@@ -24,6 +24,7 @@ type Exporter struct {
 	logger      *zap.Logger
 	openPRsOnly bool
 	prsFromDate string
+	tempDir     string
 }
 
 func NewExporter(client *Client, outputDir string, logger *zap.Logger, openPRsOnly bool, prsFromDate string) *Exporter {
@@ -34,6 +35,10 @@ func NewExporter(client *Client, outputDir string, logger *zap.Logger, openPRsOn
 		openPRsOnly: openPRsOnly,
 		prsFromDate: prsFromDate,
 	}
+}
+
+func (e *Exporter) SetTempDir(tempDir string) {
+	e.tempDir = tempDir
 }
 
 func (e *Exporter) Export(workspace, repoSlug string) error {
@@ -242,11 +247,21 @@ func (e *Exporter) CloneRepository(workspace, repoSlug, cloneURL string) error {
 			return fmt.Errorf("failed to remove existing repository directory: %w", err)
 		}
 	}
-	tempDir, err := os.MkdirTemp("", "bbc-export-")
+
+	baseTempDir := e.tempDir
+	if baseTempDir == "" {
+		baseTempDir = filepath.Dir(repoDir)
+		e.logger.Debug("Using repository parent directory for temporary clone",
+			zap.String("temp_base", baseTempDir))
+	} else {
+		e.logger.Debug("Using configured temporary directory for clone",
+			zap.String("temp_base", baseTempDir))
+	}
+	tempDir, err := os.MkdirTemp(baseTempDir, "bbc-export-")
 	if err != nil {
 		return fmt.Errorf("failed to create temporary directory: %w", err)
 	}
-	// Change this line
+
 	defer func() {
 		if err := os.RemoveAll(tempDir); err != nil {
 			e.logger.Warn("Failed to remove temporary directory",

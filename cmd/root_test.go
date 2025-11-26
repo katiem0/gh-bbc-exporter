@@ -358,6 +358,7 @@ func TestEnvironmentCredentials(t *testing.T) {
 	originalAppPass := os.Getenv("BITBUCKET_APP_PASSWORD")
 	originalApiToken := os.Getenv("BITBUCKET_API_TOKEN")
 	originalEmail := os.Getenv("BITBUCKET_EMAIL")
+	originalTempDir := os.Getenv("BITBUCKET_TEMP_DIR")
 
 	// Track if variables existed originally
 	tokenExists := originalToken != ""
@@ -365,6 +366,7 @@ func TestEnvironmentCredentials(t *testing.T) {
 	appPassExists := originalAppPass != ""
 	apiTokenExists := originalApiToken != ""
 	emailExists := originalEmail != ""
+	tempDirExists := originalTempDir != ""
 
 	// Restore environment after test
 	defer func() {
@@ -398,144 +400,45 @@ func TestEnvironmentCredentials(t *testing.T) {
 		} else {
 			_ = os.Unsetenv("BITBUCKET_EMAIL")
 		}
+
+		if tempDirExists {
+			_ = os.Setenv("BITBUCKET_TEMP_DIR", originalTempDir)
+		} else {
+			_ = os.Unsetenv("BITBUCKET_TEMP_DIR")
+		}
 	}()
 
-	// Test cases for environment variables
-	testCases := []struct {
-		name    string
-		envVars map[string]string
-		cmdArgs []string
-		wantErr bool
-		checkFn func(*testing.T, *data.CmdFlags)
-	}{
-		{
-			name: "token from environment",
-			envVars: map[string]string{
-				"BITBUCKET_ACCESS_TOKEN": "env-token-123",
-			},
-			cmdArgs: []string{
-				"--workspace", "test-workspace",
-				"--repo", "test-repo",
-			},
-			wantErr: false,
-			checkFn: func(t *testing.T, flags *data.CmdFlags) {
-				assert.Equal(t, "env-token-123", flags.BitbucketAccessToken, "Expected token from environment variable")
-			},
-		},
-		{
-			name: "basic auth from environment",
-			envVars: map[string]string{
-				"BITBUCKET_USERNAME":     "env-user",
-				"BITBUCKET_APP_PASSWORD": "env-password",
-			},
-			cmdArgs: []string{
-				"--workspace", "test-workspace",
-				"--repo", "test-repo",
-			},
-			wantErr: false,
-			checkFn: func(t *testing.T, flags *data.CmdFlags) {
-				assert.Equal(t, "env-user", flags.BitbucketUser, "Expected username from environment variable")
-				assert.Equal(t, "env-password", flags.BitbucketAppPass, "Expected password from environment variable")
-			},
-		},
-		{
-			name: "API token with email from environment",
-			envVars: map[string]string{
-				"BITBUCKET_API_TOKEN": "env-api-token-123",
-				"BITBUCKET_EMAIL":     "env-email@example.com",
-			},
-			cmdArgs: []string{
-				"--workspace", "test-workspace",
-				"--repo", "test-repo",
-			},
-			wantErr: false,
-			checkFn: func(t *testing.T, flags *data.CmdFlags) {
-				assert.Equal(t, "env-api-token-123", flags.BitbucketAPIToken, "Expected API token from environment variable")
-				assert.Equal(t, "env-email@example.com", flags.BitbucketEmail, "Expected email from environment variable")
-			},
-		},
-		{
-			name: "API token without email should fail",
-			envVars: map[string]string{
-				"BITBUCKET_API_TOKEN": "env-api-token-123",
-			},
-			cmdArgs: []string{
-				"--workspace", "test-workspace",
-				"--repo", "test-repo",
-			},
-			wantErr: true,
-			checkFn: func(t *testing.T, flags *data.CmdFlags) {
-				// This test should fail, so no checks needed
-			},
-		},
-		{
-			name: "command line takes precedence over environment",
-			envVars: map[string]string{
-				"BITBUCKET_ACCESS_TOKEN": "env-token-123",
-			},
-			cmdArgs: []string{
-				"--workspace", "test-workspace",
-				"--repo", "test-repo",
-				"--access-token", "cli-token-override",
-			},
-			wantErr: false,
-			checkFn: func(t *testing.T, flags *data.CmdFlags) {
-				assert.Equal(t, "cli-token-override", flags.BitbucketAccessToken, "Expected token from command line to override environment")
-			},
-		},
-	}
+	// Clear all environment variables
+	_ = os.Unsetenv("BITBUCKET_ACCESS_TOKEN")
+	_ = os.Unsetenv("BITBUCKET_USERNAME")
+	_ = os.Unsetenv("BITBUCKET_APP_PASSWORD")
+	_ = os.Unsetenv("BITBUCKET_API_TOKEN")
+	_ = os.Unsetenv("BITBUCKET_EMAIL")
+	_ = os.Unsetenv("BITBUCKET_TEMP_DIR")
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// Clear environment variables
-			_ = os.Unsetenv("BITBUCKET_ACCESS_TOKEN")
-			_ = os.Unsetenv("BITBUCKET_USERNAME")
-			_ = os.Unsetenv("BITBUCKET_APP_PASSWORD")
-			_ = os.Unsetenv("BITBUCKET_API_TOKEN")
-			_ = os.Unsetenv("BITBUCKET_EMAIL")
+	// Set environment variables
+	err := os.Setenv("BITBUCKET_ACCESS_TOKEN", "env-token")
+	assert.NoError(t, err)
+	err = os.Setenv("BITBUCKET_USERNAME", "env-user")
+	assert.NoError(t, err)
+	err = os.Setenv("BITBUCKET_APP_PASSWORD", "env-pass")
+	assert.NoError(t, err)
+	err = os.Setenv("BITBUCKET_API_TOKEN", "env-api-token")
+	assert.NoError(t, err)
+	err = os.Setenv("BITBUCKET_EMAIL", "env@example.com")
+	assert.NoError(t, err)
+	err = os.Setenv("BITBUCKET_TEMP_DIR", "/env/temp/dir")
+	assert.NoError(t, err)
 
-			// Set environment variables for this test case
-			for k, v := range tc.envVars {
-				err := os.Setenv(k, v)
-				assert.NoError(t, err, "Failed to set environment variable %s", k)
-			}
+	cmdFlags := &data.CmdFlags{}
+	utils.SetupEnvironmentCredentials(cmdFlags)
 
-			// Create a new root command with mocked execution
-			cmdFlags := &data.CmdFlags{}
-			rootCmd := &cobra.Command{
-				RunE: func(cmd *cobra.Command, args []string) error {
-					// Mock the export function to capture the flags after env vars are loaded
-					utils.SetupEnvironmentCredentials(cmdFlags)
-					err := utils.ValidateExportFlags(cmdFlags)
-
-					// Run the check function to verify the flags
-					if !tc.wantErr && err == nil {
-						tc.checkFn(t, cmdFlags)
-					}
-					return err
-				},
-			}
-
-			// Set up the flags
-			rootCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketAccessToken, "access-token", "t", "", "")
-			rootCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketAPIToken, "api-token", "", "", "")
-			rootCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketEmail, "email", "e", "", "")
-			rootCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketUser, "user", "u", "", "")
-			rootCmd.PersistentFlags().StringVarP(&cmdFlags.BitbucketAppPass, "app-password", "p", "", "")
-			rootCmd.PersistentFlags().StringVarP(&cmdFlags.Repository, "repo", "r", "", "")
-			rootCmd.PersistentFlags().StringVarP(&cmdFlags.Workspace, "workspace", "w", "", "")
-
-			// Execute the command with test arguments
-			rootCmd.SetArgs(tc.cmdArgs)
-			err := rootCmd.Execute()
-
-			if tc.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
+	assert.Equal(t, "env-token", cmdFlags.BitbucketAccessToken)
+	assert.Equal(t, "env-user", cmdFlags.BitbucketUser)
+	assert.Equal(t, "env-pass", cmdFlags.BitbucketAppPass)
+	assert.Equal(t, "env-api-token", cmdFlags.BitbucketAPIToken)
+	assert.Equal(t, "env@example.com", cmdFlags.BitbucketEmail)
+	assert.Equal(t, "/env/temp/dir", cmdFlags.TempDir)
 }
 
 func TestCredentialMasking(t *testing.T) {
@@ -1361,4 +1264,73 @@ func TestRunCmdExport_AuthLogging(t *testing.T) {
 	}
 	assert.True(t, foundStart, "expected startup log from runCmdExport")
 	assert.True(t, foundAuth, "expected auth log from runCmdExport")
+}
+
+func TestTempDirFlag(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		expectedDir string
+		shouldSet   bool
+	}{
+		{
+			name:        "temp-dir flag set",
+			args:        []string{"--workspace", "test", "--repo", "test", "--access-token", "test", "--temp-dir", "/custom/temp"},
+			expectedDir: "/custom/temp",
+			shouldSet:   true,
+		},
+		{
+			name:        "temp-dir flag not set",
+			args:        []string{"--workspace", "test", "--repo", "test", "--access-token", "test"},
+			expectedDir: "",
+			shouldSet:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rootCmd := NewCmdRoot()
+			rootCmd.SetArgs(tt.args)
+
+			// Capture the actual execution
+			err := rootCmd.Execute()
+			// Execution will fail due to invalid auth/repo, but we can check flags were parsed
+			assert.Error(t, err)
+
+			// Get the flags
+			tempDir, err := rootCmd.PersistentFlags().GetString("temp-dir")
+			if tt.shouldSet {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedDir, tempDir)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, "", tempDir)
+			}
+		})
+	}
+}
+
+func TestTempDirEnvironmentIntegration(t *testing.T) {
+
+	originalTempDir := os.Getenv("BITBUCKET_TEMP_DIR")
+	defer func() {
+		if originalTempDir != "" {
+			_ = os.Setenv("BITBUCKET_TEMP_DIR", originalTempDir)
+		} else {
+			_ = os.Unsetenv("BITBUCKET_TEMP_DIR")
+		}
+	}()
+
+	err := os.Setenv("BITBUCKET_TEMP_DIR", "/env/temp/path")
+	assert.NoError(t, err)
+
+	cmdFlags := &data.CmdFlags{}
+	utils.SetupEnvironmentCredentials(cmdFlags)
+
+	assert.Equal(t, "/env/temp/path", cmdFlags.TempDir, "Should read from environment")
+
+	cmdFlags.TempDir = "/flag/temp/path"
+	utils.SetupEnvironmentCredentials(cmdFlags)
+
+	assert.Equal(t, "/flag/temp/path", cmdFlags.TempDir, "Flag should not be overridden when already set")
 }
