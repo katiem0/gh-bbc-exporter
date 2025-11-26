@@ -325,6 +325,9 @@ func SetupEnvironmentCredentials(cmdFlags *data.CmdFlags) {
 	if cmdFlags.BitbucketEmail == "" {
 		cmdFlags.BitbucketEmail = os.Getenv("BITBUCKET_EMAIL")
 	}
+	if cmdFlags.TempDir == "" {
+		cmdFlags.TempDir = os.Getenv("BITBUCKET_TEMP_DIR")
+	}
 
 	// Add warning for multiple auth methods
 	if cmdFlags.BitbucketAccessToken != "" &&

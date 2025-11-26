@@ -62,6 +62,8 @@ func NewCmdRoot() *cobra.Command {
 		"Bitbucket workspace name")
 	exportCmd.PersistentFlags().StringVarP(&cmdFlags.Repository, "repo", "r", "",
 		"Name of the repository to export from Bitbucket Cloud")
+	exportCmd.PersistentFlags().StringVar(&cmdFlags.TempDir, "temp-dir", "",
+		"Temporary directory for cloning (env: BITBUCKET_TEMP_DIR)")
 	exportCmd.PersistentFlags().StringVarP(&cmdFlags.OutputDir, "output", "o", "",
 		"Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)")
 	exportCmd.PersistentFlags().BoolVar(&cmdFlags.OpenPRsOnly, "open-prs-only", false,
@@ -130,6 +132,10 @@ func runCmdExport(cmdFlags *data.CmdFlags, logger *zap.Logger) error {
 
 	exporter := utils.NewExporter(client, cmdFlags.OutputDir, logger, cmdFlags.OpenPRsOnly, cmdFlags.PRsFromDate)
 
+	if cmdFlags.TempDir != "" {
+		exporter.SetTempDir(cmdFlags.TempDir)
+		logger.Debug("Using custom temporary directory", zap.String("temp_dir", cmdFlags.TempDir))
+	}
 	// Run export
 	if err := exporter.Export(cmdFlags.Workspace, cmdFlags.Repository); err != nil {
 		logger.Error("Export failed")

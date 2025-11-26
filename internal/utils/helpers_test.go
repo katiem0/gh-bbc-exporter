@@ -148,20 +148,24 @@ func TestSetupEnvironmentCredentials(t *testing.T) {
 	if err := os.Unsetenv("BITBUCKET_EMAIL"); err != nil {
 		t.Fatalf("Failed to unset environment variable: %v", err)
 	}
+	if err := os.Unsetenv("BITBUCKET_TEMP_DIR"); err != nil {
+		t.Fatalf("Failed to unset environment variable: %v", err)
+	}
 
 	// Set environment variables
 	err := os.Setenv("BITBUCKET_USERNAME", "envuser")
 	assert.NoError(t, err)
 	err = os.Setenv("BITBUCKET_APP_PASSWORD", "envpass")
 	assert.NoError(t, err)
-	err = os.Setenv("BITBUCKET_ACCESS_TOKEN", "envtoken") // Corrected from BITBUCKET_TOKEN
+	err = os.Setenv("BITBUCKET_ACCESS_TOKEN", "envtoken")
 	assert.NoError(t, err)
-	err = os.Setenv("BITBUCKET_API_TOKEN", "envapitoken") // Added API token
+	err = os.Setenv("BITBUCKET_API_TOKEN", "envapitoken")
 	assert.NoError(t, err)
-	err = os.Setenv("BITBUCKET_EMAIL", "user@example.com") // Added email
+	err = os.Setenv("BITBUCKET_EMAIL", "user@example.com")
+	assert.NoError(t, err)
+	err = os.Setenv("BITBUCKET_TEMP_DIR", "/tmp/custom-temp-dir")
 	assert.NoError(t, err)
 
-	// Call the function
 	SetupEnvironmentCredentials(cmdFlags)
 
 	// Assert that the values are set correctly
@@ -170,6 +174,7 @@ func TestSetupEnvironmentCredentials(t *testing.T) {
 	assert.Equal(t, "envtoken", cmdFlags.BitbucketAccessToken, "Expected access token to be set from environment")
 	assert.Equal(t, "envapitoken", cmdFlags.BitbucketAPIToken, "Expected API token to be set from environment")
 	assert.Equal(t, "user@example.com", cmdFlags.BitbucketEmail, "Expected email to be set from environment")
+	assert.Equal(t, "/tmp/custom-temp-dir", cmdFlags.TempDir, "Expected temp dir to be set from environment")
 
 	// Clean up environment variables
 	err = os.Unsetenv("BITBUCKET_USERNAME")
@@ -181,6 +186,8 @@ func TestSetupEnvironmentCredentials(t *testing.T) {
 	err = os.Unsetenv("BITBUCKET_API_TOKEN")
 	assert.NoError(t, err)
 	err = os.Unsetenv("BITBUCKET_EMAIL")
+	assert.NoError(t, err)
+	err = os.Unsetenv("BITBUCKET_TEMP_DIR")
 	assert.NoError(t, err)
 }
 
@@ -1512,4 +1519,72 @@ func TestGetFullCommitSHAFromLocalRepo(t *testing.T) {
 
 	_, err = GetFullCommitSHAFromLocalRepo("/invalid/path", "abc123")
 	assert.Error(t, err, "Should error for invalid repo path")
+}
+
+func TestTempDirEnvironmentVariable(t *testing.T) {
+	originalTempDir := os.Getenv("BITBUCKET_TEMP_DIR")
+	defer func() {
+		if originalTempDir != "" {
+			_ = os.Setenv("BITBUCKET_TEMP_DIR", originalTempDir)
+		} else {
+			_ = os.Unsetenv("BITBUCKET_TEMP_DIR")
+		}
+	}()
+
+	testCases := []struct {
+		name           string
+		envValue       string
+		flagValue      string
+		expectedResult string
+		description    string
+	}{
+		{
+			name:           "Environment variable set, flag empty",
+			envValue:       "/env/temp/dir",
+			flagValue:      "",
+			expectedResult: "/env/temp/dir",
+			description:    "Should use environment variable when flag is empty",
+		},
+		{
+			name:           "Flag set, environment empty",
+			envValue:       "",
+			flagValue:      "/flag/temp/dir",
+			expectedResult: "/flag/temp/dir",
+			description:    "Should preserve flag value when environment is empty",
+		},
+		{
+			name:           "Both flag and environment set",
+			envValue:       "/env/temp/dir",
+			flagValue:      "/flag/temp/dir",
+			expectedResult: "/flag/temp/dir",
+			description:    "Should preserve flag value when both are set",
+		},
+		{
+			name:           "Both empty",
+			envValue:       "",
+			flagValue:      "",
+			expectedResult: "",
+			description:    "Should remain empty when both are empty",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.envValue != "" {
+				err := os.Setenv("BITBUCKET_TEMP_DIR", tc.envValue)
+				assert.NoError(t, err)
+			} else {
+				err := os.Unsetenv("BITBUCKET_TEMP_DIR")
+				assert.NoError(t, err)
+			}
+
+			cmdFlags := &data.CmdFlags{
+				TempDir: tc.flagValue,
+			}
+
+			SetupEnvironmentCredentials(cmdFlags)
+
+			assert.Equal(t, tc.expectedResult, cmdFlags.TempDir, tc.description)
+		})
+	}
 }

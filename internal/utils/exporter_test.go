@@ -1654,3 +1654,285 @@ func TestExportWithSkipCommitLookup(t *testing.T) {
 		t.Logf("Export error (expected if auth-related): %v", err)
 	}
 }
+
+func TestSetTempDir(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	client := &Client{}
+	exporter := NewExporter(client, "output", logger, false, "")
+
+	assert.Equal(t, "", exporter.tempDir, "Initial temp dir should be empty")
+
+	exporter.SetTempDir("/custom/temp")
+	assert.Equal(t, "/custom/temp", exporter.tempDir, "Temp dir should be set")
+
+	exporter.SetTempDir("/another/temp")
+	assert.Equal(t, "/another/temp", exporter.tempDir, "Temp dir should be updated")
+
+	exporter.SetTempDir("")
+	assert.Equal(t, "", exporter.tempDir, "Temp dir should be empty")
+}
+
+func TestCloneRepositoryWithCustomTempDir(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("Git not available for testing")
+	}
+
+	baseDir, err := os.MkdirTemp("", "clone-test-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(baseDir) }()
+
+	customTempDir := filepath.Join(baseDir, "custom-temp")
+	err = os.MkdirAll(customTempDir, 0755)
+	assert.NoError(t, err)
+
+	outputDir := filepath.Join(baseDir, "output")
+	err = os.MkdirAll(outputDir, 0755)
+	assert.NoError(t, err)
+
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		writeResponse(t, w, []byte(`{
+            "name": "repo",
+            "slug": "repo",
+            "mainbranch": {"name": "main"}
+        }`))
+	}))
+	defer testServer.Close()
+
+	logger, _ := zap.NewDevelopment()
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		commitSHACache: make(map[string]string),
+	}
+	exporter := NewExporter(client, outputDir, logger, false, "")
+	exporter.SetTempDir(customTempDir)
+
+	sourceRepo := filepath.Join(baseDir, "source.git")
+	cmd := exec.Command("git", "init", "--bare", sourceRepo)
+	err = cmd.Run()
+	assert.NoError(t, err)
+
+	err = exporter.CloneRepository("workspace", "repo", "file://"+sourceRepo)
+	if err != nil {
+		t.Logf("CloneRepository failed: %v", err)
+	} else {
+		t.Logf("CloneRepository succeeded")
+	}
+	assert.Equal(t, customTempDir, exporter.tempDir, "Custom temp dir should be set")
+}
+
+func TestCloneRepositoryDefaultTempDir(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("Git not available for testing")
+	}
+
+	baseDir, err := os.MkdirTemp("", "clone-default-temp-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(baseDir) }()
+
+	outputDir := filepath.Join(baseDir, "output")
+	err = os.MkdirAll(outputDir, 0755)
+	assert.NoError(t, err)
+
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		writeResponse(t, w, []byte(`{
+            "name": "repo",
+            "slug": "repo",
+            "mainbranch": {"name": "main"}
+        }`))
+	}))
+	defer testServer.Close()
+
+	logger, _ := zap.NewDevelopment()
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		commitSHACache: make(map[string]string),
+	}
+	exporter := NewExporter(client, outputDir, logger, false, "")
+
+	sourceRepo := filepath.Join(baseDir, "source.git")
+	cmd := exec.Command("git", "init", "--bare", sourceRepo)
+	err = cmd.Run()
+	assert.NoError(t, err)
+
+	err = exporter.CloneRepository("workspace", "repo", "file://"+sourceRepo)
+	if err != nil {
+		t.Logf("CloneRepository failed: %v", err)
+	} else {
+		t.Logf("CloneRepository succeeded")
+	}
+
+	assert.Equal(t, "", exporter.tempDir, "Temp dir should remain empty when not set")
+}
+
+func TestExporterTempDirConfiguration(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	client := &Client{}
+
+	testCases := []struct {
+		name        string
+		initialTemp string
+		setTemp     string
+		expected    string
+		description string
+	}{
+		{
+			name:        "No temp dir set",
+			initialTemp: "",
+			setTemp:     "",
+			expected:    "",
+			description: "Should remain empty when not set",
+		},
+		{
+			name:        "Set temp dir after creation",
+			initialTemp: "",
+			setTemp:     "/custom/temp",
+			expected:    "/custom/temp",
+			description: "Should update temp dir",
+		},
+		{
+			name:        "Clear temp dir",
+			initialTemp: "/initial/temp",
+			setTemp:     "",
+			expected:    "",
+			description: "Should clear temp dir",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			exporter := NewExporter(client, "output", logger, false, "")
+
+			if tc.initialTemp != "" {
+				exporter.SetTempDir(tc.initialTemp)
+			}
+
+			if tc.setTemp != "" || tc.initialTemp != "" {
+				exporter.SetTempDir(tc.setTemp)
+			}
+
+			assert.Equal(t, tc.expected, exporter.tempDir, tc.description)
+		})
+	}
+}
+
+func TestCloneRepositoryDefaultTempDirLogging(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("Git not available for testing")
+	}
+
+	baseDir, err := os.MkdirTemp("", "same-volume-test-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(baseDir) }()
+
+	outputDir := filepath.Join(baseDir, "output")
+	reposDir := filepath.Join(outputDir, "repositories", "workspace")
+	err = os.MkdirAll(reposDir, 0755)
+	assert.NoError(t, err)
+
+	sourceRepo := filepath.Join(baseDir, "source-work")
+	err = os.MkdirAll(sourceRepo, 0755)
+	assert.NoError(t, err)
+
+	cmd := exec.Command("git", "init")
+	cmd.Dir = sourceRepo
+	output, err := cmd.CombinedOutput()
+	assert.NoError(t, err, "git init failed: %s", string(output))
+
+	cmd = exec.Command("git", "config", "user.email", "test@example.com")
+	cmd.Dir = sourceRepo
+	_ = cmd.Run()
+
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = sourceRepo
+	_ = cmd.Run()
+
+	// Disable GPG/SSH signing for this repository
+	cmd = exec.Command("git", "config", "commit.gpgsign", "false")
+	cmd.Dir = sourceRepo
+	_ = cmd.Run()
+
+	cmd = exec.Command("git", "config", "gpg.format", "openpgp")
+	cmd.Dir = sourceRepo
+	_ = cmd.Run()
+
+	dummyFile := filepath.Join(sourceRepo, "README.md")
+	err = os.WriteFile(dummyFile, []byte("test"), 0644)
+	assert.NoError(t, err)
+
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = sourceRepo
+	output, err = cmd.CombinedOutput()
+	assert.NoError(t, err, "git add failed: %s", string(output))
+
+	cmd = exec.Command("git", "commit", "-m", "initial commit")
+	cmd.Dir = sourceRepo
+	output, err = cmd.CombinedOutput()
+	assert.NoError(t, err, "git commit failed: %s", string(output))
+
+	bareRepo := filepath.Join(baseDir, "source.git")
+	cmd = exec.Command("git", "init", "--bare", bareRepo)
+	output, err = cmd.CombinedOutput()
+	assert.NoError(t, err, "git init --bare failed: %s", string(output))
+
+	cmd = exec.Command("git", "remote", "add", "origin", bareRepo)
+	cmd.Dir = sourceRepo
+	output, err = cmd.CombinedOutput()
+	assert.NoError(t, err, "git remote add failed: %s", string(output))
+
+	cmd = exec.Command("git", "branch", "--show-current")
+	cmd.Dir = sourceRepo
+	branchOutput, err := cmd.CombinedOutput()
+	assert.NoError(t, err)
+	currentBranch := strings.TrimSpace(string(branchOutput))
+	if currentBranch == "" {
+		currentBranch = "master" // fallback for older git versions
+	}
+
+	cmd = exec.Command("git", "push", "-u", "origin", currentBranch)
+	cmd.Dir = sourceRepo
+	output, err = cmd.CombinedOutput()
+	assert.NoError(t, err, "git push failed: %s", string(output))
+
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		writeResponse(t, w, []byte(fmt.Sprintf(`{
+            "name": "repo",
+            "slug": "repo",
+            "mainbranch": {"name": "%s"}
+        }`, currentBranch)))
+	}))
+	defer testServer.Close()
+
+	core, observedLogs := observer.New(zap.DebugLevel)
+	observableLogger := zap.New(core)
+
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         observableLogger,
+		commitSHACache: make(map[string]string),
+	}
+	exporter := NewExporter(client, outputDir, observableLogger, false, "")
+
+	err = exporter.CloneRepository("workspace", "repo", "file://"+bareRepo)
+	assert.NoError(t, err)
+
+	logs := observedLogs.All()
+	foundTempDirLog := false
+	for _, log := range logs {
+		if strings.Contains(log.Message, "temporary") || strings.Contains(log.Message, "temp") {
+			foundTempDirLog = true
+			break
+		}
+	}
+	assert.True(t, foundTempDirLog, "Should log about temporary directory usage")
+
+	repoPath := filepath.Join(outputDir, "repositories", "workspace", "repo.git")
+	assert.DirExists(t, repoPath, "Repository should be created")
+}
