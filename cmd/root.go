@@ -63,7 +63,7 @@ func NewCmdRoot() *cobra.Command {
 	exportCmd.PersistentFlags().StringVarP(&cmdFlags.Repository, "repo", "r", "",
 		"Name of the repository to export from Bitbucket Cloud")
 	exportCmd.PersistentFlags().StringVar(&cmdFlags.TempDir, "temp-dir", "",
-		"Temporary directory for cloning (default: system temp, env: BITBUCKET_TEMP_DIR)")
+		"Temporary directory for cloning (env: BITBUCKET_TEMP_DIR)")
 	exportCmd.PersistentFlags().StringVarP(&cmdFlags.OutputDir, "output", "o", "",
 		"Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)")
 	exportCmd.PersistentFlags().BoolVar(&cmdFlags.OpenPRsOnly, "open-prs-only", false,
