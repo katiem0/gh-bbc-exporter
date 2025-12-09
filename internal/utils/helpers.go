@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cli/go-gh/v2/pkg/auth"
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -25,6 +26,19 @@ var (
 	hexPatternRegex           = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	prNumberPattern           = regexp.MustCompile(`\b#(\d+)\b`)
 )
+
+func GetGitHubAuthToken(migrateFlags *data.CmdMigrateFlags) (string, error) {
+	if migrateFlags.GitHubPAT == "" {
+		migrateFlags.GitHubPAT = os.Getenv("GH_PAT")
+	}
+
+	if migrateFlags.GitHubPAT != "" {
+		return migrateFlags.GitHubPAT, nil
+	}
+
+	token, _ := auth.TokenForHost("github.com")
+	return token, nil
+}
 
 func formatDateToZ(inputDate string) string {
 	if inputDate == "" {
@@ -177,23 +191,16 @@ func formatURL(urlType string, workspace, repoSlug string, id ...interface{}) st
 }
 
 func extractPRNumber(prURL string) string {
-	// Extract the PR number from a Bitbucket PR URL
-	// Example: https://bitbucket.org/workspace/repo/pull/123
-
-	// First check if this is a PR URL
 	if !strings.Contains(prURL, "/pull/") {
 		return ""
 	}
 
-	// Split the URL by "/" and find the part after "pull"
 	parts := strings.Split(prURL, "/")
 	for i := 0; i < len(parts)-1; i++ {
 		if parts[i] == "pull" {
-			// Get the next part which should be the PR number
 			prNumber := parts[i+1]
-			// Remove any query parameters
 			prNumber = strings.Split(prNumber, "?")[0]
-			// Remove any additional path segments
+			prNumber = strings.Split(prNumber, "#")[0]
 			prNumber = strings.Split(prNumber, "/")[0]
 			return prNumber
 		}

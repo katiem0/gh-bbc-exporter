@@ -105,7 +105,6 @@ func runCmdExport(cmdExportFlags *data.CmdExportFlags, logger *zap.Logger) error
 			zap.String("username", cmdExportFlags.BitbucketUser))
 	}
 
-	// Create Bitbucket client and exporter
 	client := utils.NewClient(
 		cmdExportFlags.BitbucketAPIURL,
 		cmdExportFlags.BitbucketAccessToken,

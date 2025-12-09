@@ -273,7 +273,6 @@ func TestCmdMigrateFlagsStruct(t *testing.T) {
 
 	assert.Empty(t, flags.TargetOrg)
 	assert.Empty(t, flags.TargetRepo)
-	assert.Empty(t, flags.TargetAPIUrl)
 	assert.Empty(t, flags.GitHubPAT)
 	assert.False(t, flags.UseGitHubStorage)
 	assert.Empty(t, flags.AzureStorageConnectionString)

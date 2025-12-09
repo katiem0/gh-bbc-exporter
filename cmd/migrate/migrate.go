@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/cli/go-gh/v2/pkg/api"
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
 	"github.com/katiem0/gh-bbc-exporter/internal/log"
 	"github.com/katiem0/gh-bbc-exporter/internal/utils"
@@ -14,6 +15,7 @@ import (
 func NewCmdMigrate() *cobra.Command {
 	exportFlags := data.CmdExportFlags{}
 	migrateFlags := data.CmdMigrateFlags{}
+	var authToken string
 
 	migrateCmd := &cobra.Command{
 		Use:   "migrate [flags]",
@@ -32,6 +34,8 @@ func NewCmdMigrate() *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var gqlClient *api.GraphQLClient
+			var restClient *api.RESTClient
 			cmd.SilenceUsage = true
 			logger, err := log.NewLogger(exportFlags.Debug)
 			if err != nil {
@@ -41,7 +45,40 @@ func NewCmdMigrate() *cobra.Command {
 				_ = logger.Sync()
 			}()
 			zap.ReplaceGlobals(logger)
-			return runCmdMigrate(&exportFlags, &migrateFlags, logger)
+			host := "github.com"
+
+			authToken, err = utils.GetGitHubAuthToken(&migrateFlags)
+			if err != nil {
+				return fmt.Errorf("failed to get GitHub authentication token: %w", err)
+			}
+
+			gqlClient, err = api.NewGraphQLClient(api.ClientOptions{
+				Headers: map[string]string{
+					"Accept": "application/vnd.github.hawkgirl-preview+json",
+				},
+				Host:      host,
+				AuthToken: authToken,
+			})
+
+			if err != nil {
+				zap.S().Errorf("Error arose retrieving graphql client")
+				return err
+			}
+
+			restClient, err = api.NewRESTClient(api.ClientOptions{
+				Headers: map[string]string{
+					"Accept": "application/vnd.github+json",
+				},
+				Host:      host,
+				AuthToken: authToken,
+			})
+
+			if err != nil {
+				zap.S().Errorf("Error arose retrieving rest client")
+				return err
+			}
+
+			return runCmdMigrate(&exportFlags, &migrateFlags, utils.NewAPIGetter(gqlClient, restClient), logger)
 		},
 	}
 
@@ -76,11 +113,9 @@ func NewCmdMigrate() *cobra.Command {
 		"Target GitHub organization (required)")
 	migrateCmd.PersistentFlags().StringVar(&migrateFlags.TargetRepo, "target-repo", "",
 		"Target repository name (defaults to source repo name)")
-	migrateCmd.PersistentFlags().StringVarP(&migrateFlags.TargetAPIUrl, "github-api-url", "",
-		"https://api.github.com", "The URL of the target API, if not migrating to github.com")
 	migrateCmd.PersistentFlags().StringVar(&migrateFlags.GitHubPAT, "github-target-pat", "",
-		"GitHub Personal Access Token (env: GITHUB_PAT)")
-	migrateCmd.PersistentFlags().BoolVar(&migrateFlags.UseGitHubStorage, "use-github-storage", false,
+		"GitHub Personal Access Token (env: GH_PAT)")
+	migrateCmd.PersistentFlags().BoolVar(&migrateFlags.UseGitHubStorage, "use-github-storage", true,
 		"Use GitHub-owned storage for migration")
 	migrateCmd.PersistentFlags().StringVar(&migrateFlags.AzureStorageConnectionString, "azure-storage-connection-string", "",
 		"The connection string for the Azure storage account, used to upload data archives pre-migration.")
@@ -115,7 +150,7 @@ func NewCmdMigrate() *cobra.Command {
 	return migrateCmd
 }
 
-func runCmdMigrate(exportFlags *data.CmdExportFlags, migrateFlags *data.CmdMigrateFlags, logger *zap.Logger) error {
+func runCmdMigrate(exportFlags *data.CmdExportFlags, migrateFlags *data.CmdMigrateFlags, g *utils.APIGetter, logger *zap.Logger) error {
 	logger.Info("Starting Bitbucket to GitHub migration",
 		zap.String("source", fmt.Sprintf("%s/%s", exportFlags.Workspace, exportFlags.Repository)),
 		zap.String("target", fmt.Sprintf("%s/%s", migrateFlags.TargetOrg, migrateFlags.TargetRepo)))
@@ -145,15 +180,12 @@ func runCmdMigrate(exportFlags *data.CmdExportFlags, migrateFlags *data.CmdMigra
 		return fmt.Errorf("export failed: %w", err)
 	}
 
-	archivePath, err := exporter.CreateArchive()
-	if err != nil {
-		return fmt.Errorf("failed to create archive: %w", err)
-	}
+	archivePath := exporter.GetOutputPath()
 
-	logger.Info("Export completed", zap.String("archive", archivePath))
-	logger.Info("Step 2: Importing to GitHub Enterprise Cloud")
+	logger.Info("Step 2: Importing to GitHub Enterprise Cloud",
+		zap.String("archive", archivePath))
 
-	if err := utils.RunGitHubImport(exportFlags, migrateFlags, archivePath, logger); err != nil {
+	if err := utils.RunGitHubAPIMigration(exportFlags, migrateFlags, archivePath, g, logger); err != nil {
 		return fmt.Errorf("import failed: %w", err)
 	}
 

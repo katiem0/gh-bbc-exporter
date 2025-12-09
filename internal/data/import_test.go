@@ -130,7 +130,6 @@ func TestCmdMigrateFlagsDefaults(t *testing.T) {
 	assert.Empty(t, migrateFlags.TargetOrg)
 	assert.Empty(t, migrateFlags.TargetRepo)
 	assert.Empty(t, migrateFlags.GitHubPAT)
-	assert.Empty(t, migrateFlags.TargetAPIUrl)
 	assert.False(t, migrateFlags.UseGitHubStorage)
 	assert.Empty(t, migrateFlags.AzureStorageConnectionString)
 	assert.Empty(t, migrateFlags.AWSBucketName)
@@ -147,7 +146,6 @@ func TestCmdMigrateFlagsWithValues(t *testing.T) {
 		TargetOrg:                    "github-org",
 		TargetRepo:                   "github-repo",
 		GitHubPAT:                    "ghp_token",
-		TargetAPIUrl:                 "https://api.github.com",
 		UseGitHubStorage:             true,
 		AzureStorageConnectionString: "azure-conn-string",
 		AWSBucketName:                "my-bucket",
@@ -162,7 +160,6 @@ func TestCmdMigrateFlagsWithValues(t *testing.T) {
 	assert.Equal(t, "github-org", flags.TargetOrg)
 	assert.Equal(t, "github-repo", flags.TargetRepo)
 	assert.Equal(t, "ghp_token", flags.GitHubPAT)
-	assert.Equal(t, "https://api.github.com", flags.TargetAPIUrl)
 	assert.True(t, flags.UseGitHubStorage)
 	assert.Equal(t, "azure-conn-string", flags.AzureStorageConnectionString)
 	assert.Equal(t, "my-bucket", flags.AWSBucketName)
@@ -364,42 +361,4 @@ func TestCmdMigrateFlagsTargetRepoInheritance(t *testing.T) {
 	}
 
 	assert.Equal(t, "different-target-repo", flagsWithTarget.TargetRepo)
-}
-
-func TestCmdMigrateFlagsGitHubEnterpriseURLs(t *testing.T) {
-	testCases := []struct {
-		name     string
-		apiURL   string
-		expected string
-	}{
-		{
-			name:     "Default GitHub.com",
-			apiURL:   "https://api.github.com",
-			expected: "https://api.github.com",
-		},
-		{
-			name:     "GitHub Enterprise",
-			apiURL:   "https://github.mycompany.com/api/v3",
-			expected: "https://github.mycompany.com/api/v3",
-		},
-		{
-			name:     "GitHub Enterprise with port",
-			apiURL:   "https://github.internal.com:8443/api/v3",
-			expected: "https://github.internal.com:8443/api/v3",
-		},
-		{
-			name:     "Empty URL",
-			apiURL:   "",
-			expected: "",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			flags := CmdMigrateFlags{
-				TargetAPIUrl: tc.apiURL,
-			}
-			assert.Equal(t, tc.expected, flags.TargetAPIUrl)
-		})
-	}
 }

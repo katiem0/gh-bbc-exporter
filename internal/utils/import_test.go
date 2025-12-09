@@ -254,10 +254,8 @@ func TestMigrateGitHubAPIConfiguration(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			flags := data.CmdMigrateFlags{
-				TargetAPIUrl: tc.apiURL,
-				GitHubPAT:    tc.pat,
+				GitHubPAT: tc.pat,
 			}
-			assert.Equal(t, tc.expected, flags.TargetAPIUrl)
 			assert.Equal(t, tc.pat, flags.GitHubPAT)
 		})
 	}
