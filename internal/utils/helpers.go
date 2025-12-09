@@ -13,7 +13,10 @@ import (
 	"time"
 
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"go.uber.org/zap"
+	"golang.org/x/term"
 )
 
 var (
@@ -28,7 +31,6 @@ func formatDateToZ(inputDate string) string {
 		return ""
 	}
 
-	// Try parsing with various formats
 	formats := []string{
 		"2006-01-02T15:04:05.999999+00:00",
 		"2006-01-02T15:04:05.999999-07:00",
@@ -48,8 +50,6 @@ func formatDateToZ(inputDate string) string {
 		}
 	}
 
-	// Return empty string for invalid date formats
-	// instead of returning the input string unchanged
 	return ""
 }
 
@@ -252,7 +252,7 @@ func (e *Exporter) updateRepositoryField(repoSlug string, field string, value in
 		zap.String(field, fmt.Sprintf("%v", value)))
 }
 
-func ValidateExportFlags(cmdFlags *data.CmdFlags) error {
+func ValidateExportFlags(cmdFlags *data.CmdExportFlags) error {
 	hasToken := cmdFlags.BitbucketAccessToken != ""
 	hasAPIToken := cmdFlags.BitbucketAPIToken != ""
 	hasEmail := cmdFlags.BitbucketEmail != ""
@@ -309,7 +309,7 @@ func ValidateExportFlags(cmdFlags *data.CmdFlags) error {
 	return nil
 }
 
-func SetupEnvironmentCredentials(cmdFlags *data.CmdFlags) {
+func SetupEnvironmentCredentials(cmdFlags *data.CmdExportFlags) {
 	if cmdFlags.BitbucketUser == "" {
 		cmdFlags.BitbucketUser = os.Getenv("BITBUCKET_USERNAME")
 	}
@@ -671,4 +671,51 @@ func (e *Exporter) validateGitReferences(repoPath string) error {
 	}
 
 	return nil
+}
+
+func getTerminalWidth() int {
+	width, _, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || width <= 0 {
+		return 100 // default fallback
+	}
+	return width
+}
+
+func SetupCommandUsageTemplate(cmd *cobra.Command, defaultWidth int) {
+	cmd.Flags().SortFlags = false
+	cmd.PersistentFlags().SortFlags = false
+
+	cobra.AddTemplateFunc("wrappedFlagUsages", func(fs *pflag.FlagSet) string {
+		fs.SetOutput(nil)
+		width := getTerminalWidth()
+		if width < 40 {
+			width = 40
+		}
+		return fs.FlagUsagesWrapped(width)
+	})
+
+	cmd.SetUsageTemplate(`Usage:{{if .Runnable}}
+  {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}
+  {{.CommandPath}} [command]{{end}}{{if gt (len .Aliases) 0}}
+
+Aliases:
+  {{.NameAndAliases}}{{end}}{{if .HasExample}}
+
+Examples:
+{{.Example}}{{end}}{{if .HasAvailableSubCommands}}
+
+Available Commands:{{range .Commands}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
+  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+
+Flags:
+{{wrappedFlagUsages .LocalFlags | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
+
+Global Flags:
+{{wrappedFlagUsages .InheritedFlags | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
+
+Additional help topics:{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
+  {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
+
+Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}
+`)
 }
