@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/cli/go-gh/v2/pkg/api"
 	graphql "github.com/cli/shurcooL-graphql"
@@ -28,7 +29,6 @@ func NewAPIGetter(gqlClient *api.GraphQLClient, restClient *api.RESTClient) *API
 }
 
 func RunGitHubAPIMigration(exportFlags *data.CmdExportFlags, migrateFlags *data.CmdMigrateFlags, archivePath string, g *APIGetter, logger *zap.Logger) error {
-	// Determine target repository name
 	targetRepo := migrateFlags.TargetRepo
 	if targetRepo == "" {
 		targetRepo = exportFlags.Repository
@@ -87,9 +87,9 @@ func RunGitHubAPIMigration(exportFlags *data.CmdExportFlags, migrateFlags *data.
 
 	// Step 5: Monitor migration status
 	logger.Info("Migration started", zap.String("migrationID", migrationID))
-	// if err := monitorMigrationStatus(g, migrationID, logger); err != nil {
-	// 	return fmt.Errorf("migration failed: %w", err)
-	// }
+	if err := g.monitorMigrationStatus(migrationID, logger); err != nil {
+		return fmt.Errorf("migration failed: %w", err)
+	}
 
 	return nil
 }
@@ -148,4 +148,28 @@ func (g *APIGetter) startRepositoryMigration(sourceID string, orgID string, targ
 	migrationID := mutation.StartRepositoryMigration.RepositoryMigration.ID
 
 	return migrationID, nil
+}
+
+func (g *APIGetter) monitorMigrationStatus(id string, logger *zap.Logger) error {
+	query := new(data.MigrationStatusQuery)
+	variables := map[string]interface{}{
+		"id": graphql.ID(id),
+	}
+
+	for {
+		err := g.gqlClient.Query("GetMigrationStatus", &query, variables)
+		if err != nil {
+			return fmt.Errorf("failed to get migration status: %w", err)
+		}
+
+		migrationStatus := query.Node.Migration.State
+		logger.Info("Monitoring migration status", zap.String("status", migrationStatus))
+
+		if migrationStatus == "SUCCEEDED" {
+			return nil
+		} else if migrationStatus == "FAILED" {
+			return fmt.Errorf("migration failed: %s", query.Node.Migration.FailureReason)
+		}
+		time.Sleep(10 * time.Second)
+	}
 }

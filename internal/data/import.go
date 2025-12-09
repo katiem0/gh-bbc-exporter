@@ -1,12 +1,9 @@
 package data
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
 
 	graphql "github.com/cli/shurcooL-graphql"
-	"go.uber.org/zap"
 )
 
 type RepoVisibility string
@@ -24,31 +21,6 @@ type CmdMigrateFlags struct {
 	AWSSessionToken              string
 	AWSRegion                    string
 	KeepArchive                  bool
-}
-
-type GitHubMigrator struct {
-	httpClient  *http.Client
-	graphqlURL  string
-	uploadURL   string
-	pat         string
-	logger      *zap.Logger
-	sourceOrg   string
-	targetOrg   string
-	targetRepo  string
-	visibility  string
-	archivePath string
-}
-
-type GraphQLRequest struct {
-	Query     string                 `json:"query"`
-	Variables map[string]interface{} `json:"variables,omitempty"`
-}
-
-type GraphQLResponse struct {
-	Data   json.RawMessage `json:"data"`
-	Errors []struct {
-		Message string `json:"message"`
-	} `json:"errors,omitempty"`
 }
 
 type OrganizationIDQuery struct {
@@ -96,12 +68,14 @@ type StartRepositoryMigrationInput struct {
 	TargetRepoVisibility graphql.String  `json:"targetRepoVisibility"`
 }
 
-type MigrationStatusResponse struct {
+type MigrationStatusQuery struct {
 	Node struct {
-		ID            string `json:"id"`
-		State         string `json:"state"`
-		FailureReason string `json:"failureReason,omitempty"`
-	} `json:"node"`
+		Migration struct {
+			ID            graphql.ID `json:"id"`
+			State         string     `json:"state"`
+			FailureReason string     `json:"failureReason"`
+		} `graphql:"... on Migration"`
+	} `graphql:"node(id: $id)"`
 }
 
 type UploadResponse struct {
