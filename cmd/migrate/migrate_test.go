@@ -59,16 +59,8 @@ func TestMigrateCommandFlags(t *testing.T) {
 		{"skip-commit-lookup", "", "false"},
 		{"target-org", "", ""},
 		{"target-repo", "", ""},
-		{"github-api-url", "", "https://api.github.com"},
 		{"github-target-pat", "", ""},
-		{"use-github-storage", "", "false"},
-		{"azure-storage-connection-string", "", ""},
-		{"aws-bucket-name", "", ""},
-		{"aws-region", "", ""},
-		{"aws-access-key", "", ""},
-		{"aws-secret-key", "", ""},
-		{"aws-session-token", "", ""},
-		{"target-repo-visibility", "", ""},
+		{"target-repo-visibility", "", "private"},
 		{"keep-archive", "", "false"},
 		{"debug", "d", "false"},
 	}
@@ -209,15 +201,16 @@ func TestRepoVisibilityFlag(t *testing.T) {
 
 func TestRepoVisibilityValidValues(t *testing.T) {
 	testCases := []struct {
-		name        string
-		value       string
-		expectError bool
+		name           string
+		value          string
+		expectError    bool
+		expectedString string
 	}{
-		{"Public visibility", "public", false},
-		{"Private visibility", "private", false},
-		{"Internal visibility", "internal", false},
-		{"Empty visibility", "", false},
-		{"Invalid visibility", "invalid", true},
+		{"Public visibility", "public", false, "public"},
+		{"Private visibility", "private", false, "private"},
+		{"Internal visibility", "internal", false, "internal"},
+		{"Empty visibility defaults to private", "", false, "private"},
+		{"Invalid visibility", "invalid", true, ""},
 	}
 
 	for _, tc := range testCases {
@@ -230,7 +223,7 @@ func TestRepoVisibilityValidValues(t *testing.T) {
 				assert.Contains(t, err.Error(), "must be one of")
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tc.value, visibility.String())
+				assert.Equal(t, tc.expectedString, visibility.String())
 			}
 		})
 	}
@@ -274,13 +267,6 @@ func TestCmdMigrateFlagsStruct(t *testing.T) {
 	assert.Empty(t, flags.TargetOrg)
 	assert.Empty(t, flags.TargetRepo)
 	assert.Empty(t, flags.GitHubPAT)
-	assert.False(t, flags.UseGitHubStorage)
-	assert.Empty(t, flags.AzureStorageConnectionString)
-	assert.Empty(t, flags.AWSBucketName)
-	assert.Empty(t, flags.AWSRegion)
-	assert.Empty(t, flags.AWSAccessKey)
-	assert.Empty(t, flags.AWSSecretKey)
-	assert.Empty(t, flags.AWSSessionToken)
 	assert.False(t, flags.KeepArchive)
 }
 
@@ -323,7 +309,7 @@ func TestRepoVisibilityString(t *testing.T) {
 		value    data.RepoVisibility
 		expected string
 	}{
-		{"Empty visibility", data.RepoVisibility(""), ""},
+		{"Empty visibility defaults to private", data.RepoVisibility(""), "private"},
 		{"Public visibility", data.RepoVisibility("public"), "public"},
 		{"Private visibility", data.RepoVisibility("private"), "private"},
 		{"Internal visibility", data.RepoVisibility("internal"), "internal"},
@@ -443,59 +429,6 @@ func TestMigratePRFilterFlags(t *testing.T) {
 	}
 }
 
-func TestMigrateStorageProviderFlags(t *testing.T) {
-	cmd := NewCmdMigrate()
-
-	testCases := []struct {
-		name        string
-		args        []string
-		expectError bool
-	}{
-		{
-			name: "GitHub storage provider",
-			args: []string{
-				"--workspace", "test-ws",
-				"--repo", "test-repo",
-				"--target-org", "test-org",
-				"--use-github-storage",
-			},
-			expectError: false,
-		},
-		{
-			name: "Azure storage provider",
-			args: []string{
-				"--workspace", "test-ws",
-				"--repo", "test-repo",
-				"--target-org", "test-org",
-				"--azure-storage-connection-string", "DefaultEndpointsProtocol=https;AccountName=test",
-			},
-			expectError: false,
-		},
-		{
-			name: "AWS storage provider",
-			args: []string{
-				"--workspace", "test-ws",
-				"--repo", "test-repo",
-				"--target-org", "test-org",
-				"--aws-bucket-name", "test-bucket",
-				"--aws-region", "us-east-1",
-			},
-			expectError: false,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			err := cmd.ParseFlags(tc.args)
-			if tc.expectError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
 func TestMigrateTargetRepoFlag(t *testing.T) {
 
 	testCases := []struct {
@@ -533,51 +466,6 @@ func TestMigrateTargetRepoFlag(t *testing.T) {
 			flag := cmd.PersistentFlags().Lookup("target-repo")
 			assert.NotNil(t, flag)
 			assert.Equal(t, tc.expectedRepo, flag.Value.String())
-		})
-	}
-}
-
-func TestMigrateGitHubAPIURLFlag(t *testing.T) {
-	cmd := NewCmdMigrate()
-
-	testCases := []struct {
-		name        string
-		apiURL      string
-		expectedURL string
-	}{
-		{
-			name:        "Default GitHub API URL",
-			apiURL:      "",
-			expectedURL: "https://api.github.com",
-		},
-		{
-			name:        "GitHub Enterprise Server URL",
-			apiURL:      "https://github.mycompany.com/api/v3",
-			expectedURL: "https://github.mycompany.com/api/v3",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			args := []string{
-				"--workspace", "test-ws",
-				"--repo", "test-repo",
-				"--target-org", "test-org",
-			}
-			if tc.apiURL != "" {
-				args = append(args, "--github-api-url", tc.apiURL)
-			}
-
-			err := cmd.ParseFlags(args)
-			assert.NoError(t, err)
-
-			flag := cmd.PersistentFlags().Lookup("github-api-url")
-			assert.NotNil(t, flag)
-			if tc.apiURL == "" {
-				assert.Equal(t, tc.expectedURL, flag.DefValue)
-			} else {
-				assert.Equal(t, tc.expectedURL, flag.Value.String())
-			}
 		})
 	}
 }
@@ -706,30 +594,6 @@ func TestMigrateBitbucketAPIURLFlag(t *testing.T) {
 	}
 }
 
-func TestMigrateAWSCredentialsFlags(t *testing.T) {
-	cmd := NewCmdMigrate()
-
-	args := []string{
-		"--workspace", "test-ws",
-		"--repo", "test-repo",
-		"--target-org", "test-org",
-		"--aws-bucket-name", "my-bucket",
-		"--aws-region", "us-west-2",
-		"--aws-access-key", "AKIAIOSFODNN7EXAMPLE",
-		"--aws-secret-key", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-		"--aws-session-token", "session-token-value",
-	}
-
-	err := cmd.ParseFlags(args)
-	assert.NoError(t, err)
-
-	assert.Equal(t, "my-bucket", cmd.PersistentFlags().Lookup("aws-bucket-name").Value.String())
-	assert.Equal(t, "us-west-2", cmd.PersistentFlags().Lookup("aws-region").Value.String())
-	assert.Equal(t, "AKIAIOSFODNN7EXAMPLE", cmd.PersistentFlags().Lookup("aws-access-key").Value.String())
-	assert.Equal(t, "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", cmd.PersistentFlags().Lookup("aws-secret-key").Value.String())
-	assert.Equal(t, "session-token-value", cmd.PersistentFlags().Lookup("aws-session-token").Value.String())
-}
-
 func TestMigrateCommandLongDescription(t *testing.T) {
 	cmd := NewCmdMigrate()
 
@@ -752,14 +616,12 @@ func TestCmdMigrateFlagsWithRepoVisibility(t *testing.T) {
 		TargetRepo:           "test-repo",
 		TargetRepoVisibility: data.RepoVisibility("private"),
 		KeepArchive:          true,
-		UseGitHubStorage:     false,
 	}
 
 	assert.Equal(t, "test-org", flags.TargetOrg)
 	assert.Equal(t, "test-repo", flags.TargetRepo)
 	assert.Equal(t, "private", flags.TargetRepoVisibility.String())
 	assert.True(t, flags.KeepArchive)
-	assert.False(t, flags.UseGitHubStorage)
 }
 
 func TestMigrateAllFlagsPresent(t *testing.T) {
@@ -781,15 +643,7 @@ func TestMigrateAllFlagsPresent(t *testing.T) {
 		"skip-commit-lookup",
 		"target-org",
 		"target-repo",
-		"github-api-url",
 		"github-target-pat",
-		"use-github-storage",
-		"azure-storage-connection-string",
-		"aws-bucket-name",
-		"aws-region",
-		"aws-access-key",
-		"aws-secret-key",
-		"aws-session-token",
 		"target-repo-visibility",
 		"keep-archive",
 		"debug",
@@ -945,7 +799,7 @@ func TestMigrateMixedAuthenticationMethods(t *testing.T) {
 				"--api-token", "api-token",
 			},
 			expectError: true,
-			errorMsg:    "email",
+			errorMsg:    "authentication credentials required",
 		},
 		{
 			name: "User without app password - should fail",
@@ -956,7 +810,7 @@ func TestMigrateMixedAuthenticationMethods(t *testing.T) {
 				"--user", "user",
 			},
 			expectError: true,
-			errorMsg:    "app password",
+			errorMsg:    "authentication credentials required",
 		},
 	}
 
@@ -978,6 +832,31 @@ func TestMigrateMixedAuthenticationMethods(t *testing.T) {
 
 func TestMigratePRsFromDateValidation(t *testing.T) {
 	defer cleanupExportDirs(t)
+
+	// Clear all authentication environment variables
+	envVars := []string{
+		"BITBUCKET_ACCESS_TOKEN",
+		"BITBUCKET_API_TOKEN",
+		"BITBUCKET_EMAIL",
+		"BITBUCKET_USERNAME",
+		"BITBUCKET_APP_PASSWORD",
+	}
+
+	originalValues := make(map[string]string)
+	for _, v := range envVars {
+		originalValues[v] = os.Getenv(v)
+		_ = os.Unsetenv(v)
+	}
+
+	defer func() {
+		for k, v := range originalValues {
+			if v != "" {
+				_ = os.Setenv(k, v)
+			} else {
+				_ = os.Unsetenv(k)
+			}
+		}
+	}()
 
 	testCases := []struct {
 		name        string
@@ -1080,22 +959,6 @@ func TestMigrateNoAuthenticationProvided(t *testing.T) {
 	assert.Contains(t, err.Error(), "authentication")
 }
 
-func TestMigrateStorageProviderConflicts(t *testing.T) {
-	cmd := NewCmdMigrate()
-
-	args := []string{
-		"--workspace", "test-ws",
-		"--repo", "test-repo",
-		"--target-org", "test-org",
-		"--use-github-storage",
-		"--azure-storage-connection-string", "test-connection",
-		"--aws-bucket-name", "test-bucket",
-	}
-
-	err := cmd.ParseFlags(args)
-	assert.NoError(t, err, "Flags should parse without error")
-}
-
 func TestMigrateTargetRepoDefaultsToSourceRepo(t *testing.T) {
 	cmd := NewCmdMigrate()
 
@@ -1150,26 +1013,6 @@ func TestMigrateCombinedPRFilters(t *testing.T) {
 
 	prsFromDateFlag := cmd.PersistentFlags().Lookup("prs-from-date")
 	assert.Equal(t, "2023-06-01", prsFromDateFlag.Value.String())
-}
-
-func TestMigrateAzureStorageFlag(t *testing.T) {
-	cmd := NewCmdMigrate()
-
-	connectionString := "DefaultEndpointsProtocol=https;AccountName=mystorageaccount;AccountKey=mykey;EndpointSuffix=core.windows.net"
-
-	args := []string{
-		"--workspace", "test-ws",
-		"--repo", "test-repo",
-		"--target-org", "test-org",
-		"--azure-storage-connection-string", connectionString,
-	}
-
-	err := cmd.ParseFlags(args)
-	assert.NoError(t, err)
-
-	flag := cmd.PersistentFlags().Lookup("azure-storage-connection-string")
-	assert.NotNil(t, flag)
-	assert.Equal(t, connectionString, flag.Value.String())
 }
 
 func TestMigrateRepoVisibilityValues(t *testing.T) {
@@ -1259,65 +1102,6 @@ func TestMigrateCommandDisabledFlagSorting(t *testing.T) {
 	assert.False(t, cmd.PersistentFlags().SortFlags, "Persistent flags should not be sorted")
 }
 
-func TestMigrateGitHubEnterpriseURL(t *testing.T) {
-	cmd := NewCmdMigrate()
-
-	testCases := []struct {
-		name string
-		url  string
-	}{
-		{"Standard GitHub Enterprise", "https://github.mycompany.com/api/v3"},
-		{"GitHub Enterprise with port", "https://github.mycompany.com:8443/api/v3"},
-		{"GitHub Enterprise with subdomain", "https://ghe.internal.mycompany.com/api/v3"},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			args := []string{
-				"--workspace", "test-ws",
-				"--repo", "test-repo",
-				"--target-org", "test-org",
-				"--github-api-url", tc.url,
-			}
-
-			err := cmd.ParseFlags(args)
-			assert.NoError(t, err)
-
-			flag := cmd.PersistentFlags().Lookup("github-api-url")
-			assert.Equal(t, tc.url, flag.Value.String())
-		})
-	}
-}
-
-func TestMigrateAWSCredentialsPartial(t *testing.T) {
-	cmd := NewCmdMigrate()
-
-	// Test with only bucket name and region (for IAM role-based auth)
-	args := []string{
-		"--workspace", "test-ws",
-		"--repo", "test-repo",
-		"--target-org", "test-org",
-		"--aws-bucket-name", "my-bucket",
-		"--aws-region", "us-east-1",
-	}
-
-	err := cmd.ParseFlags(args)
-	assert.NoError(t, err)
-
-	bucketFlag := cmd.PersistentFlags().Lookup("aws-bucket-name")
-	assert.Equal(t, "my-bucket", bucketFlag.Value.String())
-
-	regionFlag := cmd.PersistentFlags().Lookup("aws-region")
-	assert.Equal(t, "us-east-1", regionFlag.Value.String())
-
-	// Access key and secret key should be empty
-	accessKeyFlag := cmd.PersistentFlags().Lookup("aws-access-key")
-	assert.Equal(t, "", accessKeyFlag.Value.String())
-
-	secretKeyFlag := cmd.PersistentFlags().Lookup("aws-secret-key")
-	assert.Equal(t, "", secretKeyFlag.Value.String())
-}
-
 func TestMigrateKeepArchiveWithVisibility(t *testing.T) {
 	cmd := NewCmdMigrate()
 
@@ -1376,15 +1160,7 @@ func TestMigrateFlagsWithoutShorthands(t *testing.T) {
 		"skip-commit-lookup",
 		"target-org",
 		"target-repo",
-		"github-api-url",
 		"github-target-pat",
-		"use-github-storage",
-		"azure-storage-connection-string",
-		"aws-bucket-name",
-		"aws-region",
-		"aws-access-key",
-		"aws-secret-key",
-		"aws-session-token",
 		"target-repo-visibility",
 		"keep-archive",
 	}
@@ -1407,24 +1183,6 @@ func TestMigrateDefaultBitbucketAPIURL(t *testing.T) {
 	assert.NotNil(t, flag)
 	assert.Equal(t, "https://api.bitbucket.org/2.0", flag.DefValue,
 		"Default Bitbucket API URL should be the standard endpoint")
-}
-
-func TestMigrateDefaultGitHubAPIURL(t *testing.T) {
-	cmd := NewCmdMigrate()
-
-	flag := cmd.PersistentFlags().Lookup("github-api-url")
-	assert.NotNil(t, flag)
-	assert.Equal(t, "https://api.github.com", flag.DefValue,
-		"Default GitHub API URL should be the standard endpoint")
-}
-
-func TestMigrateUseGitHubStorageDefault(t *testing.T) {
-	cmd := NewCmdMigrate()
-
-	flag := cmd.PersistentFlags().Lookup("use-github-storage")
-	assert.NotNil(t, flag)
-	assert.Equal(t, "false", flag.DefValue,
-		"use-github-storage should default to false")
 }
 
 func TestMigrateEmptyWorkspaceError(t *testing.T) {

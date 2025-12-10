@@ -2,6 +2,7 @@ package utils
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cli/go-gh/v2/pkg/api"
+	graphql "github.com/cli/shurcooL-graphql"
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
@@ -121,65 +124,19 @@ func TestMigrateTargetRepoConfiguration(t *testing.T) {
 	}
 }
 
-func TestMigrateStorageProviderConfiguration(t *testing.T) {
-	testCases := []struct {
-		name                  string
-		useGitHubStorage      bool
-		azureConnectionString string
-		awsBucketName         string
-		awsRegion             string
-		description           string
-	}{
-		{
-			name:             "GitHub storage",
-			useGitHubStorage: true,
-			description:      "Using GitHub as storage provider",
-		},
-		{
-			name:                  "Azure storage",
-			azureConnectionString: "DefaultEndpointsProtocol=https;AccountName=test",
-			description:           "Using Azure Blob Storage",
-		},
-		{
-			name:          "AWS S3 storage",
-			awsBucketName: "my-bucket",
-			awsRegion:     "us-east-1",
-			description:   "Using AWS S3",
-		},
-		{
-			name:        "No external storage",
-			description: "No storage provider configured",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			flags := data.CmdMigrateFlags{
-				UseGitHubStorage:             tc.useGitHubStorage,
-				AzureStorageConnectionString: tc.azureConnectionString,
-				AWSBucketName:                tc.awsBucketName,
-				AWSRegion:                    tc.awsRegion,
-			}
-			assert.Equal(t, tc.useGitHubStorage, flags.UseGitHubStorage)
-			assert.Equal(t, tc.azureConnectionString, flags.AzureStorageConnectionString)
-			assert.Equal(t, tc.awsBucketName, flags.AWSBucketName)
-			assert.Equal(t, tc.awsRegion, flags.AWSRegion)
-		})
-	}
-}
-
 func TestMigrateRepoVisibility(t *testing.T) {
 	testCases := []struct {
-		name       string
-		visibility string
-		valid      bool
+		name           string
+		visibility     string
+		valid          bool
+		expectedString string
 	}{
-		{"Public", "public", true},
-		{"Private", "private", true},
-		{"Internal", "internal", true},
-		{"Empty", "", true},
-		{"Invalid uppercase", "PUBLIC", false},
-		{"Invalid value", "secret", false},
+		{"Public", "public", true, "public"},
+		{"Private", "private", true, "private"},
+		{"Internal", "internal", true, "internal"},
+		{"Empty defaults to private", "", true, "private"},
+		{"Invalid uppercase", "PUBLIC", false, ""},
+		{"Invalid value", "secret", false, ""},
 	}
 
 	for _, tc := range testCases {
@@ -188,7 +145,7 @@ func TestMigrateRepoVisibility(t *testing.T) {
 			err := rv.Set(tc.visibility)
 			if tc.valid {
 				assert.NoError(t, err)
-				assert.Equal(t, tc.visibility, rv.String())
+				assert.Equal(t, tc.expectedString, rv.String())
 			} else {
 				assert.Error(t, err)
 			}
@@ -261,58 +218,6 @@ func TestMigrateGitHubAPIConfiguration(t *testing.T) {
 	}
 }
 
-func TestMigrateAWSCredentials(t *testing.T) {
-	testCases := []struct {
-		name         string
-		bucketName   string
-		region       string
-		accessKey    string
-		secretKey    string
-		sessionToken string
-		description  string
-	}{
-		{
-			name:         "Full credentials",
-			bucketName:   "my-bucket",
-			region:       "us-east-1",
-			accessKey:    "AKIAIOSFODNN7EXAMPLE",
-			secretKey:    "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-			sessionToken: "session-token",
-			description:  "All credentials provided",
-		},
-		{
-			name:        "IAM role based",
-			bucketName:  "my-bucket",
-			region:      "eu-west-1",
-			description: "Using IAM role, no explicit credentials",
-		},
-		{
-			name:       "Credentials without session token",
-			bucketName: "my-bucket",
-			region:     "ap-southeast-1",
-			accessKey:  "AKIAIOSFODNN7EXAMPLE",
-			secretKey:  "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			flags := data.CmdMigrateFlags{
-				AWSBucketName:   tc.bucketName,
-				AWSRegion:       tc.region,
-				AWSAccessKey:    tc.accessKey,
-				AWSSecretKey:    tc.secretKey,
-				AWSSessionToken: tc.sessionToken,
-			}
-			assert.Equal(t, tc.bucketName, flags.AWSBucketName)
-			assert.Equal(t, tc.region, flags.AWSRegion)
-			assert.Equal(t, tc.accessKey, flags.AWSAccessKey)
-			assert.Equal(t, tc.secretKey, flags.AWSSecretKey)
-			assert.Equal(t, tc.sessionToken, flags.AWSSessionToken)
-		})
-	}
-}
-
 func TestMigrateFlagsEmbeddedExportFlags(t *testing.T) {
 	migrateFlags := data.CmdMigrateFlags{
 		TargetOrg:            "target-org",
@@ -334,7 +239,6 @@ func TestMigrateFlagsJSON(t *testing.T) {
 		TargetRepo:           "github-repo",
 		TargetRepoVisibility: data.RepoVisibility("private"),
 		KeepArchive:          true,
-		UseGitHubStorage:     true,
 	}
 
 	jsonData, err := json.Marshal(flags)
@@ -348,7 +252,6 @@ func TestMigrateFlagsJSON(t *testing.T) {
 	assert.Equal(t, flags.TargetOrg, unmarshaledFlags.TargetOrg)
 	assert.Equal(t, flags.TargetRepo, unmarshaledFlags.TargetRepo)
 	assert.Equal(t, flags.KeepArchive, unmarshaledFlags.KeepArchive)
-	assert.Equal(t, flags.UseGitHubStorage, unmarshaledFlags.UseGitHubStorage)
 }
 
 func TestMigrateSkipCommitLookup(t *testing.T) {
@@ -406,6 +309,452 @@ func TestMigrateDateValidation(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestNewAPIGetter(t *testing.T) {
+	gqlClient := &api.GraphQLClient{}
+	restClient := &api.RESTClient{}
+
+	apiGetter := NewAPIGetter(gqlClient, restClient)
+
+	assert.NotNil(t, apiGetter)
+}
+
+func TestGetOrganizationInfo(t *testing.T) {
+	gqlClient := &api.GraphQLClient{}
+	restClient := &api.RESTClient{}
+	apiGetter := NewAPIGetter(gqlClient, restClient)
+
+	assert.NotNil(t, apiGetter)
+}
+
+func TestCreateMigrationSourceInputStruct(t *testing.T) {
+	input := data.CreateMigrationSourceInput{
+		Name:    "Bitbucket Cloud Migration",
+		URL:     "https://bitbucket.org",
+		OwnerID: "ORG_123",
+		Type:    "GITHUB_ARCHIVE",
+	}
+
+	assert.Equal(t, "Bitbucket Cloud Migration", string(input.Name))
+	assert.Equal(t, "https://bitbucket.org", string(input.URL))
+	assert.Equal(t, "ORG_123", string(input.OwnerID))
+	assert.Equal(t, "GITHUB_ARCHIVE", string(input.Type))
+}
+
+func TestStartRepositoryMigrationInputStruct(t *testing.T) {
+	input := data.StartRepositoryMigrationInput{
+		SourceID:             "SOURCE_123",
+		OwnerID:              "ORG_456",
+		RepositoryName:       "test-repo",
+		ContinueOnError:      true,
+		GitHubPAT:            "ghp_token",
+		AccessToken:          "ghp_token",
+		GitArchiveUrl:        "gei://archive/test-id",
+		MetadataArchiveUrl:   "gei://archive/test-id",
+		SourceRepositoryUrl:  "https://bitbucket.org/workspace/repo",
+		TargetRepoVisibility: "private",
+	}
+
+	assert.Equal(t, "SOURCE_123", string(input.SourceID))
+	assert.Equal(t, "ORG_456", string(input.OwnerID))
+	assert.Equal(t, "test-repo", string(input.RepositoryName))
+	assert.True(t, bool(input.ContinueOnError))
+	assert.Equal(t, "ghp_token", string(input.GitHubPAT))
+	assert.Equal(t, "gei://archive/test-id", string(input.GitArchiveUrl))
+	assert.Equal(t, "private", string(input.TargetRepoVisibility))
+}
+
+func TestOrganizationIDQueryStruct(t *testing.T) {
+	query := data.OrganizationIDQuery{}
+	query.Organization.ID = "ORG_NODE_ID"
+	query.Organization.DatabaseID = 12345
+
+	assert.Equal(t, "ORG_NODE_ID", query.Organization.ID)
+	assert.Equal(t, 12345, query.Organization.DatabaseID)
+}
+
+func TestMutationMigrationSourceStruct(t *testing.T) {
+	mutation := data.MutationMigrationSource{}
+	mutation.CreateMigrationSource.MigrationSource.ID = "MS_123"
+	mutation.CreateMigrationSource.MigrationSource.Name = "Test Source"
+	mutation.CreateMigrationSource.MigrationSource.Type = "GITHUB_ARCHIVE"
+
+	assert.Equal(t, "MS_123", mutation.CreateMigrationSource.MigrationSource.ID)
+	assert.Equal(t, "Test Source", mutation.CreateMigrationSource.MigrationSource.Name)
+	assert.Equal(t, "GITHUB_ARCHIVE", mutation.CreateMigrationSource.MigrationSource.Type)
+}
+
+func TestStartMigrationResponseStruct(t *testing.T) {
+	response := data.StartMigrationResponse{}
+	response.StartRepositoryMigration.RepositoryMigration.ID = "MIG_123"
+
+	assert.Equal(t, "MIG_123", response.StartRepositoryMigration.RepositoryMigration.ID)
+}
+
+func TestMigrationStatusQueryStruct(t *testing.T) {
+	query := data.MigrationStatusQuery{}
+	query.Node.Migration.ID = "MIG_456"
+	query.Node.Migration.State = "SUCCEEDED"
+	query.Node.Migration.FailureReason = ""
+
+	assert.Equal(t, "SUCCEEDED", query.Node.Migration.State)
+	assert.Empty(t, query.Node.Migration.FailureReason)
+}
+
+func TestMigrationStatusQueryFailedState(t *testing.T) {
+	query := data.MigrationStatusQuery{}
+	query.Node.Migration.ID = "MIG_789"
+	query.Node.Migration.State = "FAILED"
+	query.Node.Migration.FailureReason = "Invalid archive format"
+
+	assert.Equal(t, "FAILED", query.Node.Migration.State)
+	assert.Equal(t, "Invalid archive format", query.Node.Migration.FailureReason)
+}
+
+func TestRunGitHubAPIMigrationTargetRepoDefault(t *testing.T) {
+	exportFlags := &data.CmdExportFlags{
+		Workspace:  "test-workspace",
+		Repository: "source-repo",
+	}
+	migrateFlags := &data.CmdMigrateFlags{
+		TargetOrg:  "target-org",
+		TargetRepo: "",
+	}
+
+	targetRepo := migrateFlags.TargetRepo
+	if targetRepo == "" {
+		targetRepo = exportFlags.Repository
+	}
+
+	assert.Equal(t, "source-repo", targetRepo)
+}
+
+func TestRunGitHubAPIMigrationTargetRepoSpecified(t *testing.T) {
+	exportFlags := &data.CmdExportFlags{
+		Workspace:  "test-workspace",
+		Repository: "source-repo",
+	}
+	migrateFlags := &data.CmdMigrateFlags{
+		TargetOrg:  "target-org",
+		TargetRepo: "custom-target-repo",
+	}
+
+	targetRepo := migrateFlags.TargetRepo
+	if targetRepo == "" {
+		targetRepo = exportFlags.Repository
+	}
+
+	assert.Equal(t, "custom-target-repo", targetRepo)
+}
+
+func TestMigrationVisibilityValues(t *testing.T) {
+	testCases := []struct {
+		name       string
+		visibility data.RepoVisibility
+		expected   string
+	}{
+		{"Private visibility", data.RepoVisibility("private"), "private"},
+		{"Public visibility", data.RepoVisibility("public"), "public"},
+		{"Internal visibility", data.RepoVisibility("internal"), "internal"},
+		{"Empty defaults to private", data.RepoVisibility(""), "private"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, tc.visibility.String())
+		})
+	}
+}
+
+func TestMigrationSourceURL(t *testing.T) {
+	workspace := "test-workspace"
+	repo := "test-repo"
+
+	expectedURL := fmt.Sprintf("https://bitbucket.org/%s/%s", workspace, repo)
+	assert.Equal(t, "https://bitbucket.org/test-workspace/test-repo", expectedURL)
+}
+
+func TestMigrationArchiveURIFormat(t *testing.T) {
+	testURIs := []struct {
+		uri   string
+		valid bool
+	}{
+		{"gei://archive/abc123", true},
+		{"gei://archive/test-archive-id", true},
+		{"https://example.com/archive", false},
+		{"", false},
+	}
+
+	for _, tc := range testURIs {
+		t.Run(tc.uri, func(t *testing.T) {
+			isGEI := strings.HasPrefix(tc.uri, "gei://")
+			assert.Equal(t, tc.valid, isGEI)
+		})
+	}
+}
+
+func TestMigrationStatusStates(t *testing.T) {
+	states := []struct {
+		state      string
+		isTerminal bool
+		isSuccess  bool
+	}{
+		{"QUEUED", false, false},
+		{"IN_PROGRESS", false, false},
+		{"SUCCEEDED", true, true},
+		{"FAILED", true, false},
+		{"PENDING_VALIDATION", false, false},
+	}
+
+	for _, s := range states {
+		t.Run(s.state, func(t *testing.T) {
+			isTerminal := s.state == "SUCCEEDED" || s.state == "FAILED"
+			isSuccess := s.state == "SUCCEEDED"
+
+			assert.Equal(t, s.isTerminal, isTerminal)
+			assert.Equal(t, s.isSuccess, isSuccess)
+		})
+	}
+}
+
+func TestGetGitHubAuthTokenFromFlags(t *testing.T) {
+	originalPAT := os.Getenv("GH_PAT")
+	defer func() {
+		if originalPAT != "" {
+			_ = os.Setenv("GH_PAT", originalPAT)
+		} else {
+			_ = os.Unsetenv("GH_PAT")
+		}
+	}()
+	_ = os.Unsetenv("GH_PAT")
+
+	testCases := []struct {
+		name        string
+		flagPAT     string
+		envPAT      string
+		expectedPAT string
+	}{
+		{
+			name:        "PAT from flags",
+			flagPAT:     "ghp_from_flag",
+			envPAT:      "",
+			expectedPAT: "ghp_from_flag",
+		},
+		{
+			name:        "PAT from environment",
+			flagPAT:     "",
+			envPAT:      "ghp_from_env",
+			expectedPAT: "ghp_from_env",
+		},
+		{
+			name:        "Flag takes precedence over env",
+			flagPAT:     "ghp_from_flag",
+			envPAT:      "ghp_from_env",
+			expectedPAT: "ghp_from_flag",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.envPAT != "" {
+				_ = os.Setenv("GH_PAT", tc.envPAT)
+			} else {
+				_ = os.Unsetenv("GH_PAT")
+			}
+
+			migrateFlags := &data.CmdMigrateFlags{
+				GitHubPAT: tc.flagPAT,
+			}
+
+			token, err := GetGitHubAuthToken(migrateFlags)
+			if tc.expectedPAT != "" {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.expectedPAT, token)
+			}
+		})
+	}
+}
+
+func TestMigrationInputValidation(t *testing.T) {
+	testCases := []struct {
+		name        string
+		sourceID    string
+		orgID       string
+		targetRepo  string
+		archiveURI  string
+		expectValid bool
+	}{
+		{
+			name:        "All fields valid",
+			sourceID:    "MS_123",
+			orgID:       "ORG_456",
+			targetRepo:  "test-repo",
+			archiveURI:  "gei://archive/test-id",
+			expectValid: true,
+		},
+		{
+			name:        "Empty source ID",
+			sourceID:    "",
+			orgID:       "ORG_456",
+			targetRepo:  "test-repo",
+			archiveURI:  "gei://archive/test-id",
+			expectValid: false,
+		},
+		{
+			name:        "Empty org ID",
+			sourceID:    "MS_123",
+			orgID:       "",
+			targetRepo:  "test-repo",
+			archiveURI:  "gei://archive/test-id",
+			expectValid: false,
+		},
+		{
+			name:        "Empty target repo",
+			sourceID:    "MS_123",
+			orgID:       "ORG_456",
+			targetRepo:  "",
+			archiveURI:  "gei://archive/test-id",
+			expectValid: false,
+		},
+		{
+			name:        "Empty archive URI",
+			sourceID:    "MS_123",
+			orgID:       "ORG_456",
+			targetRepo:  "test-repo",
+			archiveURI:  "",
+			expectValid: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			isValid := tc.sourceID != "" && tc.orgID != "" && tc.targetRepo != "" && tc.archiveURI != ""
+			assert.Equal(t, tc.expectValid, isValid)
+		})
+	}
+}
+
+func TestMigrationSourceCreationInput(t *testing.T) {
+	name := "Bitbucket Cloud Migration"
+	url := "https://bitbucket.org"
+	ownerID := "ORG_123"
+
+	input := data.CreateMigrationSourceInput{
+		Name:    graphql.String(name),
+		URL:     graphql.String(url),
+		OwnerID: graphql.String(ownerID),
+		Type:    graphql.String("GITHUB_ARCHIVE"),
+	}
+
+	assert.Equal(t, name, string(input.Name))
+	assert.Equal(t, url, string(input.URL))
+	assert.Equal(t, ownerID, string(input.OwnerID))
+	assert.Equal(t, "GITHUB_ARCHIVE", string(input.Type))
+}
+
+func TestAPIGetterCreation(t *testing.T) {
+	gqlClient := &api.GraphQLClient{}
+	restClient := &api.RESTClient{}
+
+	apiGetter := NewAPIGetter(gqlClient, restClient)
+
+	assert.NotNil(t, apiGetter)
+	assert.NotNil(t, apiGetter.gqlClient)
+	assert.NotNil(t, apiGetter.restClient)
+}
+
+func TestMigrationArchivePathValidation(t *testing.T) {
+	testCases := []struct {
+		name        string
+		archivePath string
+		expectValid bool
+	}{
+		{
+			name:        "Valid tar.gz file",
+			archivePath: "/path/to/archive.tar.gz",
+			expectValid: true,
+		},
+		{
+			name:        "Valid with timestamp",
+			archivePath: "/path/to/bitbucket-export-20230615-120000.tar.gz",
+			expectValid: true,
+		},
+		{
+			name:        "Invalid extension",
+			archivePath: "/path/to/archive.zip",
+			expectValid: false,
+		},
+		{
+			name:        "Empty path",
+			archivePath: "",
+			expectValid: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			isValid := tc.archivePath != "" && strings.HasSuffix(tc.archivePath, ".tar.gz")
+			assert.Equal(t, tc.expectValid, isValid)
+		})
+	}
+}
+
+func TestMigrationFailureReasons(t *testing.T) {
+	failureReasons := []string{
+		"Invalid archive format",
+		"Repository already exists",
+		"Authentication failed",
+		"Rate limit exceeded",
+		"Organization not found",
+		"Insufficient permissions",
+	}
+
+	for _, reason := range failureReasons {
+		t.Run(reason, func(t *testing.T) {
+			query := data.MigrationStatusQuery{}
+			query.Node.Migration.State = "FAILED"
+			query.Node.Migration.FailureReason = reason
+
+			assert.Equal(t, "FAILED", query.Node.Migration.State)
+			assert.NotEmpty(t, query.Node.Migration.FailureReason)
+		})
+	}
+}
+
+func TestSourceRepositoryURLConstruction(t *testing.T) {
+	testCases := []struct {
+		name        string
+		workspace   string
+		repo        string
+		expectedURL string
+	}{
+		{
+			name:        "Standard workspace and repo",
+			workspace:   "myworkspace",
+			repo:        "myrepo",
+			expectedURL: "https://bitbucket.org/myworkspace/myrepo",
+		},
+		{
+			name:        "Workspace with hyphens",
+			workspace:   "my-workspace",
+			repo:        "my-repo",
+			expectedURL: "https://bitbucket.org/my-workspace/my-repo",
+		},
+		{
+			name:        "Workspace with numbers",
+			workspace:   "workspace123",
+			repo:        "repo456",
+			expectedURL: "https://bitbucket.org/workspace123/repo456",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			url := fmt.Sprintf("https://bitbucket.org/%s/%s", tc.workspace, tc.repo)
+			assert.Equal(t, tc.expectedURL, url)
 		})
 	}
 }

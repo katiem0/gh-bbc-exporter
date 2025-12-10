@@ -9,18 +9,11 @@ import (
 type RepoVisibility string
 
 type CmdMigrateFlags struct {
-	TargetOrg                    string
-	TargetRepo                   string
-	TargetRepoVisibility         RepoVisibility
-	GitHubPAT                    string
-	UseGitHubStorage             bool
-	AzureStorageConnectionString string
-	AWSBucketName                string
-	AWSAccessKey                 string
-	AWSSecretKey                 string
-	AWSSessionToken              string
-	AWSRegion                    string
-	KeepArchive                  bool
+	TargetOrg            string
+	TargetRepo           string
+	TargetRepoVisibility RepoVisibility
+	GitHubPAT            string
+	KeepArchive          bool
 }
 
 type OrganizationIDQuery struct {

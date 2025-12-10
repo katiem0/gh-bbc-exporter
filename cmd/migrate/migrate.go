@@ -36,6 +36,8 @@ func NewCmdMigrate() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var gqlClient *api.GraphQLClient
 			var restClient *api.RESTClient
+			var err error
+
 			cmd.SilenceUsage = true
 			logger, err := log.NewLogger(exportFlags.Debug)
 			if err != nil {
@@ -45,13 +47,27 @@ func NewCmdMigrate() *cobra.Command {
 				_ = logger.Sync()
 			}()
 			zap.ReplaceGlobals(logger)
+
+			logger.Debug("Migrate command initialized",
+				zap.Bool("debug", exportFlags.Debug),
+				zap.String("workspace", exportFlags.Workspace),
+				zap.String("repository", exportFlags.Repository),
+				zap.String("targetOrg", migrateFlags.TargetOrg),
+				zap.String("targetRepo", migrateFlags.TargetRepo))
+
 			host := "github.com"
 
+			logger.Debug("Retrieving GitHub authentication token")
 			authToken, err = utils.GetGitHubAuthToken(&migrateFlags)
 			if err != nil {
+				logger.Debug("Failed to get GitHub authentication token", zap.Error(err))
 				return fmt.Errorf("failed to get GitHub authentication token: %w", err)
 			}
+			logger.Debug("GitHub authentication token retrieved",
+				zap.Int("tokenLength", len(authToken)))
 
+			logger.Debug("Creating GraphQL client",
+				zap.String("host", host))
 			gqlClient, err = api.NewGraphQLClient(api.ClientOptions{
 				Headers: map[string]string{
 					"Accept": "application/vnd.github.hawkgirl-preview+json",
@@ -61,10 +77,14 @@ func NewCmdMigrate() *cobra.Command {
 			})
 
 			if err != nil {
+				logger.Debug("Failed to create GraphQL client", zap.Error(err))
 				zap.S().Errorf("Error arose retrieving graphql client")
 				return err
 			}
+			logger.Debug("GraphQL client created successfully")
 
+			logger.Debug("Creating REST client",
+				zap.String("host", host))
 			restClient, err = api.NewRESTClient(api.ClientOptions{
 				Headers: map[string]string{
 					"Accept": "application/vnd.github+json",
@@ -74,10 +94,13 @@ func NewCmdMigrate() *cobra.Command {
 			})
 
 			if err != nil {
+				logger.Debug("Failed to create REST client", zap.Error(err))
 				zap.S().Errorf("Error arose retrieving rest client")
 				return err
 			}
+			logger.Debug("REST client created successfully")
 
+			logger.Debug("Starting migration process")
 			return runCmdMigrate(&exportFlags, &migrateFlags, utils.NewAPIGetter(gqlClient, restClient), logger)
 		},
 	}
@@ -115,20 +138,6 @@ func NewCmdMigrate() *cobra.Command {
 		"Target repository name (defaults to source repo name)")
 	migrateCmd.PersistentFlags().StringVar(&migrateFlags.GitHubPAT, "github-target-pat", "",
 		"GitHub Personal Access Token (env: GH_PAT)")
-	migrateCmd.PersistentFlags().BoolVar(&migrateFlags.UseGitHubStorage, "use-github-storage", true,
-		"Use GitHub-owned storage for migration")
-	migrateCmd.PersistentFlags().StringVar(&migrateFlags.AzureStorageConnectionString, "azure-storage-connection-string", "",
-		"The connection string for the Azure storage account, used to upload data archives pre-migration.")
-	migrateCmd.PersistentFlags().StringVar(&migrateFlags.AWSBucketName, "aws-bucket-name", "",
-		"If using AWS, the name of the S3 bucket to upload the data archives to.")
-	migrateCmd.PersistentFlags().StringVar(&migrateFlags.AWSRegion, "aws-region", "",
-		"If using AWS, required to specify the AWS region. (env: AWS_REGION)")
-	migrateCmd.PersistentFlags().StringVar(&migrateFlags.AWSAccessKey, "aws-access-key", "",
-		"If uploading to S3, the AWS access key. (env: AWS_ACCESS_KEY_ID)")
-	migrateCmd.PersistentFlags().StringVar(&migrateFlags.AWSSecretKey, "aws-secret-key", "",
-		"If uploading to S3, the AWS secret key. (env: AWS_SECRET_ACCESS_KEY)")
-	migrateCmd.PersistentFlags().StringVar(&migrateFlags.AWSSessionToken, "aws-session-token", "",
-		"If using AWS, the AWS session token. (env: AWS_SESSION_TOKEN)")
 	migrateCmd.PersistentFlags().Var(&migrateFlags.TargetRepoVisibility, "target-repo-visibility",
 		"The visibility of the target repo. Defaults to private. Valid values are public, private, or internal.")
 	migrateCmd.PersistentFlags().BoolVar(&migrateFlags.KeepArchive, "keep-archive", false,
@@ -151,16 +160,41 @@ func NewCmdMigrate() *cobra.Command {
 }
 
 func runCmdMigrate(exportFlags *data.CmdExportFlags, migrateFlags *data.CmdMigrateFlags, g *utils.APIGetter, logger *zap.Logger) error {
+	logger.Debug("runCmdMigrate started",
+		zap.String("workspace", exportFlags.Workspace),
+		zap.String("repository", exportFlags.Repository),
+		zap.String("targetOrg", migrateFlags.TargetOrg),
+		zap.String("targetRepo", migrateFlags.TargetRepo),
+		zap.String("visibility", migrateFlags.TargetRepoVisibility.String()),
+		zap.Bool("keepArchive", migrateFlags.KeepArchive))
+
 	logger.Info("Starting Bitbucket to GitHub migration",
 		zap.String("source", fmt.Sprintf("%s/%s", exportFlags.Workspace, exportFlags.Repository)),
 		zap.String("target", fmt.Sprintf("%s/%s", migrateFlags.TargetOrg, migrateFlags.TargetRepo)))
 
 	logger.Info("Step 1: Exporting from Bitbucket Cloud")
+	logger.Debug("Setting up environment credentials")
 
 	utils.SetupEnvironmentCredentials(exportFlags)
+
+	logger.Debug("Validating export flags",
+		zap.String("apiURL", exportFlags.BitbucketAPIURL),
+		zap.Bool("hasAccessToken", exportFlags.BitbucketAccessToken != ""),
+		zap.Bool("hasAPIToken", exportFlags.BitbucketAPIToken != ""),
+		zap.Bool("hasEmail", exportFlags.BitbucketEmail != ""),
+		zap.Bool("hasUser", exportFlags.BitbucketUser != ""),
+		zap.Bool("hasAppPass", exportFlags.BitbucketAppPass != ""))
+
 	if err := utils.ValidateExportFlags(exportFlags); err != nil {
+		logger.Debug("Export validation failed", zap.Error(err))
 		return fmt.Errorf("export validation failed: %w", err)
 	}
+	logger.Debug("Export flags validated successfully")
+
+	logger.Debug("Creating Bitbucket client",
+		zap.String("apiURL", exportFlags.BitbucketAPIURL),
+		zap.String("outputDir", exportFlags.OutputDir),
+		zap.Bool("skipCommitLookup", exportFlags.SkipCommitLookup))
 
 	client := utils.NewClient(
 		exportFlags.BitbucketAPIURL,
@@ -173,33 +207,62 @@ func runCmdMigrate(exportFlags *data.CmdExportFlags, migrateFlags *data.CmdMigra
 		exportFlags.OutputDir,
 		exportFlags.SkipCommitLookup,
 	)
+	logger.Debug("Bitbucket client created")
+
+	logger.Debug("Creating exporter",
+		zap.String("outputDir", exportFlags.OutputDir),
+		zap.Bool("openPRsOnly", exportFlags.OpenPRsOnly),
+		zap.String("prsFromDate", exportFlags.PRsFromDate))
 
 	exporter := utils.NewExporter(client, exportFlags.OutputDir, logger, exportFlags.OpenPRsOnly, exportFlags.PRsFromDate)
 
+	logger.Debug("Starting export",
+		zap.String("workspace", exportFlags.Workspace),
+		zap.String("repository", exportFlags.Repository))
+
 	if err := exporter.Export(exportFlags.Workspace, exportFlags.Repository); err != nil {
+		logger.Debug("Export failed", zap.Error(err))
 		return fmt.Errorf("export failed: %w", err)
 	}
+	logger.Debug("Export completed successfully")
 
 	archivePath := exporter.GetOutputPath()
+	logger.Debug("Archive path determined", zap.String("archivePath", archivePath))
 
 	logger.Info("Step 2: Importing to GitHub Enterprise Cloud",
 		zap.String("archive", archivePath))
 
+	logger.Debug("Starting GitHub API migration",
+		zap.String("archivePath", archivePath),
+		zap.String("targetOrg", migrateFlags.TargetOrg))
+
 	if err := utils.RunGitHubAPIMigration(exportFlags, migrateFlags, archivePath, g, logger); err != nil {
+		logger.Debug("Import failed", zap.Error(err))
 		return fmt.Errorf("import failed: %w", err)
 	}
 
 	logger.Info("Migration completed successfully")
+	logger.Debug("Migration process finished",
+		zap.String("source", fmt.Sprintf("%s/%s", exportFlags.Workspace, exportFlags.Repository)),
+		zap.String("target", fmt.Sprintf("%s/%s", migrateFlags.TargetOrg, migrateFlags.TargetRepo)))
 
 	if !migrateFlags.KeepArchive {
 		logger.Debug("Cleaning up migration archive", zap.String("archive", archivePath))
 		if err := os.Remove(archivePath); err != nil {
 			logger.Warn("Failed to remove archive file", zap.String("archive", archivePath), zap.Error(err))
+			logger.Debug("Archive cleanup failed",
+				zap.String("archivePath", archivePath),
+				zap.Error(err))
 		} else {
 			logger.Info("Archive cleaned up", zap.String("archive", archivePath))
+			logger.Debug("Archive removed successfully",
+				zap.String("archivePath", archivePath))
 		}
 	} else {
 		logger.Info("Archive retained", zap.String("archive", archivePath))
+		logger.Debug("Archive retained per user request",
+			zap.String("archivePath", archivePath),
+			zap.Bool("keepArchive", migrateFlags.KeepArchive))
 	}
 	return nil
 }
