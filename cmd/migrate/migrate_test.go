@@ -131,65 +131,6 @@ func TestMigratePreRunValidation(t *testing.T) {
 		})
 	}
 }
-func TestKeepArchiveFlag(t *testing.T) {
-	cmd := NewCmdMigrate()
-
-	flag := cmd.PersistentFlags().Lookup("keep-archive")
-	assert.NotNil(t, flag)
-	assert.Equal(t, "false", flag.DefValue)
-	assert.Equal(t, "bool", flag.Value.Type())
-}
-
-func TestKeepArchiveFlagParsing(t *testing.T) {
-	testCases := []struct {
-		name     string
-		args     []string
-		expected bool
-	}{
-		{
-			name:     "Default value (false)",
-			args:     []string{},
-			expected: false,
-		},
-		{
-			name:     "Explicitly set to true",
-			args:     []string{"--keep-archive"},
-			expected: true,
-		},
-		{
-			name:     "Explicitly set to true with value",
-			args:     []string{"--keep-archive=true"},
-			expected: true,
-		},
-		{
-			name:     "Explicitly set to false",
-			args:     []string{"--keep-archive=false"},
-			expected: false,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			cmd := NewCmdMigrate()
-			// Add required flags to avoid validation errors
-			fullArgs := append(tc.args, "--workspace", "test-ws", "--repo", "test-repo", "--target-org", "test-org")
-			cmd.SetArgs(fullArgs)
-
-			// Parse flags without executing
-			err := cmd.ParseFlags(fullArgs)
-			assert.NoError(t, err)
-
-			flag := cmd.PersistentFlags().Lookup("keep-archive")
-			assert.NotNil(t, flag)
-
-			if tc.expected {
-				assert.Equal(t, "true", flag.Value.String())
-			} else {
-				assert.Equal(t, "false", flag.Value.String())
-			}
-		})
-	}
-}
 
 func TestRepoVisibilityFlag(t *testing.T) {
 	cmd := NewCmdMigrate()
@@ -248,26 +189,12 @@ func TestArchiveCleanup(t *testing.T) {
 	assert.True(t, os.IsNotExist(err))
 }
 
-func TestArchiveRetention(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "migrate-test-")
-	assert.NoError(t, err)
-	defer func() { _ = os.RemoveAll(tempDir) }()
-
-	archivePath := filepath.Join(tempDir, "test-archive.tar.gz")
-	err = os.WriteFile(archivePath, []byte("test archive content"), 0644)
-	assert.NoError(t, err)
-
-	_, err = os.Stat(archivePath)
-	assert.NoError(t, err, "Archive should still exist when KeepArchive is true")
-}
-
 func TestCmdMigrateFlagsStruct(t *testing.T) {
 	flags := data.CmdMigrateFlags{}
 
 	assert.Empty(t, flags.TargetOrg)
 	assert.Empty(t, flags.TargetRepo)
 	assert.Empty(t, flags.GitHubPAT)
-	assert.False(t, flags.KeepArchive)
 }
 
 func TestExportFlagsInMigrate(t *testing.T) {
@@ -615,13 +542,11 @@ func TestCmdMigrateFlagsWithRepoVisibility(t *testing.T) {
 		TargetOrg:            "test-org",
 		TargetRepo:           "test-repo",
 		TargetRepoVisibility: data.RepoVisibility("private"),
-		KeepArchive:          true,
 	}
 
 	assert.Equal(t, "test-org", flags.TargetOrg)
 	assert.Equal(t, "test-repo", flags.TargetRepo)
 	assert.Equal(t, "private", flags.TargetRepoVisibility.String())
-	assert.True(t, flags.KeepArchive)
 }
 
 func TestMigrateAllFlagsPresent(t *testing.T) {
@@ -679,13 +604,13 @@ func TestMigrateEnvironmentVariables(t *testing.T) {
 		"BITBUCKET_TEMP_DIR",
 	}
 
-	originalGHPAT := os.Getenv("GH_PAT")
-	_ = os.Unsetenv("GH_PAT")
+	originalGHPAT := os.Getenv("GITHUB_PAT")
+	_ = os.Unsetenv("GITHUB_PAT")
 	defer func() {
 		if originalGHPAT != "" {
-			_ = os.Setenv("GH_PAT", originalGHPAT)
+			_ = os.Setenv("GITHUB_PAT", originalGHPAT)
 		} else {
-			_ = os.Unsetenv("GH_PAT")
+			_ = os.Unsetenv("GITHUB_PAT")
 		}
 	}()
 
@@ -761,14 +686,14 @@ func TestMigrateEnvironmentVariables(t *testing.T) {
 func TestMigrateMixedAuthenticationMethods(t *testing.T) {
 	defer cleanupExportDirs(t)
 
-	// Save and clear GH_PAT to avoid interference from environment
-	originalGHPAT := os.Getenv("GH_PAT")
-	_ = os.Unsetenv("GH_PAT")
+	// Save and clear GITHUB_PAT to avoid interference from environment
+	originalGHPAT := os.Getenv("GITHUB_PAT")
+	_ = os.Unsetenv("GITHUB_PAT")
 	defer func() {
 		if originalGHPAT != "" {
-			_ = os.Setenv("GH_PAT", originalGHPAT)
+			_ = os.Setenv("GITHUB_PAT", originalGHPAT)
 		} else {
-			_ = os.Unsetenv("GH_PAT")
+			_ = os.Unsetenv("GITHUB_PAT")
 		}
 	}()
 
@@ -860,14 +785,14 @@ func TestMigratePRsFromDateValidation(t *testing.T) {
 		"BITBUCKET_APP_PASSWORD",
 	}
 
-	// Save and clear GH_PAT to avoid interference
-	originalGHPAT := os.Getenv("GH_PAT")
-	_ = os.Unsetenv("GH_PAT")
+	// Save and clear GITHUB_PAT to avoid interference
+	originalGHPAT := os.Getenv("GITHUB_PAT")
+	_ = os.Unsetenv("GITHUB_PAT")
 	defer func() {
 		if originalGHPAT != "" {
-			_ = os.Setenv("GH_PAT", originalGHPAT)
+			_ = os.Setenv("GITHUB_PAT", originalGHPAT)
 		} else {
-			_ = os.Unsetenv("GH_PAT")
+			_ = os.Unsetenv("GITHUB_PAT")
 		}
 	}()
 
@@ -952,14 +877,14 @@ func TestMigratePRsFromDateValidation(t *testing.T) {
 func TestMigrateNoAuthenticationProvided(t *testing.T) {
 	defer cleanupExportDirs(t)
 
-	// Save and clear GH_PAT to avoid interference
-	originalGHPAT := os.Getenv("GH_PAT")
-	_ = os.Unsetenv("GH_PAT")
+	// Save and clear GITHUB_PAT to avoid interference
+	originalGHPAT := os.Getenv("GITHUB_PAT")
+	_ = os.Unsetenv("GITHUB_PAT")
 	defer func() {
 		if originalGHPAT != "" {
-			_ = os.Setenv("GH_PAT", originalGHPAT)
+			_ = os.Setenv("GITHUB_PAT", originalGHPAT)
 		} else {
-			_ = os.Unsetenv("GH_PAT")
+			_ = os.Unsetenv("GITHUB_PAT")
 		}
 	}()
 
@@ -1144,22 +1069,18 @@ func TestMigrateCommandDisabledFlagSorting(t *testing.T) {
 	assert.False(t, cmd.PersistentFlags().SortFlags, "Persistent flags should not be sorted")
 }
 
-func TestMigrateKeepArchiveWithVisibility(t *testing.T) {
+func TestMigrateVisibility(t *testing.T) {
 	cmd := NewCmdMigrate()
 
 	args := []string{
 		"--workspace", "test-ws",
 		"--repo", "test-repo",
 		"--target-org", "test-org",
-		"--keep-archive",
 		"--target-repo-visibility", "private",
 	}
 
 	err := cmd.ParseFlags(args)
 	assert.NoError(t, err)
-
-	keepArchiveFlag := cmd.PersistentFlags().Lookup("keep-archive")
-	assert.Equal(t, "true", keepArchiveFlag.Value.String())
 
 	visibilityFlag := cmd.PersistentFlags().Lookup("target-repo-visibility")
 	assert.Equal(t, "private", visibilityFlag.Value.String())
@@ -1277,7 +1198,6 @@ func TestCmdMigrateFlagsEmbeddedExportFlags(t *testing.T) {
 		TargetOrg:            "target-org",
 		TargetRepo:           "target-repo",
 		TargetRepoVisibility: data.RepoVisibility("private"),
-		KeepArchive:          true,
 	}
 	exportFlags := data.CmdExportFlags{
 		Workspace:            "test-workspace",
@@ -1306,5 +1226,4 @@ func TestCmdMigrateFlagsEmbeddedExportFlags(t *testing.T) {
 	assert.Equal(t, "target-org", migrateFlags.TargetOrg)
 	assert.Equal(t, "target-repo", migrateFlags.TargetRepo)
 	assert.Equal(t, "private", migrateFlags.TargetRepoVisibility.String())
-	assert.True(t, migrateFlags.KeepArchive)
 }

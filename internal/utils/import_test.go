@@ -153,34 +153,6 @@ func TestMigrateRepoVisibility(t *testing.T) {
 	}
 }
 
-func TestMigrateKeepArchiveFlag(t *testing.T) {
-	testCases := []struct {
-		name        string
-		keepArchive bool
-		description string
-	}{
-		{
-			name:        "Keep archive enabled",
-			keepArchive: true,
-			description: "Archive should be retained after migration",
-		},
-		{
-			name:        "Keep archive disabled",
-			keepArchive: false,
-			description: "Archive should be cleaned up after migration",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			flags := data.CmdMigrateFlags{
-				KeepArchive: tc.keepArchive,
-			}
-			assert.Equal(t, tc.keepArchive, flags.KeepArchive)
-		})
-	}
-}
-
 func TestMigrateGitHubAPIConfiguration(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -223,14 +195,12 @@ func TestMigrateFlagsEmbeddedExportFlags(t *testing.T) {
 		TargetOrg:            "target-org",
 		TargetRepo:           "target-repo",
 		TargetRepoVisibility: data.RepoVisibility("private"),
-		KeepArchive:          true,
 	}
 
 	// Verify migrate-specific fields
 	assert.Equal(t, "target-org", migrateFlags.TargetOrg)
 	assert.Equal(t, "target-repo", migrateFlags.TargetRepo)
 	assert.Equal(t, "private", migrateFlags.TargetRepoVisibility.String())
-	assert.True(t, migrateFlags.KeepArchive)
 }
 
 func TestMigrateFlagsJSON(t *testing.T) {
@@ -238,7 +208,6 @@ func TestMigrateFlagsJSON(t *testing.T) {
 		TargetOrg:            "github-org",
 		TargetRepo:           "github-repo",
 		TargetRepoVisibility: data.RepoVisibility("private"),
-		KeepArchive:          true,
 	}
 
 	jsonData, err := json.Marshal(flags)
@@ -251,7 +220,6 @@ func TestMigrateFlagsJSON(t *testing.T) {
 
 	assert.Equal(t, flags.TargetOrg, unmarshaledFlags.TargetOrg)
 	assert.Equal(t, flags.TargetRepo, unmarshaledFlags.TargetRepo)
-	assert.Equal(t, flags.KeepArchive, unmarshaledFlags.KeepArchive)
 }
 
 func TestMigrateSkipCommitLookup(t *testing.T) {
@@ -521,15 +489,15 @@ func TestMigrationStatusStates(t *testing.T) {
 }
 
 func TestGetGitHubAuthTokenFromFlags(t *testing.T) {
-	originalPAT := os.Getenv("GH_PAT")
+	originalPAT := os.Getenv("GITHUB_PAT")
 	defer func() {
 		if originalPAT != "" {
-			_ = os.Setenv("GH_PAT", originalPAT)
+			_ = os.Setenv("GITHUB_PAT", originalPAT)
 		} else {
-			_ = os.Unsetenv("GH_PAT")
+			_ = os.Unsetenv("GITHUB_PAT")
 		}
 	}()
-	_ = os.Unsetenv("GH_PAT")
+	_ = os.Unsetenv("GITHUB_PAT")
 
 	testCases := []struct {
 		name        string
@@ -560,9 +528,9 @@ func TestGetGitHubAuthTokenFromFlags(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.envPAT != "" {
-				_ = os.Setenv("GH_PAT", tc.envPAT)
+				_ = os.Setenv("GITHUB_PAT", tc.envPAT)
 			} else {
-				_ = os.Unsetenv("GH_PAT")
+				_ = os.Unsetenv("GITHUB_PAT")
 			}
 
 			migrateFlags := &data.CmdMigrateFlags{

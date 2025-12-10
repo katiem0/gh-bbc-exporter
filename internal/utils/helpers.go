@@ -29,7 +29,7 @@ var (
 
 func GetGitHubAuthToken(migrateFlags *data.CmdMigrateFlags) (string, error) {
 	if migrateFlags.GitHubPAT == "" {
-		migrateFlags.GitHubPAT = os.Getenv("GH_PAT")
+		migrateFlags.GitHubPAT = os.Getenv("GITHUB_PAT")
 	}
 
 	if migrateFlags.GitHubPAT != "" {

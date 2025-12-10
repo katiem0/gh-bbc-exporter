@@ -152,7 +152,6 @@ func TestCmdMigrateFlagsDefaults(t *testing.T) {
 	assert.Empty(t, migrateFlags.TargetRepo)
 	assert.Empty(t, migrateFlags.GitHubPAT)
 	assert.Equal(t, RepoVisibility(""), migrateFlags.TargetRepoVisibility)
-	assert.False(t, migrateFlags.KeepArchive)
 }
 
 func TestCmdMigrateFlagsWithValues(t *testing.T) {
@@ -161,14 +160,12 @@ func TestCmdMigrateFlagsWithValues(t *testing.T) {
 		TargetRepo:           "github-repo",
 		GitHubPAT:            "ghp_token",
 		TargetRepoVisibility: RepoVisibility("private"),
-		KeepArchive:          true,
 	}
 
 	assert.Equal(t, "github-org", flags.TargetOrg)
 	assert.Equal(t, "github-repo", flags.TargetRepo)
 	assert.Equal(t, "ghp_token", flags.GitHubPAT)
 	assert.Equal(t, RepoVisibility("private"), flags.TargetRepoVisibility)
-	assert.True(t, flags.KeepArchive)
 }
 
 func TestCmdMigrateFlagsJSON(t *testing.T) {
@@ -176,7 +173,6 @@ func TestCmdMigrateFlagsJSON(t *testing.T) {
 		TargetOrg:            "github-org",
 		TargetRepo:           "github-repo",
 		TargetRepoVisibility: RepoVisibility("private"),
-		KeepArchive:          true,
 	}
 
 	// Test JSON marshaling
@@ -191,7 +187,6 @@ func TestCmdMigrateFlagsJSON(t *testing.T) {
 
 	assert.Equal(t, flags.TargetOrg, unmarshaledFlags.TargetOrg)
 	assert.Equal(t, flags.TargetRepo, unmarshaledFlags.TargetRepo)
-	assert.Equal(t, flags.KeepArchive, unmarshaledFlags.KeepArchive)
 }
 
 func TestRepoVisibilityInvalidValues(t *testing.T) {

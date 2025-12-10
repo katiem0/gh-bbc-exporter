@@ -13,7 +13,6 @@ type CmdMigrateFlags struct {
 	TargetRepo           string
 	TargetRepoVisibility RepoVisibility
 	GitHubPAT            string
-	KeepArchive          bool
 }
 
 type OrganizationIDQuery struct {

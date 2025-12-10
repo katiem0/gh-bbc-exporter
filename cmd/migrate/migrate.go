@@ -144,11 +144,9 @@ func NewCmdMigrate() *cobra.Command {
 	migrateCmd.PersistentFlags().StringVar(&migrateFlags.TargetRepo, "target-repo", "",
 		"Target repository name (defaults to source repo name)")
 	migrateCmd.PersistentFlags().StringVar(&migrateFlags.GitHubPAT, "github-target-pat", "",
-		"GitHub Personal Access Token (env: GH_PAT)")
+		"GitHub Personal Access Token (env: GITHUB_PAT)")
 	migrateCmd.PersistentFlags().Var(&migrateFlags.TargetRepoVisibility, "target-repo-visibility",
 		"The visibility of the target repo. Defaults to private. Valid values are public, private, or internal.")
-	migrateCmd.PersistentFlags().BoolVar(&migrateFlags.KeepArchive, "keep-archive", false,
-		"Keep the migration archive after successful import (default: delete after import)")
 	migrateCmd.PersistentFlags().BoolVarP(&exportFlags.Debug, "debug", "d", false, "Enable debug logging")
 
 	if err := migrateCmd.MarkPersistentFlagRequired("workspace"); err != nil {
@@ -172,8 +170,7 @@ func runCmdMigrate(exportFlags *data.CmdExportFlags, migrateFlags *data.CmdMigra
 		zap.String("repository", exportFlags.Repository),
 		zap.String("targetOrg", migrateFlags.TargetOrg),
 		zap.String("targetRepo", migrateFlags.TargetRepo),
-		zap.String("visibility", migrateFlags.TargetRepoVisibility.String()),
-		zap.Bool("keepArchive", migrateFlags.KeepArchive))
+		zap.String("visibility", migrateFlags.TargetRepoVisibility.String()))
 
 	logger.Info("Starting Bitbucket to GitHub migration",
 		zap.String("source", fmt.Sprintf("%s/%s", exportFlags.Workspace, exportFlags.Repository)),
@@ -252,24 +249,5 @@ func runCmdMigrate(exportFlags *data.CmdExportFlags, migrateFlags *data.CmdMigra
 	logger.Debug("Migration process finished",
 		zap.String("source", fmt.Sprintf("%s/%s", exportFlags.Workspace, exportFlags.Repository)),
 		zap.String("target", fmt.Sprintf("%s/%s", migrateFlags.TargetOrg, migrateFlags.TargetRepo)))
-
-	// if !migrateFlags.KeepArchive {
-	// 	logger.Debug("Cleaning up migration archive", zap.String("archive", archivePath))
-	// 	if err := os.Remove(archivePath); err != nil {
-	// 		logger.Warn("Failed to remove archive file", zap.String("archive", archivePath), zap.Error(err))
-	// 		logger.Debug("Archive cleanup failed",
-	// 			zap.String("archivePath", archivePath),
-	// 			zap.Error(err))
-	// 	} else {
-	// 		logger.Info("Archive cleaned up", zap.String("archive", archivePath))
-	// 		logger.Debug("Archive removed successfully",
-	// 			zap.String("archivePath", archivePath))
-	// 	}
-	// } else {
-	// 	logger.Info("Archive retained", zap.String("archive", archivePath))
-	// 	logger.Debug("Archive retained per user request",
-	// 		zap.String("archivePath", archivePath),
-	// 		zap.Bool("keepArchive", migrateFlags.KeepArchive))
-	// }
 	return nil
 }

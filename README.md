@@ -219,12 +219,10 @@ Flags:
                                                            local lookup only)
       --target-org string                                  Target GitHub organization (required)
       --target-repo string                                 Target repository name (defaults to source repo name)
-      --github-target-pat string                           GitHub Personal Access Token (env: GH_PAT)
+      --github-target-pat string                           GitHub Personal Access Token (env: GITHUB_PAT)
       --target-repo-visibility <internal|private|public>   The visibility of the target repo. Defaults to private.
                                                            Valid values are public, private, or internal. (default
                                                            private)
-      --keep-archive                                       Keep the migration archive after successful import
-                                                           (default: delete after import)
   -d, --debug                                              Enable debug logging
 
 Global Flags:
@@ -312,7 +310,7 @@ export BITBUCKET_APP_PASSWORD="your-app-password"
 gh bbc-exporter export -w your-workspace -r your-repo
 
 # GitHub PAT for migrate command
-export GH_PAT="ghp_your-github-pat"
+export GITHUB_PAT="ghp_your-github-pat"
 gh bbc-exporter migrate -w your-workspace -r your-repo --target-org github-org -t your-bitbucket-token
 ```
 

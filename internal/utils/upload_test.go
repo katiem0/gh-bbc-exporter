@@ -40,8 +40,8 @@ func TestUploadArchiveToGitHub(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	_ = os.Setenv("GH_PAT", "test-token")
-	defer func() { _ = os.Unsetenv("GH_PAT") }()
+	_ = os.Setenv("GITHUB_PAT", "test-token")
+	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
 
 	logger, _ := zap.NewDevelopment()
 
@@ -93,8 +93,8 @@ func TestUploadSingleFile(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	_ = os.Setenv("GH_PAT", "test-token")
-	defer func() { _ = os.Unsetenv("GH_PAT") }()
+	_ = os.Setenv("GITHUB_PAT", "test-token")
+	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
 
 	logger, _ := zap.NewDevelopment()
 
@@ -161,8 +161,8 @@ func TestUploadMultipartFileIntegration(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	_ = os.Setenv("GH_PAT", "test-token")
-	defer func() { _ = os.Unsetenv("GH_PAT") }()
+	_ = os.Setenv("GITHUB_PAT", "test-token")
+	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
 
 	logger, _ := zap.NewDevelopment()
 
@@ -214,8 +214,8 @@ func TestStartMultipartUpload(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	_ = os.Setenv("GH_PAT", "test-token")
-	defer func() { _ = os.Unsetenv("GH_PAT") }()
+	_ = os.Setenv("GITHUB_PAT", "test-token")
+	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
 
 	logger, _ := zap.NewDevelopment()
 
@@ -249,8 +249,8 @@ func TestUploadPartIntegration(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	_ = os.Setenv("GH_PAT", "test-token")
-	defer func() { _ = os.Unsetenv("GH_PAT") }()
+	_ = os.Setenv("GITHUB_PAT", "test-token")
+	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
 
 	logger, _ := zap.NewDevelopment()
 
@@ -287,8 +287,8 @@ func TestCompleteMultipartUploadIntegration(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	_ = os.Setenv("GH_PAT", "test-token")
-	defer func() { _ = os.Unsetenv("GH_PAT") }()
+	_ = os.Setenv("GITHUB_PAT", "test-token")
+	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
 
 	logger, _ := zap.NewDevelopment()
 
@@ -324,8 +324,8 @@ func TestUploadArchiveServerError(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	_ = os.Setenv("GH_PAT", "test-token")
-	defer func() { _ = os.Unsetenv("GH_PAT") }()
+	_ = os.Setenv("GITHUB_PAT", "test-token")
+	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
 
 	logger, _ := zap.NewDevelopment()
 
@@ -352,8 +352,8 @@ func TestUploadLargeFileForceMultipart(t *testing.T) {
 	err = os.WriteFile(archivePath, []byte("test"), 0644)
 	assert.NoError(t, err)
 
-	_ = os.Setenv("GH_PAT", "invalid-token-for-test")
-	defer func() { _ = os.Unsetenv("GH_PAT") }()
+	_ = os.Setenv("GITHUB_PAT", "invalid-token-for-test")
+	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
 
 	logger, _ := zap.NewDevelopment()
 
@@ -394,8 +394,8 @@ func TestUploadEmptyFile(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	_ = os.Setenv("GH_PAT", "test-token")
-	defer func() { _ = os.Unsetenv("GH_PAT") }()
+	_ = os.Setenv("GITHUB_PAT", "test-token")
+	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
 
 	logger, _ := zap.NewDevelopment()
 
@@ -422,11 +422,11 @@ func TestUploadWithMissingToken(t *testing.T) {
 	err = os.WriteFile(archivePath, []byte("test content"), 0644)
 	assert.NoError(t, err)
 
-	originalToken := os.Getenv("GH_PAT")
-	defer func() { _ = os.Unsetenv("GH_PAT") }()
+	originalToken := os.Getenv("GITHUB_PAT")
+	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
 	defer func() {
 		if originalToken != "" {
-			_ = os.Setenv("GH_PAT", originalToken)
+			_ = os.Setenv("GITHUB_PAT", originalToken)
 		}
 	}()
 
@@ -482,8 +482,8 @@ func TestUploadWithRetry(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	_ = os.Setenv("GH_PAT", "test-token")
-	defer func() { _ = os.Unsetenv("GH_PAT") }()
+	_ = os.Setenv("GITHUB_PAT", "test-token")
+	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
 
 	logger, _ := zap.NewDevelopment()
 

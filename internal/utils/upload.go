@@ -37,13 +37,9 @@ func (g *APIGetter) UploadArchiveToGitHub(orgID int, archivePath string, logger 
 		logger.Debug("Failed to open archive file", zap.Error(err))
 		return "", fmt.Errorf("failed to open archive file: %w", err)
 	}
-
-	fileClosed := false
 	defer func() {
-		if !fileClosed {
-			if err := file.Close(); err != nil {
-				logger.Warn("Failed to close archive file", zap.Error(err))
-			}
+		if err := file.Close(); err != nil && !strings.Contains(err.Error(), "file already closed") {
+			logger.Warn("Failed to close archive file", zap.Error(err))
 		}
 	}()
 
@@ -69,12 +65,7 @@ func (g *APIGetter) UploadArchiveToGitHub(orgID int, archivePath string, logger 
 		logger.Debug("Initiating single-file upload",
 			zap.Int64("fileSizeBytes", fileSize),
 			zap.String("fileSizeMB", fmt.Sprintf("%.2f MB", float64(fileSize)/(1024*1024))))
-		result, err := g.uploadSingleFile(ctx, orgID, file, fileName, fileSize, logger)
-		if closeErr := file.Close(); closeErr != nil {
-			logger.Warn("Failed to close archive file after upload", zap.Error(closeErr))
-		}
-		fileClosed = true
-		return result, err
+		return g.uploadSingleFile(ctx, orgID, file, fileName, fileSize, logger)
 	}
 
 	logger.Info("Using multipart upload (file >= 5 GB)")
@@ -83,12 +74,7 @@ func (g *APIGetter) UploadArchiveToGitHub(orgID int, archivePath string, logger 
 		zap.String("fileSizeGB", fmt.Sprintf("%.2f GB", float64(fileSize)/(1024*1024*1024))),
 		zap.Int64("partSize", DefaultPartSize),
 		zap.Int("estimatedParts", int((fileSize+DefaultPartSize-1)/DefaultPartSize)))
-	result, err := g.uploadMultipartFile(ctx, orgID, file, fileName, fileSize, logger)
-	if closeErr := file.Close(); closeErr != nil {
-		logger.Warn("Failed to close archive file after upload", zap.Error(closeErr))
-	}
-	fileClosed = true
-	return result, err
+	return g.uploadMultipartFile(ctx, orgID, file, fileName, fileSize, logger)
 }
 
 func (g *APIGetter) uploadSingleFile(ctx context.Context, orgID int, file *os.File, fileName string, fileSize int64, logger *zap.Logger) (string, error) {
@@ -112,7 +98,7 @@ func (g *APIGetter) uploadSingleFile(ctx context.Context, orgID int, file *os.Fi
 
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("User-Agent", "gh-bbc-exporter")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("GH_PAT")))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("GITHUB_PAT")))
 	req.ContentLength = fileSize
 
 	logger.Debug("Request headers set",
@@ -344,7 +330,7 @@ func (g *APIGetter) startMultipartUpload(ctx context.Context, orgID int, fileNam
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "gh-bbc-exporter")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("GH_PAT")))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("GITHUB_PAT")))
 	req.Header.Set("GraphQL-Features", "octoshift_github_owned_storage")
 
 	logger.Debug("Sending multipart upload initiation request",
@@ -429,7 +415,7 @@ func (g *APIGetter) uploadPart(ctx context.Context, location string, data []byte
 
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("User-Agent", "gh-bbc-exporter")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("GH_PAT")))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("GITHUB_PAT")))
 	req.Header.Set("GraphQL-Features", "octoshift_github_owned_storage")
 	req.ContentLength = int64(len(data))
 
@@ -495,7 +481,7 @@ func (g *APIGetter) completeMultipartUpload(ctx context.Context, lastLocation st
 
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("User-Agent", "gh-bbc-exporter")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("GH_PAT")))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("GITHUB_PAT")))
 	req.Header.Set("GraphQL-Features", "octoshift_github_owned_storage")
 
 	logger.Debug("Sending finalize request",
