@@ -29,7 +29,7 @@ func NewCmdMigrate() *cobra.Command {
 				return fmt.Errorf("bitbucket repository must be specified")
 			}
 			if migrateFlags.TargetOrg == "" {
-				return fmt.Errorf("target github organization must be specified")
+				return fmt.Errorf("target GitHub organization must be specified")
 			}
 
 			if exportFlags.PRsFromDate != "" {

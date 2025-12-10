@@ -20,10 +20,10 @@ func NewCmdExport() *cobra.Command {
 		Long:  "Export repository and metadata from Bitbucket Cloud for GitHub Cloud import.",
 		PreRunE: func(exportCmd *cobra.Command, args []string) error {
 			if len(cmdExportFlags.Workspace) == 0 {
-				return errors.New("a Bitbucket Workspace must be specified")
+				return errors.New("a bitbucket workspace must be specified")
 			}
 			if len(cmdExportFlags.Repository) == 0 {
-				return errors.New("a Bitbucket repository must be specified")
+				return errors.New("a bitbucket repository must be specified")
 			}
 			return nil
 		},

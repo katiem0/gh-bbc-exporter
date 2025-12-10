@@ -61,7 +61,6 @@ func TestMigrateCommandFlags(t *testing.T) {
 		{"target-repo", "", ""},
 		{"github-target-pat", "", ""},
 		{"target-repo-visibility", "", "private"},
-		{"keep-archive", "", "false"},
 		{"debug", "d", "false"},
 	}
 
@@ -102,13 +101,13 @@ func TestMigratePreRunValidation(t *testing.T) {
 			name:        "Missing workspace",
 			args:        []string{"--repo", "test-repo", "--target-org", "test-org"},
 			expectError: true,
-			errorMsg:    "Bitbucket Workspace must be specified",
+			errorMsg:    "bitbucket workspace must be specified",
 		},
 		{
 			name:        "Missing repository",
 			args:        []string{"--workspace", "test-ws", "--target-org", "test-org"},
 			expectError: true,
-			errorMsg:    "Bitbucket repository must be specified",
+			errorMsg:    "bitbucket repository must be specified",
 		},
 		{
 			name:        "Missing target org",
@@ -570,7 +569,7 @@ func TestMigrateAllFlagsPresent(t *testing.T) {
 		"target-repo",
 		"github-target-pat",
 		"target-repo-visibility",
-		"keep-archive",
+
 		"debug",
 	}
 
@@ -1125,7 +1124,6 @@ func TestMigrateFlagsWithoutShorthands(t *testing.T) {
 		"target-repo",
 		"github-target-pat",
 		"target-repo-visibility",
-		"keep-archive",
 	}
 
 	for _, flagName := range noShorthandFlags {
@@ -1160,7 +1158,7 @@ func TestMigrateEmptyWorkspaceError(t *testing.T) {
 
 	err := cmd.Execute()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Workspace")
+	assert.Contains(t, err.Error(), "workspace")
 }
 
 func TestMigrateEmptyRepositoryError(t *testing.T) {
@@ -1176,21 +1174,6 @@ func TestMigrateEmptyRepositoryError(t *testing.T) {
 	err := cmd.Execute()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "repository")
-}
-
-func TestMigrateEmptyTargetOrgError(t *testing.T) {
-	defer cleanupExportDirs(t)
-
-	cmd := NewCmdMigrate()
-	cmd.SetArgs([]string{
-		"--workspace", "test-ws",
-		"--repo", "test-repo",
-		"--access-token", "test-token",
-	})
-
-	err := cmd.Execute()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "target")
 }
 
 func TestCmdMigrateFlagsEmbeddedExportFlags(t *testing.T) {

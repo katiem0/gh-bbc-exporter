@@ -134,7 +134,7 @@ func TestExecuteWithInvalidFlags(t *testing.T) {
 	assert.Error(t, err)
 
 	output := buf.String()
-	assert.Contains(t, output, "Bitbucket Workspace must be specified")
+	assert.Contains(t, output, "bitbucket workspace must be specified")
 }
 
 func TestExecuteWithValidFlags(t *testing.T) {
@@ -217,13 +217,13 @@ func TestRunCmdExportOptionsValidation(t *testing.T) {
 			name:    "missing workspace",
 			args:    []string{"--repo", "test-repo", "--access-token", "fake-token"},
 			wantErr: true,
-			errMsg:  "a Bitbucket Workspace must be specified",
+			errMsg:  "a bitbucket workspace must be specified",
 		},
 		{
 			name:    "missing repo",
 			args:    []string{"--workspace", "test-workspace", "--access-token", "fake-token"},
 			wantErr: true,
-			errMsg:  "a Bitbucket repository must be specified",
+			errMsg:  "a bitbucket repository must be specified",
 		},
 		{
 			name:    "invalid date format",
@@ -262,10 +262,10 @@ func TestRunCmdExportOptionsValidation(t *testing.T) {
 				Short: "Export repository and metadata from Bitbucket Cloud",
 				PreRunE: func(cmd *cobra.Command, args []string) error {
 					if len(CmdExportFlags.Workspace) == 0 {
-						return errors.New("a Bitbucket Workspace must be specified")
+						return errors.New("a bitbucket workspace must be specified")
 					}
 					if len(CmdExportFlags.Repository) == 0 {
-						return errors.New("a Bitbucket repository must be specified")
+						return errors.New("a bitbucket repository must be specified")
 					}
 					return nil
 				},
@@ -1124,12 +1124,12 @@ func TestRunCmdExportWithMissingRequiredFlags(t *testing.T) {
 		{
 			name:    "No workspace",
 			args:    []string{"--repo", "test-repo"},
-			wantErr: "a Bitbucket Workspace must be specified",
+			wantErr: "a bitbucket workspace must be specified",
 		},
 		{
 			name:    "No repository",
 			args:    []string{"--workspace", "test-workspace"},
-			wantErr: "a Bitbucket repository must be specified",
+			wantErr: "a bitbucket repository must be specified",
 		},
 	}
 
@@ -1705,7 +1705,7 @@ func TestValidateExportFlagsEmptyWorkspace(t *testing.T) {
 
 	err := cmd.Execute()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Workspace")
+	assert.Contains(t, err.Error(), "workspace")
 }
 
 func TestValidateExportFlagsEmptyRepository(t *testing.T) {

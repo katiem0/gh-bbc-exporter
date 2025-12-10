@@ -247,7 +247,7 @@ gh bbc-exporter migrate -w bitbucket-workspace -r source-repo \
 
 # Migrate and keep the archive for inspection
 gh bbc-exporter migrate -w bitbucket-workspace -r source-repo \
-   --target-org github-org --keep-archive -t your-token
+   --target-org github-org -t your-token
 
 # Migrate using explicit GitHub PAT
 gh bbc-exporter migrate -w bitbucket-workspace -r source-repo \
