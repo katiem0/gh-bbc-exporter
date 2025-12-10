@@ -521,15 +521,15 @@ func TestMigrationStatusStates(t *testing.T) {
 }
 
 func TestGetGitHubAuthTokenFromFlags(t *testing.T) {
-	originalPAT := os.Getenv("GH_PAT")
+	originalPAT := os.Getenv("GH_TARGET_PAT")
 	defer func() {
 		if originalPAT != "" {
-			_ = os.Setenv("GH_PAT", originalPAT)
+			_ = os.Setenv("GH_TARGET_PAT", originalPAT)
 		} else {
-			_ = os.Unsetenv("GH_PAT")
+			_ = os.Unsetenv("GH_TARGET_PAT")
 		}
 	}()
-	_ = os.Unsetenv("GH_PAT")
+	_ = os.Unsetenv("GH_TARGET_PAT")
 
 	testCases := []struct {
 		name        string
@@ -560,9 +560,9 @@ func TestGetGitHubAuthTokenFromFlags(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.envPAT != "" {
-				_ = os.Setenv("GH_PAT", tc.envPAT)
+				_ = os.Setenv("GH_TARGET_PAT", tc.envPAT)
 			} else {
-				_ = os.Unsetenv("GH_PAT")
+				_ = os.Unsetenv("GH_TARGET_PAT")
 			}
 
 			migrateFlags := &data.CmdMigrateFlags{

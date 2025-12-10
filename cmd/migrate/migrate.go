@@ -137,7 +137,7 @@ func NewCmdMigrate() *cobra.Command {
 	migrateCmd.PersistentFlags().StringVar(&migrateFlags.TargetRepo, "target-repo", "",
 		"Target repository name (defaults to source repo name)")
 	migrateCmd.PersistentFlags().StringVar(&migrateFlags.GitHubPAT, "github-target-pat", "",
-		"GitHub Personal Access Token (env: GH_PAT)")
+		"GitHub Personal Access Token (env: GH_TARGET_PAT)")
 	migrateCmd.PersistentFlags().Var(&migrateFlags.TargetRepoVisibility, "target-repo-visibility",
 		"The visibility of the target repo. Defaults to private. Valid values are public, private, or internal.")
 	migrateCmd.PersistentFlags().BoolVar(&migrateFlags.KeepArchive, "keep-archive", false,
