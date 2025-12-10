@@ -37,9 +37,13 @@ func (g *APIGetter) UploadArchiveToGitHub(orgID int, archivePath string, logger 
 		logger.Debug("Failed to open archive file", zap.Error(err))
 		return "", fmt.Errorf("failed to open archive file: %w", err)
 	}
+
+	fileClosed := false
 	defer func() {
-		if err := file.Close(); err != nil {
-			logger.Warn("Failed to close archive file", zap.Error(err))
+		if !fileClosed {
+			if err := file.Close(); err != nil {
+				logger.Warn("Failed to close archive file", zap.Error(err))
+			}
 		}
 	}()
 
@@ -65,7 +69,12 @@ func (g *APIGetter) UploadArchiveToGitHub(orgID int, archivePath string, logger 
 		logger.Debug("Initiating single-file upload",
 			zap.Int64("fileSizeBytes", fileSize),
 			zap.String("fileSizeMB", fmt.Sprintf("%.2f MB", float64(fileSize)/(1024*1024))))
-		return g.uploadSingleFile(ctx, orgID, file, fileName, fileSize, logger)
+		result, err := g.uploadSingleFile(ctx, orgID, file, fileName, fileSize, logger)
+		if closeErr := file.Close(); closeErr != nil {
+			logger.Warn("Failed to close archive file after upload", zap.Error(closeErr))
+		}
+		fileClosed = true
+		return result, err
 	}
 
 	logger.Info("Using multipart upload (file >= 5 GB)")
@@ -74,7 +83,12 @@ func (g *APIGetter) UploadArchiveToGitHub(orgID int, archivePath string, logger 
 		zap.String("fileSizeGB", fmt.Sprintf("%.2f GB", float64(fileSize)/(1024*1024*1024))),
 		zap.Int64("partSize", DefaultPartSize),
 		zap.Int("estimatedParts", int((fileSize+DefaultPartSize-1)/DefaultPartSize)))
-	return g.uploadMultipartFile(ctx, orgID, file, fileName, fileSize, logger)
+	result, err := g.uploadMultipartFile(ctx, orgID, file, fileName, fileSize, logger)
+	if closeErr := file.Close(); closeErr != nil {
+		logger.Warn("Failed to close archive file after upload", zap.Error(closeErr))
+	}
+	fileClosed = true
+	return result, err
 }
 
 func (g *APIGetter) uploadSingleFile(ctx context.Context, orgID int, file *os.File, fileName string, fileSize int64, logger *zap.Logger) (string, error) {

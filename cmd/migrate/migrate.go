@@ -2,7 +2,7 @@ package migrate
 
 import (
 	"fmt"
-	"os"
+	"time"
 
 	"github.com/cli/go-gh/v2/pkg/api"
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
@@ -22,14 +22,21 @@ func NewCmdMigrate() *cobra.Command {
 		Short: "Export from Bitbucket and import to GitHub",
 		Long:  "Migrate a repository from Bitbucket Cloud to GitHub Enterprise.",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			if len(exportFlags.Workspace) == 0 {
-				return fmt.Errorf("a Bitbucket Workspace must be specified")
+			if exportFlags.Workspace == "" {
+				return fmt.Errorf("bitbucket workspace must be specified")
 			}
-			if len(exportFlags.Repository) == 0 {
-				return fmt.Errorf("a Bitbucket repository must be specified")
+			if exportFlags.Repository == "" {
+				return fmt.Errorf("bitbucket repository must be specified")
 			}
-			if len(migrateFlags.TargetOrg) == 0 {
-				return fmt.Errorf("a target GitHub organization must be specified")
+			if migrateFlags.TargetOrg == "" {
+				return fmt.Errorf("target github organization must be specified")
+			}
+
+			if exportFlags.PRsFromDate != "" {
+				_, err := time.Parse("2006-01-02", exportFlags.PRsFromDate)
+				if err != nil {
+					return fmt.Errorf("invalid date format for --prs-from-date: %s (expected YYYY-MM-DD)", exportFlags.PRsFromDate)
+				}
 			}
 			return nil
 		},
@@ -137,7 +144,7 @@ func NewCmdMigrate() *cobra.Command {
 	migrateCmd.PersistentFlags().StringVar(&migrateFlags.TargetRepo, "target-repo", "",
 		"Target repository name (defaults to source repo name)")
 	migrateCmd.PersistentFlags().StringVar(&migrateFlags.GitHubPAT, "github-target-pat", "",
-		"GitHub Personal Access Token (env: GH_TARGET_PAT)")
+		"GitHub Personal Access Token (env: GH_PAT)")
 	migrateCmd.PersistentFlags().Var(&migrateFlags.TargetRepoVisibility, "target-repo-visibility",
 		"The visibility of the target repo. Defaults to private. Valid values are public, private, or internal.")
 	migrateCmd.PersistentFlags().BoolVar(&migrateFlags.KeepArchive, "keep-archive", false,
@@ -246,23 +253,23 @@ func runCmdMigrate(exportFlags *data.CmdExportFlags, migrateFlags *data.CmdMigra
 		zap.String("source", fmt.Sprintf("%s/%s", exportFlags.Workspace, exportFlags.Repository)),
 		zap.String("target", fmt.Sprintf("%s/%s", migrateFlags.TargetOrg, migrateFlags.TargetRepo)))
 
-	if !migrateFlags.KeepArchive {
-		logger.Debug("Cleaning up migration archive", zap.String("archive", archivePath))
-		if err := os.Remove(archivePath); err != nil {
-			logger.Warn("Failed to remove archive file", zap.String("archive", archivePath), zap.Error(err))
-			logger.Debug("Archive cleanup failed",
-				zap.String("archivePath", archivePath),
-				zap.Error(err))
-		} else {
-			logger.Info("Archive cleaned up", zap.String("archive", archivePath))
-			logger.Debug("Archive removed successfully",
-				zap.String("archivePath", archivePath))
-		}
-	} else {
-		logger.Info("Archive retained", zap.String("archive", archivePath))
-		logger.Debug("Archive retained per user request",
-			zap.String("archivePath", archivePath),
-			zap.Bool("keepArchive", migrateFlags.KeepArchive))
-	}
+	// if !migrateFlags.KeepArchive {
+	// 	logger.Debug("Cleaning up migration archive", zap.String("archive", archivePath))
+	// 	if err := os.Remove(archivePath); err != nil {
+	// 		logger.Warn("Failed to remove archive file", zap.String("archive", archivePath), zap.Error(err))
+	// 		logger.Debug("Archive cleanup failed",
+	// 			zap.String("archivePath", archivePath),
+	// 			zap.Error(err))
+	// 	} else {
+	// 		logger.Info("Archive cleaned up", zap.String("archive", archivePath))
+	// 		logger.Debug("Archive removed successfully",
+	// 			zap.String("archivePath", archivePath))
+	// 	}
+	// } else {
+	// 	logger.Info("Archive retained", zap.String("archive", archivePath))
+	// 	logger.Debug("Archive retained per user request",
+	// 		zap.String("archivePath", archivePath),
+	// 		zap.Bool("keepArchive", migrateFlags.KeepArchive))
+	// }
 	return nil
 }

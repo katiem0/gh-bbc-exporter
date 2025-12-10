@@ -24,7 +24,7 @@ A sample workflow is available at [`sample-migration-via-actions.yml`](sample-mi
 1. Add the workflow file to your repository (e.g., `.github/workflows/migrate-repo.yml`).
 2. Configure the following secrets (or authentication method secrets of your choice) in
    your GitHub repository's settings:
-   - `GH_TARGET_PAT`: A GitHub Personal Access Token with `repo` scope.
+   - `GH_PAT`: A GitHub Personal Access Token with `repo` scope.
    - `BITBUCKET_API_TOKEN`: A Bitbucket API token with `repository:read` and `pullrequest:read` permissions.
    - `BITBUCKET_EMAIL`: The Atlassian account email associated with the API token.
 

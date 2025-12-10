@@ -679,13 +679,13 @@ func TestMigrateEnvironmentVariables(t *testing.T) {
 		"BITBUCKET_TEMP_DIR",
 	}
 
-	originalGHPAT := os.Getenv("GH_TARGET_PAT")
-	_ = os.Unsetenv("GH_TARGET_PAT")
+	originalGHPAT := os.Getenv("GH_PAT")
+	_ = os.Unsetenv("GH_PAT")
 	defer func() {
 		if originalGHPAT != "" {
-			_ = os.Setenv("GH_TARGET_PAT", originalGHPAT)
+			_ = os.Setenv("GH_PAT", originalGHPAT)
 		} else {
-			_ = os.Unsetenv("GH_TARGET_PAT")
+			_ = os.Unsetenv("GH_PAT")
 		}
 	}()
 
@@ -761,14 +761,14 @@ func TestMigrateEnvironmentVariables(t *testing.T) {
 func TestMigrateMixedAuthenticationMethods(t *testing.T) {
 	defer cleanupExportDirs(t)
 
-	// Save and clear GH_TARGET_PAT to avoid interference from environment
-	originalGHPAT := os.Getenv("GH_TARGET_PAT")
-	_ = os.Unsetenv("GH_TARGET_PAT")
+	// Save and clear GH_PAT to avoid interference from environment
+	originalGHPAT := os.Getenv("GH_PAT")
+	_ = os.Unsetenv("GH_PAT")
 	defer func() {
 		if originalGHPAT != "" {
-			_ = os.Setenv("GH_TARGET_PAT", originalGHPAT)
+			_ = os.Setenv("GH_PAT", originalGHPAT)
 		} else {
-			_ = os.Unsetenv("GH_TARGET_PAT")
+			_ = os.Unsetenv("GH_PAT")
 		}
 	}()
 
@@ -860,14 +860,14 @@ func TestMigratePRsFromDateValidation(t *testing.T) {
 		"BITBUCKET_APP_PASSWORD",
 	}
 
-	// Save and clear GH_TARGET_PAT to avoid interference
-	originalGHPAT := os.Getenv("GH_TARGET_PAT")
-	_ = os.Unsetenv("GH_TARGET_PAT")
+	// Save and clear GH_PAT to avoid interference
+	originalGHPAT := os.Getenv("GH_PAT")
+	_ = os.Unsetenv("GH_PAT")
 	defer func() {
 		if originalGHPAT != "" {
-			_ = os.Setenv("GH_TARGET_PAT", originalGHPAT)
+			_ = os.Setenv("GH_PAT", originalGHPAT)
 		} else {
-			_ = os.Unsetenv("GH_TARGET_PAT")
+			_ = os.Unsetenv("GH_PAT")
 		}
 	}()
 
@@ -952,14 +952,14 @@ func TestMigratePRsFromDateValidation(t *testing.T) {
 func TestMigrateNoAuthenticationProvided(t *testing.T) {
 	defer cleanupExportDirs(t)
 
-	// Save and clear GH_TARGET_PAT to avoid interference
-	originalGHPAT := os.Getenv("GH_TARGET_PAT")
-	_ = os.Unsetenv("GH_TARGET_PAT")
+	// Save and clear GH_PAT to avoid interference
+	originalGHPAT := os.Getenv("GH_PAT")
+	_ = os.Unsetenv("GH_PAT")
 	defer func() {
 		if originalGHPAT != "" {
-			_ = os.Setenv("GH_TARGET_PAT", originalGHPAT)
+			_ = os.Setenv("GH_PAT", originalGHPAT)
 		} else {
-			_ = os.Unsetenv("GH_TARGET_PAT")
+			_ = os.Unsetenv("GH_PAT")
 		}
 	}()
 
