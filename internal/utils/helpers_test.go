@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
@@ -21,19 +23,19 @@ import (
 
 func TestValidateExportFlags(t *testing.T) {
 	// Test case 1: No credentials provided
-	cmdFlags := &data.CmdFlags{}
+	cmdFlags := &data.CmdExportFlags{}
 	err := ValidateExportFlags(cmdFlags)
 	assert.Error(t, err, "Expected error when no credentials are provided")
 	assert.Contains(t, err.Error(), "authentication credentials required")
 
 	// Test case 2: Token provided
-	cmdFlags = &data.CmdFlags{}
+	cmdFlags = &data.CmdExportFlags{}
 	cmdFlags.BitbucketAccessToken = "testtoken"
 	err = ValidateExportFlags(cmdFlags)
 	assert.NoError(t, err, "Expected no error when token is provided")
 
 	// Test case 3: Username and app password provided
-	cmdFlags = &data.CmdFlags{}
+	cmdFlags = &data.CmdExportFlags{}
 	cmdFlags.BitbucketAccessToken = ""
 	cmdFlags.BitbucketUser = "testuser"
 	cmdFlags.BitbucketAppPass = "testpass"
@@ -41,7 +43,7 @@ func TestValidateExportFlags(t *testing.T) {
 	assert.NoError(t, err, "Expected no error when username and app password are provided")
 
 	// Test case 4: Only username provided (missing app password)
-	cmdFlags = &data.CmdFlags{}
+	cmdFlags = &data.CmdExportFlags{}
 	cmdFlags.BitbucketAccessToken = ""
 	cmdFlags.BitbucketUser = "testuser"
 	cmdFlags.BitbucketAppPass = ""
@@ -51,7 +53,7 @@ func TestValidateExportFlags(t *testing.T) {
 	assert.Contains(t, err.Error(), "authentication credentials required")
 
 	// Test case 5: Only app password provided (missing username)
-	cmdFlags = &data.CmdFlags{}
+	cmdFlags = &data.CmdExportFlags{}
 	cmdFlags.BitbucketAccessToken = ""
 	cmdFlags.BitbucketUser = ""
 	cmdFlags.BitbucketAppPass = "testpass"
@@ -61,14 +63,14 @@ func TestValidateExportFlags(t *testing.T) {
 	assert.Contains(t, err.Error(), "authentication credentials required")
 
 	// Test case 6: API token and email provided
-	cmdFlags = &data.CmdFlags{}
+	cmdFlags = &data.CmdExportFlags{}
 	cmdFlags.BitbucketAPIToken = "testapitoken"
 	cmdFlags.BitbucketEmail = "test@example.com"
 	err = ValidateExportFlags(cmdFlags)
 	assert.NoError(t, err, "Expected no error when API token and email are provided")
 
 	// Test case 7: Only API token provided (missing email)
-	cmdFlags = &data.CmdFlags{}
+	cmdFlags = &data.CmdExportFlags{}
 	cmdFlags.BitbucketAPIToken = "testapitoken"
 	cmdFlags.BitbucketEmail = ""
 	err = ValidateExportFlags(cmdFlags)
@@ -77,7 +79,7 @@ func TestValidateExportFlags(t *testing.T) {
 	assert.Contains(t, err.Error(), "authentication credentials required")
 
 	// Test case 8: Only email provided (missing API token)
-	cmdFlags = &data.CmdFlags{}
+	cmdFlags = &data.CmdExportFlags{}
 	cmdFlags.BitbucketAPIToken = ""
 	cmdFlags.BitbucketEmail = "test@example.com"
 	err = ValidateExportFlags(cmdFlags)
@@ -86,7 +88,7 @@ func TestValidateExportFlags(t *testing.T) {
 	assert.Contains(t, err.Error(), "authentication credentials required")
 
 	// Test case 9: Mixed authentication methods - access token with username/password
-	cmdFlags = &data.CmdFlags{}
+	cmdFlags = &data.CmdExportFlags{}
 	cmdFlags.BitbucketAccessToken = "testtoken"
 	cmdFlags.BitbucketUser = "testuser"
 	cmdFlags.BitbucketAppPass = "testpass"
@@ -95,7 +97,7 @@ func TestValidateExportFlags(t *testing.T) {
 	assert.Contains(t, err.Error(), "mixed authentication methods")
 
 	// Test case 9b: Mixed authentication methods - access token with API token/email
-	cmdFlags = &data.CmdFlags{}
+	cmdFlags = &data.CmdExportFlags{}
 	cmdFlags.BitbucketAccessToken = "testtoken"
 	cmdFlags.BitbucketAPIToken = "testapitoken"
 	cmdFlags.BitbucketEmail = "test@example.com"
@@ -104,7 +106,7 @@ func TestValidateExportFlags(t *testing.T) {
 	assert.Contains(t, err.Error(), "mixed authentication methods")
 
 	// Test case 9c: Mixed authentication methods - API token/email with username/password
-	cmdFlags = &data.CmdFlags{}
+	cmdFlags = &data.CmdExportFlags{}
 	cmdFlags.BitbucketAPIToken = "testapitoken"
 	cmdFlags.BitbucketEmail = "test@example.com"
 	cmdFlags.BitbucketUser = "testuser"
@@ -114,14 +116,14 @@ func TestValidateExportFlags(t *testing.T) {
 	assert.Contains(t, err.Error(), "mixed authentication methods")
 
 	// Test case 10: Valid date format for PRsFromDate
-	cmdFlags = &data.CmdFlags{}
+	cmdFlags = &data.CmdExportFlags{}
 	cmdFlags.BitbucketAccessToken = "testtoken"
 	cmdFlags.PRsFromDate = "2023-01-01"
 	err = ValidateExportFlags(cmdFlags)
 	assert.NoError(t, err, "Expected no error with valid date format")
 
 	// Test case 11: Invalid date format for PRsFromDate
-	cmdFlags = &data.CmdFlags{}
+	cmdFlags = &data.CmdExportFlags{}
 	cmdFlags.BitbucketAccessToken = "testtoken"
 	cmdFlags.PRsFromDate = "01/01/2023"
 	err = ValidateExportFlags(cmdFlags)
@@ -130,7 +132,7 @@ func TestValidateExportFlags(t *testing.T) {
 }
 
 func TestSetupEnvironmentCredentials(t *testing.T) {
-	cmdFlags := &data.CmdFlags{}
+	cmdFlags := &data.CmdExportFlags{}
 
 	// Clean up any existing environment variables first
 	if err := os.Unsetenv("BITBUCKET_USERNAME"); err != nil {
@@ -602,7 +604,7 @@ func TestPRDateValidation(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cmdFlags := &data.CmdFlags{
+			cmdFlags := &data.CmdExportFlags{
 				BitbucketAccessToken: "test-token", // Add required auth
 				PRsFromDate:          tc.dateStr,
 			}
@@ -1578,7 +1580,7 @@ func TestTempDirEnvironmentVariable(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			cmdFlags := &data.CmdFlags{
+			cmdFlags := &data.CmdExportFlags{
 				TempDir: tc.flagValue,
 			}
 
@@ -1586,5 +1588,1467 @@ func TestTempDirEnvironmentVariable(t *testing.T) {
 
 			assert.Equal(t, tc.expectedResult, cmdFlags.TempDir, tc.description)
 		})
+	}
+}
+
+func TestSetupCommandUsageTemplate(t *testing.T) {
+	cmd := &cobra.Command{
+		Use:   "test",
+		Short: "Test command",
+	}
+
+	cmd.PersistentFlags().StringP("workspace", "w", "", "Bitbucket workspace name")
+	cmd.PersistentFlags().StringP("repo", "r", "", "Bitbucket repository slug")
+	cmd.PersistentFlags().StringP("access-token", "t", "", "Bitbucket access token for authentication")
+	cmd.PersistentFlags().BoolP("debug", "d", false, "Enable debug logging")
+
+	SetupCommandUsageTemplate(cmd, 120)
+
+	assert.False(t, cmd.Flags().SortFlags, "Regular flags should not be sorted")
+	assert.False(t, cmd.PersistentFlags().SortFlags, "Persistent flags should not be sorted")
+
+	assert.NotEmpty(t, cmd.UsageTemplate(), "Usage template should be set")
+	assert.Contains(t, cmd.UsageTemplate(), "wrappedFlagUsages", "Template should use wrappedFlagUsages")
+}
+
+func TestSetupCommandUsageTemplateOutput(t *testing.T) {
+	cmd := &cobra.Command{
+		Use:   "test [flags]",
+		Short: "Test command for template",
+		Long:  "This is a longer description that explains what the test command does.",
+		Example: `  test --workspace myworkspace --repo myrepo
+  test -w myworkspace -r myrepo --debug`,
+	}
+
+	cmd.PersistentFlags().StringP("workspace", "w", "", "Bitbucket workspace name")
+	cmd.PersistentFlags().StringP("repo", "r", "", "Bitbucket repository slug")
+
+	SetupCommandUsageTemplate(cmd, 80)
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := cmd.Usage()
+	assert.NoError(t, err)
+
+	output := buf.String()
+
+	assert.Contains(t, output, "Usage:", "Output should contain Usage section")
+	assert.Contains(t, output, "Examples:", "Output should contain Examples section")
+	assert.Contains(t, output, "Flags:", "Output should contain Flags section")
+	assert.Contains(t, output, "--workspace", "Output should contain workspace flag")
+	assert.Contains(t, output, "--repo", "Output should contain repo flag")
+}
+
+func TestSetupCommandUsageTemplateWithSubcommands(t *testing.T) {
+	rootCmd := &cobra.Command{
+		Use:   "root",
+		Short: "Root command",
+	}
+
+	subCmd := &cobra.Command{
+		Use:   "sub",
+		Short: "Sub command",
+	}
+
+	rootCmd.AddCommand(subCmd)
+	SetupCommandUsageTemplate(rootCmd, 100)
+
+	var buf bytes.Buffer
+	rootCmd.SetOut(&buf)
+	rootCmd.SetErr(&buf)
+
+	err := rootCmd.Usage()
+	assert.NoError(t, err)
+
+	output := buf.String()
+	// The custom template may use "Additional help topics:" instead of "Available Commands:"
+	assert.True(t,
+		strings.Contains(output, "Available Commands:") || strings.Contains(output, "Additional help topics:"),
+		"Output should contain commands section")
+	assert.Contains(t, output, "sub", "Output should contain subcommand")
+}
+
+func TestSetupCommandUsageTemplateMinimumWidth(t *testing.T) {
+	cmd := &cobra.Command{
+		Use:   "test",
+		Short: "Test command",
+	}
+
+	cmd.PersistentFlags().String("very-long-flag-name", "",
+		"This is a very long description that should be wrapped when the terminal width is narrow")
+
+	SetupCommandUsageTemplate(cmd, 20)
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := cmd.Usage()
+	assert.NoError(t, err)
+
+	assert.NotEmpty(t, buf.String())
+}
+
+func TestSetupCommandUsageTemplatePreservesFlags(t *testing.T) {
+	cmd := &cobra.Command{
+		Use:   "test",
+		Short: "Test command",
+	}
+
+	cmd.PersistentFlags().String("zebra", "", "Last alphabetically")
+	cmd.PersistentFlags().String("alpha", "", "First alphabetically")
+	cmd.PersistentFlags().String("middle", "", "Middle alphabetically")
+
+	SetupCommandUsageTemplate(cmd, 100)
+
+	zebraFlag := cmd.PersistentFlags().Lookup("zebra")
+	assert.NotNil(t, zebraFlag)
+	assert.Equal(t, "zebra", zebraFlag.Name)
+
+	alphaFlag := cmd.PersistentFlags().Lookup("alpha")
+	assert.NotNil(t, alphaFlag)
+	assert.Equal(t, "alpha", alphaFlag.Name)
+
+	middleFlag := cmd.PersistentFlags().Lookup("middle")
+	assert.NotNil(t, middleFlag)
+	assert.Equal(t, "middle", middleFlag.Name)
+}
+
+func TestSetupCommandUsageTemplateWithAliases(t *testing.T) {
+	cmd := &cobra.Command{
+		Use:     "test",
+		Aliases: []string{"t", "tst"},
+		Short:   "Test command with aliases",
+	}
+
+	SetupCommandUsageTemplate(cmd, 100)
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := cmd.Usage()
+	assert.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "Aliases:", "Output should contain Aliases section")
+}
+
+func TestSetupCommandUsageTemplateInheritedFlags(t *testing.T) {
+	rootCmd := &cobra.Command{
+		Use:   "root",
+		Short: "Root command",
+	}
+
+	rootCmd.PersistentFlags().Bool("global-flag", false, "A global flag inherited by subcommands")
+
+	subCmd := &cobra.Command{
+		Use:   "sub",
+		Short: "Sub command",
+	}
+	subCmd.Flags().String("local-flag", "", "A local flag")
+
+	rootCmd.AddCommand(subCmd)
+	SetupCommandUsageTemplate(subCmd, 100)
+
+	var buf bytes.Buffer
+	subCmd.SetOut(&buf)
+	subCmd.SetErr(&buf)
+
+	err := subCmd.Usage()
+	assert.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "Global Flags:", "Output should contain Global Flags section")
+	assert.Contains(t, output, "--global-flag", "Output should show inherited flag")
+}
+
+func TestGetTerminalWidth(t *testing.T) {
+	width := getTerminalWidth()
+	assert.Greater(t, width, 0, "Terminal width should be positive")
+}
+
+func TestSetupCommandUsageTemplateMultipleCalls(t *testing.T) {
+	cmd := &cobra.Command{
+		Use:   "test",
+		Short: "Test command",
+	}
+
+	cmd.PersistentFlags().String("flag1", "", "First flag")
+
+	SetupCommandUsageTemplate(cmd, 80)
+	SetupCommandUsageTemplate(cmd, 100)
+	SetupCommandUsageTemplate(cmd, 120)
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := cmd.Usage()
+	assert.NoError(t, err)
+	assert.NotEmpty(t, buf.String())
+}
+
+func TestGetTerminalWidthDefault(t *testing.T) {
+	// Test that getTerminalWidth returns a reasonable default
+	width := getTerminalWidth()
+	assert.GreaterOrEqual(t, width, 80, "Terminal width should be at least 80")
+	assert.LessOrEqual(t, width, 500, "Terminal width should be reasonable")
+}
+
+func TestSetupCommandUsageTemplateWithRunnable(t *testing.T) {
+	cmd := &cobra.Command{
+		Use:   "test [flags]",
+		Short: "Test command",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return nil
+		},
+	}
+
+	cmd.PersistentFlags().String("flag1", "", "First flag")
+	SetupCommandUsageTemplate(cmd, 100)
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := cmd.Usage()
+	assert.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "test [flags]", "Output should contain command usage line")
+}
+
+func TestSetupCommandUsageTemplateNoFlags(t *testing.T) {
+	cmd := &cobra.Command{
+		Use:   "test",
+		Short: "Test command without flags",
+	}
+
+	SetupCommandUsageTemplate(cmd, 100)
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := cmd.Usage()
+	assert.NoError(t, err)
+	assert.NotEmpty(t, buf.String())
+}
+
+func TestSetupCommandUsageTemplateWithLongDescription(t *testing.T) {
+	cmd := &cobra.Command{
+		Use:   "test",
+		Short: "Short description",
+		Long: `This is a very long description that spans multiple lines.
+It explains in detail what the command does and how to use it.
+
+It can include:
+- Bullet points
+- Multiple paragraphs
+- Examples and more`,
+	}
+
+	cmd.PersistentFlags().String("option", "", "An option flag")
+	SetupCommandUsageTemplate(cmd, 80)
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := cmd.Usage()
+	assert.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "--option")
+	assert.NotEmpty(t, output)
+}
+
+func TestSetupCommandUsageTemplateNarrowWidth(t *testing.T) {
+	cmd := &cobra.Command{
+		Use:   "test",
+		Short: "Test command",
+	}
+
+	// Add a flag with a very long description
+	cmd.PersistentFlags().String("long-option-name", "",
+		"This is an extremely long description that will definitely need to be wrapped when displayed in a narrow terminal window")
+
+	// Use narrow width (should be clamped to minimum of 40)
+	SetupCommandUsageTemplate(cmd, 30)
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := cmd.Usage()
+	assert.NoError(t, err)
+	assert.NotEmpty(t, buf.String())
+}
+
+func TestSetupCommandUsageTemplateWideWidth(t *testing.T) {
+	cmd := &cobra.Command{
+		Use:   "test",
+		Short: "Test command",
+	}
+
+	cmd.PersistentFlags().String("option", "", "A short description")
+	SetupCommandUsageTemplate(cmd, 200)
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := cmd.Usage()
+	assert.NoError(t, err)
+	assert.NotEmpty(t, buf.String())
+}
+
+func TestSetupCommandUsageTemplateWithDeprecatedFlag(t *testing.T) {
+	cmd := &cobra.Command{
+		Use:   "test",
+		Short: "Test command",
+	}
+
+	cmd.PersistentFlags().String("old-flag", "", "Deprecated flag")
+	err := cmd.PersistentFlags().MarkDeprecated("old-flag", "use --new-flag instead")
+	assert.NoError(t, err)
+
+	cmd.PersistentFlags().String("new-flag", "", "New flag")
+
+	SetupCommandUsageTemplate(cmd, 100)
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err = cmd.Usage()
+	assert.NoError(t, err)
+	// Deprecated flags should not appear in usage
+	output := buf.String()
+	assert.NotContains(t, output, "old-flag")
+	assert.Contains(t, output, "new-flag")
+}
+
+func TestSetupCommandUsageTemplateWithHiddenFlag(t *testing.T) {
+	cmd := &cobra.Command{
+		Use:   "test",
+		Short: "Test command",
+	}
+
+	cmd.PersistentFlags().String("hidden-flag", "", "Hidden flag")
+	err := cmd.PersistentFlags().MarkHidden("hidden-flag")
+	assert.NoError(t, err)
+
+	cmd.PersistentFlags().String("visible-flag", "", "Visible flag")
+
+	SetupCommandUsageTemplate(cmd, 100)
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err = cmd.Usage()
+	assert.NoError(t, err)
+	output := buf.String()
+	assert.NotContains(t, output, "hidden-flag")
+	assert.Contains(t, output, "visible-flag")
+}
+
+func TestSetupCommandUsageTemplateWithRequiredFlag(t *testing.T) {
+	cmd := &cobra.Command{
+		Use:   "test",
+		Short: "Test command",
+	}
+
+	cmd.PersistentFlags().String("required-flag", "", "Required flag")
+	err := cmd.MarkPersistentFlagRequired("required-flag")
+	assert.NoError(t, err)
+
+	SetupCommandUsageTemplate(cmd, 100)
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err = cmd.Usage()
+	assert.NoError(t, err)
+	assert.Contains(t, buf.String(), "required-flag")
+}
+
+func TestSetupCommandUsageTemplateWithBoolFlags(t *testing.T) {
+	cmd := &cobra.Command{
+		Use:   "test",
+		Short: "Test command",
+	}
+
+	cmd.PersistentFlags().Bool("verbose", false, "Enable verbose output")
+	cmd.PersistentFlags().BoolP("debug", "d", false, "Enable debug mode")
+
+	SetupCommandUsageTemplate(cmd, 100)
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := cmd.Usage()
+	assert.NoError(t, err)
+	output := buf.String()
+	assert.Contains(t, output, "--verbose")
+	assert.Contains(t, output, "-d, --debug")
+}
+
+func TestSetupCommandUsageTemplateWithIntFlags(t *testing.T) {
+	cmd := &cobra.Command{
+		Use:   "test",
+		Short: "Test command",
+	}
+
+	cmd.PersistentFlags().Int("count", 10, "Number of items")
+	cmd.PersistentFlags().IntP("port", "p", 8080, "Port number")
+
+	SetupCommandUsageTemplate(cmd, 100)
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := cmd.Usage()
+	assert.NoError(t, err)
+	output := buf.String()
+	assert.Contains(t, output, "--count")
+	assert.Contains(t, output, "--port")
+}
+
+func TestSetupCommandUsageTemplateWithStringSliceFlags(t *testing.T) {
+	cmd := &cobra.Command{
+		Use:   "test",
+		Short: "Test command",
+	}
+
+	cmd.PersistentFlags().StringSlice("tags", []string{}, "Tags to apply")
+
+	SetupCommandUsageTemplate(cmd, 100)
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := cmd.Usage()
+	assert.NoError(t, err)
+	assert.Contains(t, buf.String(), "--tags")
+}
+
+func TestFormatURLWithIntegerID(t *testing.T) {
+	// Test formatURL with integer IDs
+	result := formatURL("pr", "workspace", "repo", 123)
+	assert.Equal(t, "https://bitbucket.org/workspace/repo/pull/123", result)
+
+	result = formatURL("pr_review", "workspace", "repo", 123, 456)
+	assert.Equal(t, "https://bitbucket.org/workspace/repo/pull/123/files#pullrequestreview-456", result)
+}
+
+func TestFormatURLEdgeCases(t *testing.T) {
+	testCases := []struct {
+		name       string
+		urlType    string
+		workspace  string
+		repository string
+		ids        []interface{}
+		expected   string
+	}{
+		{
+			name:       "Empty workspace",
+			urlType:    "repository",
+			workspace:  "",
+			repository: "repo",
+			ids:        []interface{}{},
+			expected:   "https://bitbucket.org//repo",
+		},
+		{
+			name:       "Empty repository",
+			urlType:    "repository",
+			workspace:  "workspace",
+			repository: "",
+			ids:        []interface{}{},
+			expected:   "https://bitbucket.org/workspace/",
+		},
+		{
+			name:       "Special characters in workspace",
+			urlType:    "repository",
+			workspace:  "my-workspace",
+			repository: "my-repo",
+			ids:        []interface{}{},
+			expected:   "https://bitbucket.org/my-workspace/my-repo",
+		},
+		{
+			name:       "Numeric workspace",
+			urlType:    "repository",
+			workspace:  "123456",
+			repository: "repo",
+			ids:        []interface{}{},
+			expected:   "https://bitbucket.org/123456/repo",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var result string
+			switch len(tc.ids) {
+			case 0:
+				result = formatURL(tc.urlType, tc.workspace, tc.repository)
+			case 1:
+				result = formatURL(tc.urlType, tc.workspace, tc.repository, tc.ids[0])
+			case 2:
+				result = formatURL(tc.urlType, tc.workspace, tc.repository, tc.ids[0], tc.ids[1])
+			}
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestValidateExportFlagsWithAllAuthMethods(t *testing.T) {
+	// Test all three authentication methods mixed
+	cmdFlags := &data.CmdExportFlags{
+		BitbucketAccessToken: "token",
+		BitbucketAPIToken:    "apitoken",
+		BitbucketEmail:       "email@example.com",
+		BitbucketUser:        "user",
+		BitbucketAppPass:     "pass",
+	}
+	err := ValidateExportFlags(cmdFlags)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "mixed authentication methods")
+}
+
+func TestSetupEnvironmentCredentialsPreservesExistingValues(t *testing.T) {
+	// Clear environment first
+	envVars := []string{
+		"BITBUCKET_USERNAME",
+		"BITBUCKET_APP_PASSWORD",
+		"BITBUCKET_ACCESS_TOKEN",
+		"BITBUCKET_API_TOKEN",
+		"BITBUCKET_EMAIL",
+		"BITBUCKET_TEMP_DIR",
+	}
+
+	originalValues := make(map[string]string)
+	for _, v := range envVars {
+		originalValues[v] = os.Getenv(v)
+		_ = os.Unsetenv(v)
+	}
+
+	defer func() {
+		for k, v := range originalValues {
+			if v != "" {
+				_ = os.Setenv(k, v)
+			} else {
+				_ = os.Unsetenv(k)
+			}
+		}
+	}()
+
+	// Set environment variables
+	_ = os.Setenv("BITBUCKET_USERNAME", "env-user")
+	_ = os.Setenv("BITBUCKET_ACCESS_TOKEN", "env-token")
+
+	// Create flags with existing values
+	cmdFlags := &data.CmdExportFlags{
+		BitbucketUser:        "flag-user",
+		BitbucketAccessToken: "flag-token",
+	}
+
+	SetupEnvironmentCredentials(cmdFlags)
+
+	// Flag values should be preserved (not overwritten by env)
+	assert.Equal(t, "flag-user", cmdFlags.BitbucketUser)
+	assert.Equal(t, "flag-token", cmdFlags.BitbucketAccessToken)
+}
+
+func TestSetupEnvironmentCredentialsEmptyFlagsFilledFromEnv(t *testing.T) {
+	envVars := []string{
+		"BITBUCKET_USERNAME",
+		"BITBUCKET_APP_PASSWORD",
+		"BITBUCKET_ACCESS_TOKEN",
+		"BITBUCKET_API_TOKEN",
+		"BITBUCKET_EMAIL",
+		"BITBUCKET_TEMP_DIR",
+	}
+
+	originalValues := make(map[string]string)
+	for _, v := range envVars {
+		originalValues[v] = os.Getenv(v)
+		_ = os.Unsetenv(v)
+	}
+
+	defer func() {
+		for k, v := range originalValues {
+			if v != "" {
+				_ = os.Setenv(k, v)
+			} else {
+				_ = os.Unsetenv(k)
+			}
+		}
+	}()
+
+	// Set environment variables
+	_ = os.Setenv("BITBUCKET_USERNAME", "env-user")
+	_ = os.Setenv("BITBUCKET_APP_PASSWORD", "env-pass")
+
+	// Create empty flags
+	cmdFlags := &data.CmdExportFlags{}
+
+	SetupEnvironmentCredentials(cmdFlags)
+
+	// Empty flags should be filled from environment
+	assert.Equal(t, "env-user", cmdFlags.BitbucketUser)
+	assert.Equal(t, "env-pass", cmdFlags.BitbucketAppPass)
+}
+
+func TestPrintSuccessMessageWithArchive(t *testing.T) {
+	// Test with archive path
+	assert.NotPanics(t, func() {
+		PrintSuccessMessage("/path/to/archive.tar.gz")
+	})
+}
+
+func TestPrintSuccessMessageWithDirectory(t *testing.T) {
+	// Test with directory path
+	assert.NotPanics(t, func() {
+		PrintSuccessMessage("/path/to/output/directory")
+	})
+}
+
+func TestHashStringDeterministic(t *testing.T) {
+	input := "test-input-string"
+
+	// Hash the same string multiple times
+	results := make([]string, 10)
+	for i := 0; i < 10; i++ {
+		results[i] = HashString(input)
+	}
+
+	// All results should be identical
+	for i := 1; i < len(results); i++ {
+		assert.Equal(t, results[0], results[i], "Hash should be deterministic")
+	}
+}
+
+func TestHashStringDifferentInputs(t *testing.T) {
+	inputs := []string{
+		"input1",
+		"input2",
+		"input3",
+		"a very long input string that is quite different",
+		"",
+		" ",
+		"123",
+	}
+
+	hashes := make(map[string]bool)
+	for _, input := range inputs {
+		hash := HashString(input)
+		// Each hash should be unique (except for the empty string which might collide)
+		if input != "" {
+			assert.False(t, hashes[hash], "Hash collision detected for input: %s", input)
+		}
+		hashes[hash] = true
+	}
+}
+
+func TestExtractPRNumberVariousFormats(t *testing.T) {
+	testCases := []struct {
+		name     string
+		url      string
+		expected string
+	}{
+		{
+			name:     "HTTPS URL",
+			url:      "https://bitbucket.org/workspace/repo/pull/123",
+			expected: "123",
+		},
+		{
+			name:     "HTTP URL",
+			url:      "http://bitbucket.org/workspace/repo/pull/456",
+			expected: "456",
+		},
+		{
+			name:     "URL with fragment",
+			url:      "https://bitbucket.org/workspace/repo/pull/789#comment",
+			expected: "789",
+		},
+		{
+			name:     "Not a PR URL - issues",
+			url:      "https://bitbucket.org/workspace/repo/issues/123",
+			expected: "",
+		},
+		{
+			name:     "Not a PR URL - commits",
+			url:      "https://bitbucket.org/workspace/repo/commits/abc123",
+			expected: "",
+		},
+		{
+			name:     "Malformed URL",
+			url:      "not-a-url",
+			expected: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := extractPRNumber(tc.url)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestValidateGitReferenceMoreCases(t *testing.T) {
+	testCases := []struct {
+		name        string
+		ref         string
+		expectError bool
+	}{
+		{"Valid simple ref", "main", false},
+		{"Valid feature branch", "feature/test", false},
+		{"Valid with numbers", "release-1.0.0", false},
+		{"Valid with underscore", "feature_test", false},
+		{"Backslash", "feature\\test", true},
+		{"Just a dash", "-", false},
+		{"Unicode characters", "feature-日本語", false},
+		{"Control character NUL", "feature\x00test", false},
+		{"Tab character", "feature\ttest", false},
+		{"Newline", "feature\ntest", false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateGitReference(tc.ref)
+			if tc.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestWriteJSONFileWithNestedData(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "write-json-nested-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+
+	// Create nested data structure
+	nestedData := map[string]interface{}{
+		"level1": map[string]interface{}{
+			"level2": map[string]interface{}{
+				"level3": "deep value",
+			},
+			"array": []string{"item1", "item2", "item3"},
+		},
+		"number": 42,
+		"bool":   true,
+	}
+
+	err = exporter.writeJSONFile("nested.json", nestedData)
+	assert.NoError(t, err)
+
+	// Read back and verify
+	content, err := os.ReadFile(filepath.Join(tempDir, "nested.json"))
+	assert.NoError(t, err)
+
+	var readData map[string]interface{}
+	err = json.Unmarshal(content, &readData)
+	assert.NoError(t, err)
+
+	assert.Equal(t, float64(42), readData["number"])
+	assert.Equal(t, true, readData["bool"])
+}
+
+func TestUpdateRepositoryFieldNonExistentFile(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "update-repo-nonexistent-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	core, observedLogs := observer.New(zap.WarnLevel)
+	logger := zap.New(core)
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+
+	// Try to update without creating the file first
+	exporter.updateRepositoryField("test-repo", "default_branch", "main")
+
+	// Should log a warning
+	logs := observedLogs.All()
+	assert.GreaterOrEqual(t, len(logs), 1)
+}
+
+func TestUpdateRepositoryFieldInvalidJSON(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "update-repo-invalid-json-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	// Write invalid JSON
+	err = os.WriteFile(filepath.Join(tempDir, "repositories_000001.json"), []byte("not valid json"), 0644)
+	assert.NoError(t, err)
+
+	core, observedLogs := observer.New(zap.WarnLevel)
+	logger := zap.New(core)
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+
+	exporter.updateRepositoryField("test-repo", "default_branch", "main")
+
+	// Should log a warning about parsing
+	logs := observedLogs.All()
+	assert.GreaterOrEqual(t, len(logs), 1)
+}
+
+func TestCreateRepositoryInfoFilesWithSpecialChars(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "repo-info-special-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+
+	workspace := "test-workspace"
+	repoSlug := "test-repo-with-dashes"
+
+	// Create the repository directory
+	repoDir := filepath.Join(tempDir, "repositories", workspace, repoSlug+".git")
+	err = os.MkdirAll(repoDir, 0755)
+	assert.NoError(t, err)
+
+	err = exporter.createRepositoryInfoFiles(workspace, repoSlug)
+	assert.NoError(t, err)
+
+	// Verify nwo content
+	nwoPath := filepath.Join(repoDir, "info", "nwo")
+	content, err := os.ReadFile(nwoPath)
+	assert.NoError(t, err)
+	assert.Equal(t, "test-workspace/test-repo-with-dashes\n", string(content))
+}
+
+func TestFormatDateToZWithVariousTimezones(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "UTC timezone",
+			input:    "2023-06-15T10:30:00Z",
+			expected: "2023-06-15T10:30:00Z",
+		},
+		{
+			name:     "Positive offset +05:30",
+			input:    "2023-06-15T16:00:00+05:30",
+			expected: "2023-06-15T10:30:00Z",
+		},
+		{
+			name:     "Negative offset -08:00",
+			input:    "2023-06-15T02:30:00-08:00",
+			expected: "2023-06-15T10:30:00Z",
+		},
+		{
+			name:     "With milliseconds",
+			input:    "2023-06-15T10:30:00.123Z",
+			expected: "2023-06-15T10:30:00Z",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := formatDateToZ(tc.input)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestExecuteCommandWithWorkingDir(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "exec-cmd-workdir-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	// Create a file in temp dir
+	testFile := filepath.Join(tempDir, "test.txt")
+	err = os.WriteFile(testFile, []byte("content"), 0644)
+	assert.NoError(t, err)
+
+	// Run command in that directory
+	var output []byte
+	if runtime.GOOS == "windows" {
+		output, err = ExecuteCommand("cmd", []string{"/c", "dir"}, tempDir, false)
+	} else {
+		output, err = ExecuteCommand("ls", []string{"-la"}, tempDir, false)
+	}
+
+	assert.NoError(t, err)
+	assert.Contains(t, string(output), "test.txt")
+}
+
+func TestNormalizePathEmpty(t *testing.T) {
+	result := NormalizePath("")
+	assert.Equal(t, "", result)
+}
+
+func TestToUnixPathEmpty(t *testing.T) {
+	result := ToUnixPath("")
+	assert.Equal(t, "", result)
+}
+
+func TestToNativePathEmpty(t *testing.T) {
+	result := ToNativePath("")
+	assert.Equal(t, "", result)
+}
+
+func TestGetOutputPathAfterExport(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "output-path-test-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+
+	path := exporter.GetOutputPath()
+	assert.Equal(t, tempDir, path)
+}
+
+func TestExtractPRNumberWithPullRequestsPath(t *testing.T) {
+	testCases := []struct {
+		name     string
+		url      string
+		expected string
+	}{
+		{
+			name:     "Pull-requests URL format",
+			url:      "https://bitbucket.org/workspace/repo/pull-requests/123",
+			expected: "",
+		},
+		{
+			name:     "Pull URL format",
+			url:      "https://bitbucket.org/workspace/repo/pull/123",
+			expected: "123",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := extractPRNumber(tc.url)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestValidateExportFlagsPartialCredentials(t *testing.T) {
+	testCases := []struct {
+		name        string
+		flags       *data.CmdExportFlags
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "Email without API token",
+			flags: &data.CmdExportFlags{
+				BitbucketEmail: "test@example.com",
+			},
+			expectError: true,
+			errorMsg:    "authentication credentials required",
+		},
+		{
+			name: "App password without username",
+			flags: &data.CmdExportFlags{
+				BitbucketAppPass: "password",
+			},
+			expectError: true,
+			errorMsg:    "authentication credentials required",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateExportFlags(tc.flags)
+			if tc.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tc.errorMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestFormatURLAllTypes(t *testing.T) {
+	testCases := []struct {
+		name     string
+		urlType  string
+		ws       string
+		repo     string
+		ids      []interface{}
+		expected string
+	}{
+		{
+			name:     "Issue comment with two IDs",
+			urlType:  "issue_comment",
+			ws:       "ws",
+			repo:     "repo",
+			ids:      []interface{}{"123", "456"},
+			expected: "https://bitbucket.org/ws/repo/pull/123#issuecomment-456",
+		},
+		{
+			name:     "Issue comment with no IDs",
+			urlType:  "issue_comment",
+			ws:       "ws",
+			repo:     "repo",
+			ids:      []interface{}{},
+			expected: "https://bitbucket.org/ws/repo/pull/comments",
+		},
+		{
+			name:     "PR review thread with two IDs",
+			urlType:  "pr_review_thread",
+			ws:       "ws",
+			repo:     "repo",
+			ids:      []interface{}{"123", "456"},
+			expected: "https://bitbucket.org/ws/repo/pull/123/files#pullrequestreviewthread-456",
+		},
+		{
+			name:     "PR review thread with no IDs",
+			urlType:  "pr_review_thread",
+			ws:       "ws",
+			repo:     "repo",
+			ids:      []interface{}{},
+			expected: "https://bitbucket.org/ws/repo/pull/threads",
+		},
+		{
+			name:     "PR review with two IDs",
+			urlType:  "pr_review",
+			ws:       "ws",
+			repo:     "repo",
+			ids:      []interface{}{"123", "456"},
+			expected: "https://bitbucket.org/ws/repo/pull/123/files#pullrequestreview-456",
+		},
+		{
+			name:     "PR review with no IDs",
+			urlType:  "pr_review",
+			ws:       "ws",
+			repo:     "repo",
+			ids:      []interface{}{},
+			expected: "https://bitbucket.org/ws/repo/pull/reviews",
+		},
+		{
+			name:     "PR review comment with two IDs",
+			urlType:  "pr_review_comment",
+			ws:       "ws",
+			repo:     "repo",
+			ids:      []interface{}{"123", "456"},
+			expected: "https://bitbucket.org/ws/repo/pull/123/files#r456",
+		},
+		{
+			name:     "PR review comment with no IDs",
+			urlType:  "pr_review_comment",
+			ws:       "ws",
+			repo:     "repo",
+			ids:      []interface{}{},
+			expected: "https://bitbucket.org/ws/repo/pull/comments",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var result string
+			switch len(tc.ids) {
+			case 0:
+				result = formatURL(tc.urlType, tc.ws, tc.repo)
+			case 1:
+				result = formatURL(tc.urlType, tc.ws, tc.repo, tc.ids[0])
+			case 2:
+				result = formatURL(tc.urlType, tc.ws, tc.repo, tc.ids[0], tc.ids[1])
+			}
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestHashStringEmptyAndWhitespace(t *testing.T) {
+	empty := HashString("")
+	space := HashString(" ")
+	tab := HashString("\t")
+	newline := HashString("\n")
+
+	assert.NotEmpty(t, empty)
+	assert.NotEmpty(t, space)
+	assert.NotEmpty(t, tab)
+	assert.NotEmpty(t, newline)
+
+	assert.NotEqual(t, empty, space)
+	assert.NotEqual(t, space, tab)
+	assert.NotEqual(t, tab, newline)
+}
+
+func TestExecuteCommandWithSSLBypass(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("Git not available for testing")
+	}
+
+	output, err := ExecuteCommand("git", []string{"--version"}, "", true)
+	assert.NoError(t, err)
+	assert.Contains(t, string(output), "git")
+}
+
+func TestCreateRepositoryInfoFilesErrorHandling(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Permission test not reliable on Windows")
+	}
+
+	tempDir, err := os.MkdirTemp("", "repo-info-error-")
+	assert.NoError(t, err)
+	defer func() {
+		_ = os.Chmod(tempDir, 0755)
+		_ = os.RemoveAll(tempDir)
+	}()
+
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+
+	repoDir := filepath.Join(tempDir, "repositories", "ws", "repo.git")
+	err = os.MkdirAll(repoDir, 0755)
+	assert.NoError(t, err)
+
+	err = os.Chmod(repoDir, 0555)
+	assert.NoError(t, err)
+
+	err = exporter.createRepositoryInfoFiles("ws", "repo")
+	assert.Error(t, err)
+}
+
+func TestValidateGitReferenceEdgeCases(t *testing.T) {
+	testCases := []struct {
+		name        string
+		ref         string
+		expectError bool
+	}{
+		{"Double dots at start", "..test", true},
+		{"Double dots at end", "test..", true},
+		{"Double dots in middle", "test..branch", true},
+		{"At-brace sequence", "test@{0}", true},
+		{"Double slash at start", "//test", true},
+		{"Double slash at end", "test//", true},
+		{"Double slash in middle", "test//branch", true},
+		{"Dot-lock extension", "branch.lock", true},
+		{"Valid with dot", "v1.0.0", false},
+		{"Valid with at", "user@branch", false},
+		{"Valid with dash", "feature-branch", false},
+		{"Valid with underscore", "feature_branch", false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateGitReference(tc.ref)
+			if tc.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestSetupEnvironmentCredentialsAllVars(t *testing.T) {
+	envVars := []string{
+		"BITBUCKET_USERNAME",
+		"BITBUCKET_APP_PASSWORD",
+		"BITBUCKET_ACCESS_TOKEN",
+		"BITBUCKET_API_TOKEN",
+		"BITBUCKET_EMAIL",
+		"BITBUCKET_TEMP_DIR",
+	}
+
+	originalValues := make(map[string]string)
+	for _, v := range envVars {
+		originalValues[v] = os.Getenv(v)
+		_ = os.Unsetenv(v)
+	}
+
+	defer func() {
+		for k, v := range originalValues {
+			if v != "" {
+				_ = os.Setenv(k, v)
+			} else {
+				_ = os.Unsetenv(k)
+			}
+		}
+	}()
+
+	_ = os.Setenv("BITBUCKET_USERNAME", "env-user")
+	_ = os.Setenv("BITBUCKET_APP_PASSWORD", "env-pass")
+	_ = os.Setenv("BITBUCKET_ACCESS_TOKEN", "env-token")
+	_ = os.Setenv("BITBUCKET_API_TOKEN", "env-api-token")
+	_ = os.Setenv("BITBUCKET_EMAIL", "env@example.com")
+	_ = os.Setenv("BITBUCKET_TEMP_DIR", "/env/temp")
+
+	cmdFlags := &data.CmdExportFlags{}
+	SetupEnvironmentCredentials(cmdFlags)
+
+	assert.Equal(t, "env-user", cmdFlags.BitbucketUser)
+	assert.Equal(t, "env-pass", cmdFlags.BitbucketAppPass)
+	assert.Equal(t, "env-token", cmdFlags.BitbucketAccessToken)
+	assert.Equal(t, "env-api-token", cmdFlags.BitbucketAPIToken)
+	assert.Equal(t, "env@example.com", cmdFlags.BitbucketEmail)
+	assert.Equal(t, "/env/temp", cmdFlags.TempDir)
+}
+
+func TestPRDateValidationEdgeCases(t *testing.T) {
+	testCases := []struct {
+		name        string
+		date        string
+		expectError bool
+	}{
+		{"Leap year valid date", "2024-02-29", false},
+		{"Non-leap year Feb 29", "2023-02-29", true},
+		{"December 31", "2023-12-31", false},
+		{"January 1", "2023-01-01", false},
+		{"Month 13", "2023-13-01", true},
+		{"Day 32", "2023-01-32", true},
+		{"Month 00", "2023-00-15", true},
+		{"Day 00", "2023-01-00", true},
+		{"Future date", "2099-12-31", false},
+		{"Old date", "1990-01-01", false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmdFlags := &data.CmdExportFlags{
+				BitbucketAccessToken: "test-token",
+				PRsFromDate:          tc.date,
+			}
+			err := ValidateExportFlags(cmdFlags)
+			if tc.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestFormatDateToZInvalidFormats(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"Random text", "not a date", ""},
+		{"Partial date", "2023-01", ""},
+		{"Just numbers", "20230101", ""},
+		{"Spaces", "2023 01 01", ""},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := formatDateToZ(tc.input)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestWriteJSONFileLargeData(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "write-json-large-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+
+	largeData := make([]map[string]string, 1000)
+	for i := 0; i < 1000; i++ {
+		largeData[i] = map[string]string{
+			"id":    fmt.Sprintf("%d", i),
+			"value": strings.Repeat("x", 100),
+		}
+	}
+
+	err = exporter.writeJSONFile("large.json", largeData)
+	assert.NoError(t, err)
+
+	info, err := os.Stat(filepath.Join(tempDir, "large.json"))
+	assert.NoError(t, err)
+	assert.Greater(t, info.Size(), int64(0))
+}
+
+func TestPathConversionsWithAbsolutePaths(t *testing.T) {
+	testCases := []struct {
+		name     string
+		path     string
+		expected string
+	}{
+		{
+			name:     "Unix absolute path",
+			path:     "/usr/local/bin",
+			expected: "/usr/local/bin",
+		},
+		{
+			name:     "Relative path with dots",
+			path:     "../parent/child",
+			expected: "../parent/child",
+		},
+		{
+			name:     "Current directory",
+			path:     ".",
+			expected: ".",
+		},
+		{
+			name:     "Parent directory",
+			path:     "..",
+			expected: "..",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := ToUnixPath(tc.path)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestMakeRequestAuthHeaders(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if strings.HasPrefix(auth, "Bearer ") {
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{"type": "bearer"}`))
+		} else if strings.HasPrefix(auth, "Basic ") {
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte(`{"type": "basic"}`))
+		} else {
+			w.WriteHeader(http.StatusUnauthorized)
+			writeResponse(t, w, []byte(`{"error": "unauthorized"}`))
+		}
+	}))
+	defer testServer.Close()
+
+	// Test API token auth
+	apiTokenClient := &Client{
+		baseURL:    testServer.URL,
+		httpClient: testServer.Client(),
+		apiToken:   "api-token",
+		email:      "test@example.com",
+		logger:     logger,
+	}
+
+	var result map[string]interface{}
+	err := apiTokenClient.makeRequest("GET", "/", &result)
+	assert.NoError(t, err)
+	assert.Equal(t, "basic", result["type"])
+}
+
+func TestUpdateRepositoryFieldUnknownField(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "update-field-unknown-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+
+	repos := []data.Repository{
+		{Name: "test-repo", Slug: "test-repo", DefaultBranch: "main"},
+	}
+	err = exporter.writeJSONFile("repositories_000001.json", repos)
+	assert.NoError(t, err)
+
+	exporter.updateRepositoryField("test-repo", "unknown_field", "value")
+
+	content, err := os.ReadFile(filepath.Join(tempDir, "repositories_000001.json"))
+	assert.NoError(t, err)
+
+	var readRepos []data.Repository
+	err = json.Unmarshal(content, &readRepos)
+	assert.NoError(t, err)
+	assert.Equal(t, "main", readRepos[0].DefaultBranch)
+}
+
+func TestExecuteCommandNonExistentWorkingDir(t *testing.T) {
+	_, err := ExecuteCommand("echo", []string{"test"}, "/nonexistent/path", false)
+	assert.Error(t, err)
+}
+
+func TestValidateExportFlagsWithAPITokenAuth(t *testing.T) {
+	cmdFlags := &data.CmdExportFlags{
+		BitbucketAPIToken: "api-token",
+		BitbucketEmail:    "user@example.com",
+	}
+	err := ValidateExportFlags(cmdFlags)
+	assert.NoError(t, err)
+}
+
+func TestCreateEmptyRepositorySuccess(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "empty-repo-success-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+
+	err = exporter.createEmptyRepository("workspace", "repo")
+	assert.NoError(t, err)
+
+	repoPath := filepath.Join(tempDir, "repositories", "workspace", "repo.git")
+	assert.DirExists(t, repoPath)
+
+	headPath := filepath.Join(repoPath, "HEAD")
+	assert.FileExists(t, headPath)
+}
+
+func TestSetupCommandUsageTemplateZeroWidth(t *testing.T) {
+	cmd := &cobra.Command{
+		Use:   "test",
+		Short: "Test command",
+	}
+
+	cmd.PersistentFlags().String("flag", "", "A flag")
+
+	SetupCommandUsageTemplate(cmd, 0)
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	err := cmd.Usage()
+	assert.NoError(t, err)
+	assert.NotEmpty(t, buf.String())
+}
+
+func TestFormatDateToZWithNanoseconds(t *testing.T) {
+	input := "2023-06-15T10:30:00.123456789Z"
+	expected := "2023-06-15T10:30:00Z"
+	result := formatDateToZ(input)
+	assert.Equal(t, expected, result)
+}
+
+func TestHashStringSpecialCharacters(t *testing.T) {
+	inputs := []string{
+		"path/with/slashes",
+		"path\\with\\backslashes",
+		"string with spaces",
+		"string\twith\ttabs",
+		"unicode: 日本語",
+		"emoji: 🚀✨",
+		"<html>tags</html>",
+		"'quotes' and \"double quotes\"",
+	}
+
+	hashes := make(map[string]string)
+	for _, input := range inputs {
+		hash := HashString(input)
+		assert.NotEmpty(t, hash)
+		if existing, ok := hashes[hash]; ok {
+			assert.NotEqual(t, input, existing, "Collision between %q and %q", input, existing)
+		}
+		hashes[hash] = input
 	}
 }

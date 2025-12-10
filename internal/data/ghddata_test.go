@@ -148,8 +148,8 @@ func TestPullRequestReviewCommentJSON(t *testing.T) {
 	assert.Equal(t, comment, unmarshaledComment)
 }
 
-func TestCmdFlagsDefaults(t *testing.T) {
-	flags := CmdFlags{}
+func TestCmdExportFlagsDefaults(t *testing.T) {
+	flags := CmdExportFlags{}
 
 	// Test default values
 	assert.Empty(t, flags.Workspace)

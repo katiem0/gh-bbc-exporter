@@ -12,8 +12,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cli/go-gh/v2/pkg/auth"
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"go.uber.org/zap"
+	"golang.org/x/term"
 )
 
 var (
@@ -23,12 +27,24 @@ var (
 	prNumberPattern           = regexp.MustCompile(`\b#(\d+)\b`)
 )
 
+func GetGitHubAuthToken(migrateFlags *data.CmdMigrateFlags) (string, error) {
+	if migrateFlags.GitHubPAT == "" {
+		migrateFlags.GitHubPAT = os.Getenv("GITHUB_PAT")
+	}
+
+	if migrateFlags.GitHubPAT != "" {
+		return migrateFlags.GitHubPAT, nil
+	}
+
+	token, _ := auth.TokenForHost("github.com")
+	return token, nil
+}
+
 func formatDateToZ(inputDate string) string {
 	if inputDate == "" {
 		return ""
 	}
 
-	// Try parsing with various formats
 	formats := []string{
 		"2006-01-02T15:04:05.999999+00:00",
 		"2006-01-02T15:04:05.999999-07:00",
@@ -48,8 +64,6 @@ func formatDateToZ(inputDate string) string {
 		}
 	}
 
-	// Return empty string for invalid date formats
-	// instead of returning the input string unchanged
 	return ""
 }
 
@@ -177,23 +191,16 @@ func formatURL(urlType string, workspace, repoSlug string, id ...interface{}) st
 }
 
 func extractPRNumber(prURL string) string {
-	// Extract the PR number from a Bitbucket PR URL
-	// Example: https://bitbucket.org/workspace/repo/pull/123
-
-	// First check if this is a PR URL
 	if !strings.Contains(prURL, "/pull/") {
 		return ""
 	}
 
-	// Split the URL by "/" and find the part after "pull"
 	parts := strings.Split(prURL, "/")
 	for i := 0; i < len(parts)-1; i++ {
 		if parts[i] == "pull" {
-			// Get the next part which should be the PR number
 			prNumber := parts[i+1]
-			// Remove any query parameters
 			prNumber = strings.Split(prNumber, "?")[0]
-			// Remove any additional path segments
+			prNumber = strings.Split(prNumber, "#")[0]
 			prNumber = strings.Split(prNumber, "/")[0]
 			return prNumber
 		}
@@ -252,7 +259,7 @@ func (e *Exporter) updateRepositoryField(repoSlug string, field string, value in
 		zap.String(field, fmt.Sprintf("%v", value)))
 }
 
-func ValidateExportFlags(cmdFlags *data.CmdFlags) error {
+func ValidateExportFlags(cmdFlags *data.CmdExportFlags) error {
 	hasToken := cmdFlags.BitbucketAccessToken != ""
 	hasAPIToken := cmdFlags.BitbucketAPIToken != ""
 	hasEmail := cmdFlags.BitbucketEmail != ""
@@ -309,7 +316,7 @@ func ValidateExportFlags(cmdFlags *data.CmdFlags) error {
 	return nil
 }
 
-func SetupEnvironmentCredentials(cmdFlags *data.CmdFlags) {
+func SetupEnvironmentCredentials(cmdFlags *data.CmdExportFlags) {
 	if cmdFlags.BitbucketUser == "" {
 		cmdFlags.BitbucketUser = os.Getenv("BITBUCKET_USERNAME")
 	}
@@ -671,4 +678,51 @@ func (e *Exporter) validateGitReferences(repoPath string) error {
 	}
 
 	return nil
+}
+
+func getTerminalWidth() int {
+	width, _, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || width <= 0 {
+		return 100 // default fallback
+	}
+	return width
+}
+
+func SetupCommandUsageTemplate(cmd *cobra.Command, defaultWidth int) {
+	cmd.Flags().SortFlags = false
+	cmd.PersistentFlags().SortFlags = false
+
+	cobra.AddTemplateFunc("wrappedFlagUsages", func(fs *pflag.FlagSet) string {
+		fs.SetOutput(nil)
+		width := getTerminalWidth()
+		if width < 40 {
+			width = 40
+		}
+		return fs.FlagUsagesWrapped(width)
+	})
+
+	cmd.SetUsageTemplate(`Usage:{{if .Runnable}}
+  {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}
+  {{.CommandPath}} [command]{{end}}{{if gt (len .Aliases) 0}}
+
+Aliases:
+  {{.NameAndAliases}}{{end}}{{if .HasExample}}
+
+Examples:
+{{.Example}}{{end}}{{if .HasAvailableSubCommands}}
+
+Available Commands:{{range .Commands}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
+  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+
+Flags:
+{{wrappedFlagUsages .LocalFlags | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
+
+Global Flags:
+{{wrappedFlagUsages .InheritedFlags | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
+
+Additional help topics:{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
+  {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
+
+Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}
+`)
 }

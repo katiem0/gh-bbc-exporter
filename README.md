@@ -10,11 +10,9 @@ A GitHub `gh` [CLI](https://cli.github.com/) extension for exporting Bitbucket C
 repositories into a format compatible with GitHub Enterprise migrations.
 
 > [!Caution]
-> **Breaking changes have been introduced in [version v2.0.0](https://github.com/katiem0/gh-bbc-exporter/releases/tag/v2.0.0)**
+> **Breaking changes have been introduced in [version v3.0.0](https://github.com/katiem0/gh-bbc-exporter/releases/tag/v3.0.0)**
 >
-> - Bitbucket is deprecating the use of App Passwords [in favor of API Tokens](https://www.atlassian.com/blog/bitbucket/bitbucket-cloud-transitions-to-api-tokens-enhancing-security-with-app-password-deprecation)
-> - `--token` has been updated to `--access-token` with looking for Bitbucket workspace access token
-> `env: BITBUCKET_ACCESS_TOKEN` in preparation with new authentication type `--api-token`
+> - The CLI now uses subcommands: `export` for exporting only, and `migrate` for export + import
 
 ## Overview
 
@@ -112,14 +110,36 @@ The access token will require the following permissions:
 
 ## Usage
 
-The `gh-bbc-exporter` extension only supports the retrieval of repositories from Bitbucket Cloud:
+The `gh-bbc-exporter` extension supports the retrieval of repositories or  migrating repositories
+with GitHub-Owned Storage from Bitbucket Cloud:
 
 ```sh
 gh bbc-exporter -h
+Export and migrate repositories from Bitbucket Cloud to GitHub
+
+Usage:
+  bbc-exporter [command]
+
+Available Commands:
+  export      Export repository and metadata from Bitbucket Cloud
+  migrate     Export from Bitbucket and import to GitHub
+
+Flags:
+      --help   Show help for command
+
+Use "bbc-exporter [command] --help" for more information about a command.
+```
+
+### Export Command
+
+The `export` command exports a repository from Bitbucket Cloud and creates a local migration archive:
+
+```sh
+gh bbc-exporter export -h
 Export repository and metadata from Bitbucket Cloud for GitHub Cloud import.
 
 Usage:
-  bbc-exporter [flags]
+  bbc-exporter export [flags]
 
 Flags:
   -a, --bbc-api-url string     Bitbucket API to use (default "https://api.bitbucket.org/2.0")
@@ -130,12 +150,106 @@ Flags:
   -p, --app-password string    Bitbucket app password for basic authentication (env: BITBUCKET_APP_PASSWORD)
   -w, --workspace string       Bitbucket workspace name
   -r, --repo string            Name of the repository to export from Bitbucket Cloud
+      --temp-dir string        Temporary directory for cloning (env: BITBUCKET_TEMP_DIR)
   -o, --output string          Output directory for exported data (default: ./bitbucket-export-TIMESTAMP)
       --open-prs-only          Export only open pull requests and ignore closed/merged ones
       --prs-from-date string   Export pull requests created on or after this date (format: YYYY-MM-DD)
       --skip-commit-lookup     Skip Bitbucket API lookups to retrieve commit SHAs (use local lookup only)
   -d, --debug                  Enable debug logging
-  -h, --help                   help for bbc-exporter
+
+Global Flags:
+      --help   Show help for command
+```
+
+#### Export Examples
+
+```sh
+# Export using API token with email (recommended)
+gh bbc-exporter export -w your-workspace -r your-repo --api-token your-api-token --email your-email@example.com
+
+# Export using workspace access token
+gh bbc-exporter export -w your-workspace -r your-repo -t your-workspace-token
+
+# Export using basic authentication (deprecated)
+gh bbc-exporter export -w your-workspace -r your-repo -u your-username -p your-app-password
+
+# Export only open pull requests
+gh bbc-exporter export -w your-workspace -r your-repo -t your-token --open-prs-only
+
+# Export pull requests from a specific date
+gh bbc-exporter export -w your-workspace -r your-repo -t your-token --prs-from-date 2024-01-01
+```
+
+### Migrate Command
+
+The `migrate` command combines export and import into a single operation, exporting from
+Bitbucket Cloud and importing directly to GitHub Enterprise Cloud using GitHub-Owned Storage:
+
+```sh
+gh bbc-exporter migrate -h
+Migrate a repository from Bitbucket Cloud to GitHub Enterprise.
+
+Usage:
+  bbc-exporter migrate [flags]
+
+Flags:
+  -a, --bbc-api-url string                                 Bitbucket API to use (default "https://api.bitbucket.org/2.0")
+  -t, --access-token string                                Bitbucket workspace access token for authentication (env:
+                                                           BITBUCKET_ACCESS_TOKEN)
+      --api-token string                                   Bitbucket API token for authentication (env:
+                                                           BITBUCKET_API_TOKEN)
+  -e, --email string                                       Atlassian account email for API token authentication (env:
+                                                           BITBUCKET_EMAIL)
+  -u, --user string                                        Bitbucket username for basic authentication (env:
+                                                           BITBUCKET_USERNAME)
+  -p, --app-password string                                Bitbucket app password for basic authentication (env:
+                                                           BITBUCKET_APP_PASSWORD)
+  -w, --workspace string                                   Bitbucket workspace name
+  -r, --repo string                                        Name of the repository to export from Bitbucket Cloud
+      --temp-dir string                                    Temporary directory for cloning (env: BITBUCKET_TEMP_DIR)
+  -o, --output string                                      Output directory for exported data (default:
+                                                           ./bitbucket-export-TIMESTAMP)
+      --open-prs-only                                      Export only open pull requests
+      --prs-from-date string                               Export pull requests created on or after this date
+                                                           (format: YYYY-MM-DD)
+      --skip-commit-lookup                                 Skip Bitbucket API lookups to retrieve commit SHAs (use
+                                                           local lookup only)
+      --target-org string                                  Target GitHub organization (required)
+      --target-repo string                                 Target repository name (defaults to source repo name)
+      --github-target-pat string                           GitHub Personal Access Token (env: GITHUB_PAT)
+      --target-repo-visibility <internal|private|public>   The visibility of the target repo. Defaults to private.
+                                                           Valid values are public, private, or internal. (default
+                                                           private)
+  -d, --debug                                              Enable debug logging
+
+Global Flags:
+      --help   Show help for command
+```
+
+#### Migrate Examples
+
+```sh
+# Migrate repository to GitHub (uses gh CLI authentication by default)
+gh bbc-exporter migrate -w bitbucket-workspace -r source-repo \
+   --target-org github-org -t your-bitbucket-token
+
+# Migrate with custom target repository name
+gh bbc-exporter migrate -w bitbucket-workspace -r source-repo \
+   --target-org github-org --target-repo new-repo-name -t your-token
+
+# Migrate with specific visibility
+gh bbc-exporter migrate -w bitbucket-workspace -r source-repo \
+   --target-org github-org --target-repo-visibility internal \
+   -t your-token
+
+# Migrate and keep the archive for inspection
+gh bbc-exporter migrate -w bitbucket-workspace -r source-repo \
+   --target-org github-org -t your-token
+
+# Migrate using explicit GitHub PAT
+gh bbc-exporter migrate -w bitbucket-workspace -r source-repo \
+   --target-org github-org --github-target-pat ghp_xxxxx \
+   -t your-bitbucket-token
 ```
 
 ### Advanced Options
@@ -165,7 +279,10 @@ Bitbucket API calls for resolving full commit SHAs. When enabled:
 
 ```sh
 # Export with skip commit lookup enabled
-gh bbc-exporter -w your-workspace -r your-repo --skip-commit-lookup
+gh bbc-exporter export -w your-workspace -r your-repo --skip-commit-lookup -t your-token
+
+# Migrate with skip commit lookup enabled
+gh bbc-exporter migrate -w your-workspace -r your-repo --target-org github-org --skip-commit-lookup -t your-token
 ```
 
 ### Authentication Methods
@@ -178,31 +295,33 @@ This tool supports the use of environment variables instead of command-line flag
 # API token authentication with email (recommended)
 export BITBUCKET_API_TOKEN="your-api-token-here"
 export BITBUCKET_EMAIL="your-atlassian-email@example.com"
-gh bbc-exporter -w your-workspace -r your-repo
+gh bbc-exporter export -w your-workspace -r your-repo
 
 # Workspace token authentication
 export BITBUCKET_ACCESS_TOKEN="your-workspace-token-here"
-gh bbc-exporter -w your-workspace -r your-repo
+gh bbc-exporter export -w your-workspace -r your-repo
 
 # Basic authentication (soon to be deprecated)
 export BITBUCKET_USERNAME="your-username"
 export BITBUCKET_APP_PASSWORD="your-app-password"
-gh bbc-exporter -w your-workspace -r your-repo
+gh bbc-exporter export -w your-workspace -r your-repo
+
+# GitHub PAT for migrate command
+export GITHUB_PAT="ghp_your-github-pat"
+gh bbc-exporter migrate -w your-workspace -r your-repo --target-org github-org -t your-bitbucket-token
 ```
 
 #### Command-line Authentication
 
-Example Command
-
 ```sh
 # Using API token with email (recommended)
-gh bbc-exporter -w your-workspace -r your-repo --api-token your-api-token --email your-atlassian-email@example.com
+gh bbc-exporter export -w your-workspace -r your-repo --api-token your-api-token --email your-atlassian-email@example.com
 
 # Using workspace access token
-gh bbc-exporter -w your-workspace -r your-repo -t your-workspace-token
+gh bbc-exporter export -w your-workspace -r your-repo -t your-workspace-token
 
 # Using basic authentication (soon to be deprecated)
-gh bbc-exporter -w your-workspace -r your-repo -u your-username -p your-app-password
+gh bbc-exporter export -w your-workspace -r your-repo -u your-username -p your-app-password
 ```
 
 For migrations from BitBucket Data Center or Server, please see [GitHub's Official Documentation][bitbucket-server].
@@ -232,11 +351,14 @@ bitbucket-export-YYYYMMDD-HHMMSS/
                 └── last-sync
 ```
 
-## Importing to GitHub Enterprise CLoud
+## Importing to GitHub Enterprise Cloud
 
-After generating the migration archive, you can import it to GitHub Enterprise Cloud
-using GitHub owned storage and GEI. Detailed documentation can be found in
-[Importing Bitbucket Cloud Archive to GitHub Enterprise Cloud](./docs/Import-with-gei.md).
+After generating the migration archive with the `export` command, you can import it to
+GitHub Enterprise Cloud using GitHub owned storage and GEI. Detailed documentation can
+be found in [Importing Bitbucket Cloud Archive to GitHub Enterprise Cloud](./docs/Import-with-gei.md).
+
+Alternatively, use the [`migrate` command](#migrate-command) to perform both export and import
+in a single operation.
 
 ### Automated Migration with GitHub Actions
 

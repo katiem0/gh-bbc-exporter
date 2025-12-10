@@ -1,6 +1,6 @@
 package data
 
-type CmdFlags struct {
+type CmdExportFlags struct {
 	BitbucketAccessToken string
 	BitbucketUser        string // Will be deprecated with AppPass Sept 2025
 	BitbucketEmail       string // Will replace username after Sept 2025

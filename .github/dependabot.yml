@@ -1,15 +1,45 @@
 ---
-# Set update schedule for GitHub Actions
-
 version: 2
 updates:
-
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-  
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    reviewers:
+      - "katiem0"
+    open-pull-requests-limit: 10
+    groups:
+      actions:
+        patterns:
+          - "*"
+
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+      - "go"
+    reviewers:
+      - "katiem0"
+    open-pull-requests-limit: 10
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
