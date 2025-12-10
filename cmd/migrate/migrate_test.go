@@ -677,8 +677,17 @@ func TestMigrateEnvironmentVariables(t *testing.T) {
 		"BITBUCKET_USERNAME",
 		"BITBUCKET_APP_PASSWORD",
 		"BITBUCKET_TEMP_DIR",
-		"GH_TARGET_PAT",
 	}
+
+	originalGHPAT := os.Getenv("GH_TARGET_PAT")
+	_ = os.Unsetenv("GH_TARGET_PAT")
+	defer func() {
+		if originalGHPAT != "" {
+			_ = os.Setenv("GH_TARGET_PAT", originalGHPAT)
+		} else {
+			_ = os.Unsetenv("GH_TARGET_PAT")
+		}
+	}()
 
 	originalValues := make(map[string]string)
 	for _, v := range envVars {
@@ -724,12 +733,6 @@ func TestMigrateEnvironmentVariables(t *testing.T) {
 			},
 		},
 		{
-			name: "GitHub PAT from env",
-			envVars: map[string]string{
-				"GH_TARGET_PAT": "github-pat-token",
-			},
-		},
-		{
 			name: "Temp dir from env",
 			envVars: map[string]string{
 				"BITBUCKET_TEMP_DIR": "/env/temp/dir",
@@ -758,6 +761,17 @@ func TestMigrateEnvironmentVariables(t *testing.T) {
 func TestMigrateMixedAuthenticationMethods(t *testing.T) {
 	defer cleanupExportDirs(t)
 
+	// Save and clear GH_TARGET_PAT to avoid interference from environment
+	originalGHPAT := os.Getenv("GH_TARGET_PAT")
+	_ = os.Unsetenv("GH_TARGET_PAT")
+	defer func() {
+		if originalGHPAT != "" {
+			_ = os.Setenv("GH_TARGET_PAT", originalGHPAT)
+		} else {
+			_ = os.Unsetenv("GH_TARGET_PAT")
+		}
+	}()
+
 	testCases := []struct {
 		name        string
 		args        []string
@@ -770,6 +784,7 @@ func TestMigrateMixedAuthenticationMethods(t *testing.T) {
 				"--workspace", "test-ws",
 				"--repo", "test-repo",
 				"--target-org", "test-org",
+				"--github-target-pat", "ghp_test_token_for_unit_test",
 				"--access-token", "token",
 				"--user", "user",
 				"--app-password", "pass",
@@ -783,6 +798,7 @@ func TestMigrateMixedAuthenticationMethods(t *testing.T) {
 				"--workspace", "test-ws",
 				"--repo", "test-repo",
 				"--target-org", "test-org",
+				"--github-target-pat", "ghp_test_token_for_unit_test",
 				"--access-token", "token",
 				"--api-token", "api-token",
 				"--email", "test@example.com",
@@ -796,6 +812,7 @@ func TestMigrateMixedAuthenticationMethods(t *testing.T) {
 				"--workspace", "test-ws",
 				"--repo", "test-repo",
 				"--target-org", "test-org",
+				"--github-target-pat", "ghp_test_token_for_unit_test",
 				"--api-token", "api-token",
 			},
 			expectError: true,
@@ -807,6 +824,7 @@ func TestMigrateMixedAuthenticationMethods(t *testing.T) {
 				"--workspace", "test-ws",
 				"--repo", "test-repo",
 				"--target-org", "test-org",
+				"--github-target-pat", "ghp_test_token_for_unit_test",
 				"--user", "user",
 			},
 			expectError: true,
@@ -841,6 +859,17 @@ func TestMigratePRsFromDateValidation(t *testing.T) {
 		"BITBUCKET_USERNAME",
 		"BITBUCKET_APP_PASSWORD",
 	}
+
+	// Save and clear GH_TARGET_PAT to avoid interference
+	originalGHPAT := os.Getenv("GH_TARGET_PAT")
+	_ = os.Unsetenv("GH_TARGET_PAT")
+	defer func() {
+		if originalGHPAT != "" {
+			_ = os.Setenv("GH_TARGET_PAT", originalGHPAT)
+		} else {
+			_ = os.Unsetenv("GH_TARGET_PAT")
+		}
+	}()
 
 	originalValues := make(map[string]string)
 	for _, v := range envVars {
@@ -902,6 +931,7 @@ func TestMigratePRsFromDateValidation(t *testing.T) {
 				"--repo", "test-repo",
 				"--target-org", "test-org",
 				"--access-token", "test-token",
+				"--github-target-pat", "ghp_test_token_for_unit_test",
 			}
 			if tc.dateValue != "" {
 				args = append(args, "--prs-from-date", tc.dateValue)
@@ -921,6 +951,17 @@ func TestMigratePRsFromDateValidation(t *testing.T) {
 
 func TestMigrateNoAuthenticationProvided(t *testing.T) {
 	defer cleanupExportDirs(t)
+
+	// Save and clear GH_TARGET_PAT to avoid interference
+	originalGHPAT := os.Getenv("GH_TARGET_PAT")
+	_ = os.Unsetenv("GH_TARGET_PAT")
+	defer func() {
+		if originalGHPAT != "" {
+			_ = os.Setenv("GH_TARGET_PAT", originalGHPAT)
+		} else {
+			_ = os.Unsetenv("GH_TARGET_PAT")
+		}
+	}()
 
 	originalToken := os.Getenv("BITBUCKET_ACCESS_TOKEN")
 	originalAPIToken := os.Getenv("BITBUCKET_API_TOKEN")
@@ -952,6 +993,7 @@ func TestMigrateNoAuthenticationProvided(t *testing.T) {
 		"--workspace", "test-ws",
 		"--repo", "test-repo",
 		"--target-org", "test-org",
+		"--github-target-pat", "ghp_test_token_for_unit_test",
 	})
 
 	err := cmd.Execute()
