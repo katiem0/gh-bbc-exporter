@@ -40,14 +40,11 @@ func TestUploadArchiveToGitHub(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	_ = os.Setenv("GITHUB_PAT", "test-token")
-	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
-
 	logger, _ := zap.NewDevelopment()
 
 	gqlClient := &api.GraphQLClient{}
 	restClient := &api.RESTClient{}
-	apiGetter := NewAPIGetter(gqlClient, restClient)
+	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
 
 	oldUploadsBaseURL := uploadsBaseURL
 	uploadsBaseURL = testServer.URL + "/organizations/%d/gei/archive"
@@ -64,7 +61,7 @@ func TestUploadArchiveFileNotFound(t *testing.T) {
 
 	gqlClient := &api.GraphQLClient{}
 	restClient := &api.RESTClient{}
-	apiGetter := NewAPIGetter(gqlClient, restClient)
+	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
 
 	_, err := apiGetter.UploadArchiveToGitHub(12345, "/nonexistent/path/archive.tar.gz", logger)
 
@@ -93,14 +90,11 @@ func TestUploadSingleFile(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	_ = os.Setenv("GITHUB_PAT", "test-token")
-	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
-
 	logger, _ := zap.NewDevelopment()
 
 	gqlClient := &api.GraphQLClient{}
 	restClient := &api.RESTClient{}
-	apiGetter := NewAPIGetter(gqlClient, restClient)
+	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
 
 	file, err := os.Open(archivePath)
 	assert.NoError(t, err)
@@ -139,6 +133,10 @@ func TestUploadMultipartFileIntegration(t *testing.T) {
 				w.WriteHeader(http.StatusAccepted)
 				return
 			}
+			// Single file upload
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"uri": "gei://archive/test-archive-id"}`))
+			return
 		case "PATCH":
 			partNumber++
 			_, _ = io.ReadAll(r.Body)
@@ -161,15 +159,16 @@ func TestUploadMultipartFileIntegration(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	_ = os.Setenv("GITHUB_PAT", "test-token")
-	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
-
 	logger, _ := zap.NewDevelopment()
 
-	gqlClient := &api.GraphQLClient{}
-	restClient := &api.RESTClient{}
-	apiGetter := NewAPIGetter(gqlClient, restClient)
+	restClient, err := api.NewRESTClient(api.ClientOptions{
+		Host:      testServer.URL,
+		AuthToken: "test-token",
+	})
+	assert.NoError(t, err)
 
+	gqlClient := &api.GraphQLClient{}
+	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
 	oldUploadsBaseURL := uploadsBaseURL
 	oldUploadsHost := uploadsHost
 	uploadsBaseURL = testServer.URL + "/organizations/%d/gei/archive"
@@ -214,14 +213,16 @@ func TestStartMultipartUpload(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	_ = os.Setenv("GITHUB_PAT", "test-token")
-	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
-
 	logger, _ := zap.NewDevelopment()
 
 	gqlClient := &api.GraphQLClient{}
-	restClient := &api.RESTClient{}
-	apiGetter := NewAPIGetter(gqlClient, restClient)
+	restClient, err := api.NewRESTClient(api.ClientOptions{
+		Host:      testServer.URL,
+		AuthToken: "test-token",
+	})
+	assert.NoError(t, err)
+
+	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
 
 	oldUploadsBaseURL := uploadsBaseURL
 	uploadsBaseURL = testServer.URL + "/organizations/%d/gei/archive"
@@ -249,16 +250,17 @@ func TestUploadPartIntegration(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	_ = os.Setenv("GITHUB_PAT", "test-token")
-	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
-
 	logger, _ := zap.NewDevelopment()
 
 	gqlClient := &api.GraphQLClient{}
-	restClient := &api.RESTClient{}
-	apiGetter := NewAPIGetter(gqlClient, restClient)
+	restClient, err := api.NewRESTClient(api.ClientOptions{
+		Host:      testServer.URL,
+		AuthToken: "test-token",
+	})
+	assert.NoError(t, err)
 
-	// Override the uploads host for testing
+	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
+
 	oldUploadsHost := uploadsHost
 	uploadsHost = testServer.URL
 	defer func() { uploadsHost = oldUploadsHost }()
@@ -287,16 +289,16 @@ func TestCompleteMultipartUploadIntegration(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	_ = os.Setenv("GITHUB_PAT", "test-token")
-	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
-
 	logger, _ := zap.NewDevelopment()
 
 	gqlClient := &api.GraphQLClient{}
-	restClient := &api.RESTClient{}
-	apiGetter := NewAPIGetter(gqlClient, restClient)
+	restClient, err := api.NewRESTClient(api.ClientOptions{
+		Host:      testServer.URL,
+		AuthToken: "test-token",
+	})
+	assert.NoError(t, err)
 
-	// Override the uploads host for testing
+	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
 	oldUploadsHost := uploadsHost
 	uploadsHost = testServer.URL
 	defer func() { uploadsHost = oldUploadsHost }()
@@ -324,14 +326,11 @@ func TestUploadArchiveServerError(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	_ = os.Setenv("GITHUB_PAT", "test-token")
-	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
-
 	logger, _ := zap.NewDevelopment()
 
 	gqlClient := &api.GraphQLClient{}
 	restClient := &api.RESTClient{}
-	apiGetter := NewAPIGetter(gqlClient, restClient)
+	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
 
 	oldUploadsBaseURL := uploadsBaseURL
 	uploadsBaseURL = testServer.URL + "/organizations/%d/gei/archive"
@@ -352,14 +351,26 @@ func TestUploadLargeFileForceMultipart(t *testing.T) {
 	err = os.WriteFile(archivePath, []byte("test"), 0644)
 	assert.NoError(t, err)
 
-	_ = os.Setenv("GITHUB_PAT", "invalid-token-for-test")
-	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer testServer.Close()
 
 	logger, _ := zap.NewDevelopment()
 
 	gqlClient := &api.GraphQLClient{}
-	restClient := &api.RESTClient{}
-	apiGetter := NewAPIGetter(gqlClient, restClient)
+	// Fix: Initialize REST client properly
+	restClient, err := api.NewRESTClient(api.ClientOptions{
+		Host:      testServer.URL,
+		AuthToken: "test-token",
+	})
+	assert.NoError(t, err)
+
+	apiGetter := NewAPIGetter(gqlClient, restClient, "invalid-token-for-test")
+
+	oldUploadsBaseURL := uploadsBaseURL
+	uploadsBaseURL = testServer.URL + "/organizations/%d/gei/archive"
+	defer func() { uploadsBaseURL = oldUploadsBaseURL }()
 
 	oldThreshold := DefaultMultipartThreshold
 	DefaultMultipartThreshold = 1
@@ -394,14 +405,11 @@ func TestUploadEmptyFile(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	_ = os.Setenv("GITHUB_PAT", "test-token")
-	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
-
 	logger, _ := zap.NewDevelopment()
 
 	gqlClient := &api.GraphQLClient{}
 	restClient := &api.RESTClient{}
-	apiGetter := NewAPIGetter(gqlClient, restClient)
+	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
 
 	oldUploadsBaseURL := uploadsBaseURL
 	uploadsBaseURL = testServer.URL + "/organizations/%d/gei/archive"
@@ -422,14 +430,6 @@ func TestUploadWithMissingToken(t *testing.T) {
 	err = os.WriteFile(archivePath, []byte("test content"), 0644)
 	assert.NoError(t, err)
 
-	originalToken := os.Getenv("GITHUB_PAT")
-	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
-	defer func() {
-		if originalToken != "" {
-			_ = os.Setenv("GITHUB_PAT", originalToken)
-		}
-	}()
-
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		if auth == "" || auth == "Bearer " || !strings.HasPrefix(auth, "Bearer ") || len(strings.TrimPrefix(auth, "Bearer ")) == 0 {
@@ -448,7 +448,7 @@ func TestUploadWithMissingToken(t *testing.T) {
 
 	gqlClient := &api.GraphQLClient{}
 	restClient := &api.RESTClient{}
-	apiGetter := NewAPIGetter(gqlClient, restClient)
+	apiGetter := NewAPIGetter(gqlClient, restClient, "")
 
 	oldUploadsBaseURL := uploadsBaseURL
 	uploadsBaseURL = testServer.URL + "/organizations/%d/gei/archive"
@@ -482,14 +482,11 @@ func TestUploadWithRetry(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	_ = os.Setenv("GITHUB_PAT", "test-token")
-	defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
-
 	logger, _ := zap.NewDevelopment()
 
 	gqlClient := &api.GraphQLClient{}
 	restClient := &api.RESTClient{}
-	apiGetter := NewAPIGetter(gqlClient, restClient)
+	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
 
 	oldUploadsBaseURL := uploadsBaseURL
 	uploadsBaseURL = testServer.URL + "/organizations/%d/gei/archive"

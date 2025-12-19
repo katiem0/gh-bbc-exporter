@@ -65,7 +65,7 @@ func NewCmdMigrate() *cobra.Command {
 			host := "github.com"
 
 			logger.Debug("Retrieving GitHub authentication token")
-			authToken, err = utils.GetGitHubAuthToken(&migrateFlags)
+			authToken, err = utils.GetGitHubAuthToken(&migrateFlags, logger)
 			if err != nil {
 				logger.Debug("Failed to get GitHub authentication token", zap.Error(err))
 				return fmt.Errorf("failed to get GitHub authentication token: %w", err)
@@ -108,7 +108,7 @@ func NewCmdMigrate() *cobra.Command {
 			logger.Debug("REST client created successfully")
 
 			logger.Debug("Starting migration process")
-			return runCmdMigrate(&exportFlags, &migrateFlags, utils.NewAPIGetter(gqlClient, restClient), logger)
+			return runCmdMigrate(&exportFlags, &migrateFlags, utils.NewAPIGetter(gqlClient, restClient, authToken), logger)
 		},
 	}
 

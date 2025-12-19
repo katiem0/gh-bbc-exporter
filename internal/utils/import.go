@@ -19,12 +19,14 @@ type Getter interface {
 type APIGetter struct {
 	gqlClient  api.GraphQLClient
 	restClient api.RESTClient
+	authToken  string
 }
 
-func NewAPIGetter(gqlClient *api.GraphQLClient, restClient *api.RESTClient) *APIGetter {
+func NewAPIGetter(gqlClient *api.GraphQLClient, restClient *api.RESTClient, authToken string) *APIGetter {
 	return &APIGetter{
 		gqlClient:  *gqlClient,
 		restClient: *restClient,
+		authToken:  authToken,
 	}
 }
 
@@ -100,15 +102,6 @@ func RunGitHubAPIMigration(exportFlags *data.CmdExportFlags, migrateFlags *data.
 		zap.String("source", fmt.Sprintf("%s/%s", exportFlags.Workspace, exportFlags.Repository)),
 		zap.String("target", fmt.Sprintf("%s/%s", migrateFlags.TargetOrg, targetRepo)))
 
-	logger.Debug("Step 4: Retrieving GitHub authentication token")
-	authToken, err := GetGitHubAuthToken(migrateFlags)
-	if err != nil {
-		logger.Debug("Failed to get GitHub authentication token", zap.Error(err))
-		return fmt.Errorf("failed to get GitHub authentication token: %w", err)
-	}
-	logger.Debug("GitHub authentication token retrieved",
-		zap.Int("tokenLength", len(authToken)))
-
 	visibility := migrateFlags.TargetRepoVisibility.String()
 	logger.Debug("Using repository visibility", zap.String("visibility", visibility))
 
@@ -122,7 +115,7 @@ func RunGitHubAPIMigration(exportFlags *data.CmdExportFlags, migrateFlags *data.
 		zap.String("visibility", visibility))
 
 	migrationID, err := g.startRepositoryMigration(migrationSourceID, orgInfo.Organization.ID, targetRepo, archiveURI,
-		sourceURL, visibility, authToken)
+		sourceURL, visibility)
 	if err != nil {
 		logger.Debug("Failed to start migration", zap.Error(err))
 		return fmt.Errorf("failed to start migration: %w", err)
@@ -175,7 +168,7 @@ func (g *APIGetter) createMigrationSource(name string, url string, ownerID strin
 	return migrationSourceID, nil
 }
 
-func (g *APIGetter) startRepositoryMigration(sourceID string, orgID string, targetRepo string, archiveURI string, sourceURL string, visibility string, githubPAT string) (string, error) {
+func (g *APIGetter) startRepositoryMigration(sourceID string, orgID string, targetRepo string, archiveURI string, sourceURL string, visibility string) (string, error) {
 	mutation := new(data.StartMigrationResponse)
 	variables := map[string]interface{}{
 		"input": data.StartRepositoryMigrationInput{
@@ -183,8 +176,8 @@ func (g *APIGetter) startRepositoryMigration(sourceID string, orgID string, targ
 			OwnerID:              graphql.String(orgID),
 			RepositoryName:       graphql.String(targetRepo),
 			ContinueOnError:      graphql.Boolean(true),
-			GitHubPAT:            graphql.String(githubPAT),
-			AccessToken:          graphql.String(githubPAT),
+			GitHubPAT:            graphql.String(g.authToken),
+			AccessToken:          graphql.String(g.authToken),
 			GitArchiveUrl:        graphql.String(archiveURI),
 			MetadataArchiveUrl:   graphql.String(archiveURI),
 			SourceRepositoryUrl:  graphql.String(sourceURL),
