@@ -321,7 +321,7 @@ func (g *APIGetter) startMultipartUpload(ctx context.Context, orgID int, fileNam
 		zap.String("method", "POST"),
 		zap.String("url", uploadURL))
 
-	resp, err := g.restClient.Request("POST", uploadURL, bytes.NewReader(bodyBytes))
+	resp, err := g.restClient.RequestWithContext(ctx, "POST", uploadURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		logger.Debug("Failed to start upload", zap.Error(err))
 		return "", "", "", fmt.Errorf("failed to start upload: %w", err)
@@ -391,7 +391,7 @@ func (g *APIGetter) uploadPart(ctx context.Context, location string, data []byte
 		zap.Int("contentLength", len(data)))
 
 	startTime := time.Now()
-	resp, err := g.restClient.Request("PATCH", uploadURL, bytes.NewReader(data))
+	resp, err := g.restClient.RequestWithContext(ctx, "PATCH", uploadURL, bytes.NewReader(data))
 	duration := time.Since(startTime)
 	if err != nil {
 		logger.Debug("Failed to upload part",
@@ -440,7 +440,7 @@ func (g *APIGetter) completeMultipartUpload(ctx context.Context, lastLocation st
 		zap.String("url", finalizeURL))
 
 	startTime := time.Now()
-	resp, err := g.restClient.Request("PUT", finalizeURL, nil)
+	resp, err := g.restClient.RequestWithContext(ctx, "PUT", finalizeURL, nil)
 	duration := time.Since(startTime)
 	if err != nil {
 		logger.Debug("Failed to finalize upload",

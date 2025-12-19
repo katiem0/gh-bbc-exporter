@@ -27,23 +27,27 @@ var (
 	prNumberPattern           = regexp.MustCompile(`\b#(\d+)\b`)
 )
 
-func GetGitHubAuthToken(migrateFlags *data.CmdMigrateFlags) (string, error) {
-	if migrateFlags.GitHubPAT == "" {
-		migrateFlags.GitHubPAT = os.Getenv("GITHUB_PAT")
+func GetGitHubAuthToken(migrateFlags *data.CmdMigrateFlags, logger *zap.Logger) (string, error) {
+	if migrateFlags.GitHubPAT != "" {
+		logger.Debug("Using GitHub PAT from flag")
+		return migrateFlags.GitHubPAT, nil
 	}
 
-	if migrateFlags.GitHubPAT != "" {
-		return migrateFlags.GitHubPAT, nil
+	if envToken := os.Getenv("GITHUB_PAT"); envToken != "" {
+		logger.Debug("Using GitHub PAT from environment variable GITHUB_PAT")
+		migrateFlags.GitHubPAT = envToken
+		return envToken, nil
 	}
 
 	host := "github.com"
 	token, _ := auth.TokenForHost("github.com")
-	if token == "" {
-		return "", fmt.Errorf("no GitHub auth token found for host %s; "+
-			"use --github-target-pat / GITHUB_PAT or run `gh auth login -h %s`", host, host)
+	if token != "" {
+		logger.Debug("Using GitHub token from gh CLI keychain")
+		return token, nil
 	}
 
-	return token, nil
+	return "", fmt.Errorf("no GitHub auth token found for host %s; "+
+		"use --github-target-pat / GITHUB_PAT or run `gh auth login -h %s`", host, host)
 }
 
 func formatDateToZ(inputDate string) string {

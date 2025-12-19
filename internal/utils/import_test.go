@@ -548,7 +548,7 @@ func TestGetGitHubAuthTokenFromFlags(t *testing.T) {
 				GitHubPAT: tc.flagPAT,
 			}
 
-			token, err := GetGitHubAuthToken(migrateFlags)
+			token, err := GetGitHubAuthToken(migrateFlags, zap.NewNop())
 			if tc.expectedPAT != "" {
 				assert.NoError(t, err)
 				assert.Equal(t, tc.expectedPAT, token)
