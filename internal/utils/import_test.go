@@ -285,7 +285,7 @@ func TestNewAPIGetter(t *testing.T) {
 	gqlClient := &api.GraphQLClient{}
 	restClient := &api.RESTClient{}
 
-	apiGetter := NewAPIGetter(gqlClient, restClient)
+	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
 
 	assert.NotNil(t, apiGetter)
 }
@@ -293,9 +293,20 @@ func TestNewAPIGetter(t *testing.T) {
 func TestGetOrganizationInfo(t *testing.T) {
 	gqlClient := &api.GraphQLClient{}
 	restClient := &api.RESTClient{}
-	apiGetter := NewAPIGetter(gqlClient, restClient)
+	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
 
 	assert.NotNil(t, apiGetter)
+}
+
+func TestAPIGetterCreation(t *testing.T) {
+	gqlClient := &api.GraphQLClient{}
+	restClient := &api.RESTClient{}
+
+	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
+
+	assert.NotNil(t, apiGetter)
+	assert.NotNil(t, apiGetter.gqlClient)
+	assert.NotNil(t, apiGetter.restClient)
 }
 
 func TestCreateMigrationSourceInputStruct(t *testing.T) {
@@ -621,17 +632,6 @@ func TestMigrationSourceCreationInput(t *testing.T) {
 	assert.Equal(t, url, string(input.URL))
 	assert.Equal(t, ownerID, string(input.OwnerID))
 	assert.Equal(t, "GITHUB_ARCHIVE", string(input.Type))
-}
-
-func TestAPIGetterCreation(t *testing.T) {
-	gqlClient := &api.GraphQLClient{}
-	restClient := &api.RESTClient{}
-
-	apiGetter := NewAPIGetter(gqlClient, restClient)
-
-	assert.NotNil(t, apiGetter)
-	assert.NotNil(t, apiGetter.gqlClient)
-	assert.NotNil(t, apiGetter.restClient)
 }
 
 func TestMigrationArchivePathValidation(t *testing.T) {

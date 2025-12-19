@@ -108,7 +108,7 @@ func NewCmdMigrate() *cobra.Command {
 			logger.Debug("REST client created successfully")
 
 			logger.Debug("Starting migration process")
-			return runCmdMigrate(&exportFlags, &migrateFlags, utils.NewAPIGetter(gqlClient, restClient), logger)
+			return runCmdMigrate(&exportFlags, &migrateFlags, utils.NewAPIGetter(gqlClient, restClient, authToken), logger)
 		},
 	}
 

@@ -422,6 +422,10 @@ indicating which references need to be renamed in Bitbucket before attempting th
    branch/tag name or a commit SHA. To resolve:
    - Rename the problematic branches/tags in Bitbucket to use non-ambiguous names
    - Re-run the export after renaming
+6. **GitHub CLI Authentication Issues**
+   If using `gh` CLI authentication and you receive
+   `GraphQL: <user> does not have the correct permissions to execute`, it is likely due to auth permissions
+   from the CLI. See [`gh auth login`](https://cli.github.com/manual/gh_auth_login) for details on `--scopes`.
 
 ## Development
 

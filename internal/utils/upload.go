@@ -98,7 +98,7 @@ func (g *APIGetter) uploadSingleFile(ctx context.Context, orgID int, file *os.Fi
 
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("User-Agent", "gh-bbc-exporter")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("GITHUB_PAT")))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", g.authToken))
 	req.ContentLength = fileSize
 
 	logger.Debug("Request headers set",
@@ -317,27 +317,11 @@ func (g *APIGetter) startMultipartUpload(ctx context.Context, orgID int, fileNam
 
 	logger.Debug("Request body prepared", zap.String("body", string(bodyBytes)))
 
-	// Create HTTP client for direct upload
-	httpClient := &http.Client{
-		Timeout: 60 * time.Minute,
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", uploadURL, bytes.NewReader(bodyBytes))
-	if err != nil {
-		logger.Debug("Failed to create HTTP request", zap.Error(err))
-		return "", "", "", fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "gh-bbc-exporter")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("GITHUB_PAT")))
-	req.Header.Set("GraphQL-Features", "octoshift_github_owned_storage")
-
-	logger.Debug("Sending multipart upload initiation request",
+	logger.Debug("Sending multipart upload initiation request via REST client",
 		zap.String("method", "POST"),
 		zap.String("url", uploadURL))
 
-	resp, err := httpClient.Do(req)
+	resp, err := g.restClient.Request("POST", uploadURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		logger.Debug("Failed to start upload", zap.Error(err))
 		return "", "", "", fmt.Errorf("failed to start upload: %w", err)
@@ -396,36 +380,18 @@ func (g *APIGetter) startMultipartUpload(ctx context.Context, orgID int, fileNam
 func (g *APIGetter) uploadPart(ctx context.Context, location string, data []byte, partNumber int, logger *zap.Logger) (string, error) {
 	uploadURL := uploadsHost + location
 
-	logger.Debug("Uploading part",
+	logger.Debug("Uploading part via REST client",
 		zap.Int("partNumber", partNumber),
 		zap.Int("dataSize", len(data)),
 		zap.String("url", uploadURL))
 
-	httpClient := &http.Client{
-		Timeout: 60 * time.Minute,
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "PATCH", uploadURL, bytes.NewReader(data))
-	if err != nil {
-		logger.Debug("Failed to create PATCH request",
-			zap.Int("partNumber", partNumber),
-			zap.Error(err))
-		return "", fmt.Errorf("failed to create PATCH request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("User-Agent", "gh-bbc-exporter")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("GITHUB_PAT")))
-	req.Header.Set("GraphQL-Features", "octoshift_github_owned_storage")
-	req.ContentLength = int64(len(data))
-
 	logger.Debug("Sending part upload request",
 		zap.Int("partNumber", partNumber),
 		zap.String("method", "PATCH"),
-		zap.Int64("contentLength", req.ContentLength))
+		zap.Int("contentLength", len(data)))
 
 	startTime := time.Now()
-	resp, err := httpClient.Do(req)
+	resp, err := g.restClient.Request("PATCH", uploadURL, bytes.NewReader(data))
 	duration := time.Since(startTime)
 	if err != nil {
 		logger.Debug("Failed to upload part",
@@ -466,30 +432,15 @@ func (g *APIGetter) uploadPart(ctx context.Context, location string, data []byte
 func (g *APIGetter) completeMultipartUpload(ctx context.Context, lastLocation string, logger *zap.Logger) (string, error) {
 	finalizeURL := uploadsHost + lastLocation
 
-	logger.Debug("Completing multipart upload",
+	logger.Debug("Completing multipart upload via REST client",
 		zap.String("finalizeURL", finalizeURL))
-
-	httpClient := &http.Client{
-		Timeout: 60 * time.Minute,
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "PUT", finalizeURL, nil)
-	if err != nil {
-		logger.Debug("Failed to create finalize request", zap.Error(err))
-		return "", fmt.Errorf("failed to create finalize request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("User-Agent", "gh-bbc-exporter")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("GITHUB_PAT")))
-	req.Header.Set("GraphQL-Features", "octoshift_github_owned_storage")
 
 	logger.Debug("Sending finalize request",
 		zap.String("method", "PUT"),
 		zap.String("url", finalizeURL))
 
 	startTime := time.Now()
-	resp, err := httpClient.Do(req)
+	resp, err := g.restClient.Request("PUT", finalizeURL, nil)
 	duration := time.Since(startTime)
 	if err != nil {
 		logger.Debug("Failed to finalize upload",

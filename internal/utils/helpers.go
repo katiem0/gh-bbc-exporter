@@ -36,7 +36,13 @@ func GetGitHubAuthToken(migrateFlags *data.CmdMigrateFlags) (string, error) {
 		return migrateFlags.GitHubPAT, nil
 	}
 
+	host := "github.com"
 	token, _ := auth.TokenForHost("github.com")
+	if token == "" {
+		return "", fmt.Errorf("no GitHub auth token found for host %s; "+
+			"use --github-target-pat / GITHUB_PAT or run `gh auth login -h %s`", host, host)
+	}
+
 	return token, nil
 }
 
