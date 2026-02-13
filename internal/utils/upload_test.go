@@ -509,3 +509,71 @@ func TestUploadURLConstruction(t *testing.T) {
 	actualURL := fmt.Sprintf(uploadsBaseURL, orgID)
 	assert.Equal(t, expectedURL, actualURL)
 }
+
+func TestSetUploadsBaseURL(t *testing.T) {
+	// Save original values
+	originalBaseURL := uploadsBaseURL
+	originalHost := uploadsHost
+	defer func() {
+		uploadsBaseURL = originalBaseURL
+		uploadsHost = originalHost
+	}()
+
+	testCases := []struct {
+		name            string
+		baseURL         string
+		host            string
+		expectedBaseURL string
+		expectedHost    string
+	}{
+		{
+			name:            "Set GHE.com uploads URL",
+			baseURL:         "https://uploads.octocorp.ghe.com/organizations/%d/gei/archive",
+			host:            "https://uploads.octocorp.ghe.com",
+			expectedBaseURL: "https://uploads.octocorp.ghe.com/organizations/%d/gei/archive",
+			expectedHost:    "https://uploads.octocorp.ghe.com",
+		},
+		{
+			name:            "Set default github.com uploads URL",
+			baseURL:         "https://uploads.github.com/organizations/%d/gei/archive",
+			host:            "https://uploads.github.com",
+			expectedBaseURL: "https://uploads.github.com/organizations/%d/gei/archive",
+			expectedHost:    "https://uploads.github.com",
+		},
+		{
+			name:            "Set custom GHE.com subdomain",
+			baseURL:         "https://uploads.mycompany.ghe.com/organizations/%d/gei/archive",
+			host:            "https://uploads.mycompany.ghe.com",
+			expectedBaseURL: "https://uploads.mycompany.ghe.com/organizations/%d/gei/archive",
+			expectedHost:    "https://uploads.mycompany.ghe.com",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			SetUploadsBaseURL(tc.baseURL, tc.host)
+			assert.Equal(t, tc.expectedBaseURL, uploadsBaseURL)
+			assert.Equal(t, tc.expectedHost, uploadsHost)
+		})
+	}
+}
+
+func TestSetUploadsBaseURLIntegrationWithUpload(t *testing.T) {
+	// Save original values
+	originalBaseURL := uploadsBaseURL
+	originalHost := uploadsHost
+	defer func() {
+		uploadsBaseURL = originalBaseURL
+		uploadsHost = originalHost
+	}()
+
+	// Set a GHE.com URL
+	SetUploadsBaseURL(
+		"https://uploads.octocorp.ghe.com/organizations/%d/gei/archive",
+		"https://uploads.octocorp.ghe.com",
+	)
+
+	// Verify the format string works with an org ID
+	result := fmt.Sprintf(uploadsBaseURL, 12345)
+	assert.Equal(t, "https://uploads.octocorp.ghe.com/organizations/12345/gei/archive", result)
+}

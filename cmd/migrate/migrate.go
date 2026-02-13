@@ -60,9 +60,13 @@ func NewCmdMigrate() *cobra.Command {
 				zap.String("workspace", exportFlags.Workspace),
 				zap.String("repository", exportFlags.Repository),
 				zap.String("targetOrg", migrateFlags.TargetOrg),
-				zap.String("targetRepo", migrateFlags.TargetRepo))
+				zap.String("targetRepo", migrateFlags.TargetRepo),
+				zap.String("targetAPIURL", migrateFlags.TargetAPIURL))
 
-			host := "github.com"
+			host, _, err := utils.GetAPIURLhost(migrateFlags.TargetAPIURL)
+			if err != nil {
+				return fmt.Errorf("invalid target API URL: %w", err)
+			}
 
 			logger.Debug("Retrieving GitHub authentication token")
 			authToken, err = utils.GetGitHubAuthToken(&migrateFlags, logger)
@@ -75,6 +79,7 @@ func NewCmdMigrate() *cobra.Command {
 
 			logger.Debug("Creating GraphQL client",
 				zap.String("host", host))
+
 			gqlClient, err = api.NewGraphQLClient(api.ClientOptions{
 				Headers: map[string]string{
 					"Accept": "application/vnd.github.hawkgirl-preview+json",
@@ -145,6 +150,8 @@ func NewCmdMigrate() *cobra.Command {
 		"Target repository name (defaults to source repo name)")
 	migrateCmd.PersistentFlags().StringVar(&migrateFlags.GitHubPAT, "github-target-pat", "",
 		"GitHub Personal Access Token (env: GITHUB_PAT)")
+	migrateCmd.PersistentFlags().StringVar(&migrateFlags.TargetAPIURL, "target-api-url", "https://api.github.com",
+		"The URL of the target API, if not migrating to github.com. Defaults to https://api.github.com")
 	migrateCmd.PersistentFlags().Var(&migrateFlags.TargetRepoVisibility, "target-repo-visibility",
 		"The visibility of the target repo. Defaults to private. Valid values are public, private, or internal.")
 	migrateCmd.PersistentFlags().BoolVarP(&exportFlags.Debug, "debug", "d", false, "Enable debug logging")
@@ -235,6 +242,16 @@ func runCmdMigrate(exportFlags *data.CmdExportFlags, migrateFlags *data.CmdMigra
 
 	logger.Info("Step 2: Importing to GitHub Enterprise Cloud",
 		zap.String("archive", archivePath))
+
+	newUploadsBaseURL, newUploadsHost, err := utils.GetUploadsBaseURL(migrateFlags.TargetAPIURL)
+	if err != nil {
+		return fmt.Errorf("unsupported target for migration uploads: %w", err)
+	}
+
+	utils.SetUploadsBaseURL(newUploadsBaseURL, newUploadsHost)
+	logger.Debug("Uploads base URL configured",
+		zap.String("uploadsBaseURL", newUploadsBaseURL),
+		zap.String("uploadsHost", newUploadsHost))
 
 	logger.Debug("Starting GitHub API migration",
 		zap.String("archivePath", archivePath),

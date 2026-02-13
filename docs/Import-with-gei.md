@@ -5,6 +5,11 @@ Cloud using GitHub Enterprise Importer (GEI).
 
 ## Migration Methods
 
+> [!Note]
+> All methods below assume you have already exported your Bitbucket repository using the
+> `gh bbc-exporter export` command. If you prefer a single-step process, use the
+> `gh bbc-exporter migrate` command instead, which handles both export and import.
+
 There are three primary methods to perform the migration:
 
 1. **[Method 1: Automated with GitHub Actions (Recommended)](#method-1-automated-with-github-actions)**
@@ -236,6 +241,30 @@ After a successful migration:
 2. **[Reclaim mannequins][reclaim-mannequin]** to map migrated users to their GitHub accounts.
 3. **Configure workflows** and CI/CD pipelines.
 4. **Verify repository contents** and settings.
+5. **Verify pull request metadata** including reviews, comments, and review threads.
+
+---
+
+## Migrating to GHE.com (GitHub Enterprise Cloud with Data Residency)
+
+When migrating to a GHE.com instance, the API endpoints differ from standard GitHub.com:
+
+- **GraphQL API**: `https://api.<subdomain>.ghe.com/graphql`
+- **Uploads API**: `https://uploads.<subdomain>.ghe.com`
+
+The `gh bbc-exporter migrate` command automatically derives the correct upload URL when
+you provide the `--target-api-url` flag:
+
+```sh
+gh bbc-exporter migrate -w bitbucket-workspace -r source-repo \
+   --target-org github-org \
+   --target-api-url https://api.subdomain.ghe.com \
+   --github-target-pat ghp_xxxxx \
+   -t your-bitbucket-token
+```
+
+For manual API migration (Method 3), replace the GraphQL and upload endpoints with your
+GHE.com instance URLs in each step.
 
 ---
 

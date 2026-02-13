@@ -23,6 +23,38 @@ var (
 	uploadsHost               string = "https://uploads.github.com"
 )
 
+func GetUploadsBaseURL(targetAPIURL string) (string, string, error) {
+	if targetAPIURL == "" || targetAPIURL == "https://api.github.com" {
+		return "https://uploads.github.com/organizations/%d/gei/archive",
+			"https://uploads.github.com", nil
+	}
+
+	parsed, err := url.Parse(targetAPIURL)
+	if err != nil {
+		// Fall back to default
+		return uploadsBaseURL, uploadsHost, nil
+	}
+
+	apiHost := parsed.Hostname()
+
+	// For GHE.com URLs: https://api.<subdomain>.ghe.com
+	// Uploads endpoint: https://uploads.<subdomain>.ghe.com/organizations/%d/gei/archive
+	if strings.HasPrefix(apiHost, "api.") && strings.HasSuffix(apiHost, ".ghe.com") {
+		gheSubdomain := strings.TrimPrefix(apiHost, "api.")
+		gheUploadsBase := fmt.Sprintf("%s://uploads.%s/organizations/%%d/gei/archive", parsed.Scheme, gheSubdomain)
+		gheUploadsHost := fmt.Sprintf("%s://uploads.%s", parsed.Scheme, gheSubdomain)
+		return gheUploadsBase, gheUploadsHost, nil
+	}
+
+	// GHES does not support GEI migrations
+	return "", "", fmt.Errorf("invalid or unsupported target API URL: %s", targetAPIURL)
+}
+
+func SetUploadsBaseURL(baseURL, host string) {
+	uploadsBaseURL = baseURL
+	uploadsHost = host
+}
+
 func (g *APIGetter) UploadArchiveToGitHub(orgID int, archivePath string, logger *zap.Logger) (string, error) {
 	logger.Debug("Starting archive upload to GitHub",
 		zap.Int("orgID", orgID),

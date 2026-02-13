@@ -173,12 +173,12 @@ func TestNewCmdRootSubcommandNames(t *testing.T) {
 	cmd := NewCmdRoot()
 
 	subcommandNames := make([]string, 0)
-	for _, subCmd := range cmd.Commands() {
-		subcommandNames = append(subcommandNames, subCmd.Name())
+	for _, sub := range cmd.Commands() {
+		subcommandNames = append(subcommandNames, sub.Name())
 	}
 
-	assert.Contains(t, subcommandNames, "export")
-	assert.Contains(t, subcommandNames, "migrate")
+	assert.Contains(t, subcommandNames, "export", "Root should have export subcommand")
+	assert.Contains(t, subcommandNames, "migrate", "Root should have migrate subcommand")
 }
 
 func TestNewCmdRootNoRunFunction(t *testing.T) {

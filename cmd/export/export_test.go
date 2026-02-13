@@ -36,6 +36,15 @@ func cleanupExportDirs(t *testing.T) {
 	}
 }
 
+func TestExportDefaultBitbucketAPIURL(t *testing.T) {
+	cmd := NewCmdExport()
+
+	flag := cmd.PersistentFlags().Lookup("bbc-api-url")
+	assert.NotNil(t, flag)
+	assert.Equal(t, "https://api.bitbucket.org/2.0", flag.DefValue,
+		"Default Bitbucket API URL should be the standard endpoint")
+}
+
 func TestValidateExportFlagsMixedAuth(t *testing.T) {
 	CmdExportFlags := &data.CmdExportFlags{
 		BitbucketAccessToken: "testtoken",
@@ -123,6 +132,47 @@ func TestPRFilteringFlagsIntegration(t *testing.T) {
 	assert.Equal(t, "2023-01-01", CmdExportFlags.PRsFromDate, "Expected PRsFromDate to be set")
 }
 
+func TestExportCommandLongDescription(t *testing.T) {
+	cmd := NewCmdExport()
+
+	assert.NotEmpty(t, cmd.Long, "Long description should not be empty")
+	assert.Contains(t, cmd.Long, "Bitbucket", "Long description should mention Bitbucket")
+}
+
+func TestExportCommandExample(t *testing.T) {
+	cmd := NewCmdExport()
+
+	if cmd.Example != "" {
+		assert.Contains(t, cmd.Example, "export", "Example should include export command")
+	}
+}
+
+func TestExportFlagShorthands(t *testing.T) {
+	cmd := NewCmdExport()
+
+	shorthandFlags := map[string]string{
+		"a": "bbc-api-url",
+		"t": "access-token",
+		"e": "email",
+		"u": "user",
+		"p": "app-password",
+		"w": "workspace",
+		"r": "repo",
+		"o": "output",
+		"d": "debug",
+	}
+
+	for shorthand, fullName := range shorthandFlags {
+		t.Run(fullName, func(t *testing.T) {
+			flag := cmd.PersistentFlags().Lookup(fullName)
+			assert.NotNil(t, flag, "Flag %s should exist", fullName)
+			if flag != nil {
+				assert.Equal(t, shorthand, flag.Shorthand, "Flag %s should have shorthand %s", fullName, shorthand)
+			}
+		})
+	}
+}
+
 func TestExecuteWithInvalidFlags(t *testing.T) {
 	rootCmd := NewCmdExport()
 	buf := new(bytes.Buffer)
@@ -135,6 +185,23 @@ func TestExecuteWithInvalidFlags(t *testing.T) {
 
 	output := buf.String()
 	assert.Contains(t, output, "bitbucket workspace must be specified")
+}
+
+func TestExportCommandDisabledFlagSorting(t *testing.T) {
+	cmd := NewCmdExport()
+
+	assert.False(t, cmd.Flags().SortFlags, "Regular flags should not be sorted")
+	assert.False(t, cmd.PersistentFlags().SortFlags, "Persistent flags should not be sorted")
+}
+
+func TestExportCommandHasPreRunE(t *testing.T) {
+	cmd := NewCmdExport()
+	assert.NotNil(t, cmd.PreRunE, "Export command should have PreRunE set")
+}
+
+func TestExportCommandHasRunE(t *testing.T) {
+	cmd := NewCmdExport()
+	assert.NotNil(t, cmd.RunE, "Export command should have RunE set")
 }
 
 func TestExecuteWithValidFlags(t *testing.T) {

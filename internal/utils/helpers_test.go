@@ -3052,3 +3052,140 @@ func TestHashStringSpecialCharacters(t *testing.T) {
 		hashes[hash] = input
 	}
 }
+
+func TestGetAPIURLhostGHECom(t *testing.T) {
+	testCases := []struct {
+		name         string
+		apiURL       string
+		expectedHost string
+		expectError  bool
+	}{
+		{
+			name:         "Default github.com",
+			apiURL:       "https://api.github.com",
+			expectedHost: "github.com",
+			expectError:  false,
+		},
+		{
+			name:         "GHE.com - octocorp",
+			apiURL:       "https://api.octocorp.ghe.com",
+			expectedHost: "octocorp.ghe.com",
+			expectError:  false,
+		},
+		{
+			name:         "GHE.com - mycompany",
+			apiURL:       "https://api.mycompany.ghe.com",
+			expectedHost: "mycompany.ghe.com",
+			expectError:  false,
+		},
+		{
+			name:         "GHES URL with /api/v3",
+			apiURL:       "https://github.example.com/api/v3",
+			expectedHost: "github.example.com",
+			expectError:  false,
+		},
+		{
+			name:        "Invalid URL",
+			apiURL:      "://invalid-url",
+			expectError: true,
+		},
+		{
+			name:         "Empty URL",
+			apiURL:       "",
+			expectedHost: "github.com",
+			expectError:  false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, host, err := GetAPIURLhost(tc.apiURL)
+			if tc.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.expectedHost, host)
+			}
+		})
+	}
+}
+
+func TestGetGitHubAuthTokenWithTargetAPIURL(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	// Save and clear relevant env vars
+	originalGHPAT := os.Getenv("GITHUB_PAT")
+	defer func() {
+		if originalGHPAT != "" {
+			_ = os.Setenv("GITHUB_PAT", originalGHPAT)
+		} else {
+			_ = os.Unsetenv("GITHUB_PAT")
+		}
+	}()
+	_ = os.Unsetenv("GITHUB_PAT")
+
+	t.Run("Flag PAT takes priority regardless of target API URL", func(t *testing.T) {
+		flags := &data.CmdMigrateFlags{
+			GitHubPAT:    "ghp_flag_token",
+			TargetAPIURL: "https://api.octocorp.ghe.com",
+		}
+
+		token, err := GetGitHubAuthToken(flags, logger)
+		assert.NoError(t, err)
+		assert.Equal(t, "ghp_flag_token", token)
+	})
+
+	t.Run("Environment GITHUB_PAT takes priority over gh CLI", func(t *testing.T) {
+		_ = os.Setenv("GITHUB_PAT", "ghp_env_token")
+		defer func() { _ = os.Unsetenv("GITHUB_PAT") }()
+
+		flags := &data.CmdMigrateFlags{
+			TargetAPIURL: "https://api.octocorp.ghe.com",
+		}
+
+		token, err := GetGitHubAuthToken(flags, logger)
+		assert.NoError(t, err)
+		assert.Equal(t, "ghp_env_token", token)
+	})
+
+	t.Run("No auth returns error with GHE.com host in message", func(t *testing.T) {
+		_ = os.Unsetenv("GITHUB_PAT")
+
+		flags := &data.CmdMigrateFlags{
+			TargetAPIURL: "https://api.octocorp.ghe.com",
+		}
+
+		_, err := GetGitHubAuthToken(flags, logger)
+		// It may find a token via gh CLI keychain, or it may fail.
+		// If it fails, the error should reference the correct host.
+		if err != nil {
+			assert.Contains(t, err.Error(), "octocorp.ghe.com")
+		}
+	})
+
+	t.Run("No auth returns error with github.com host for default URL", func(t *testing.T) {
+		_ = os.Unsetenv("GITHUB_PAT")
+
+		flags := &data.CmdMigrateFlags{
+			TargetAPIURL: "https://api.github.com",
+		}
+
+		_, err := GetGitHubAuthToken(flags, logger)
+		if err != nil {
+			assert.Contains(t, err.Error(), "github.com")
+		}
+	})
+
+	t.Run("Empty target API URL defaults to github.com", func(t *testing.T) {
+		_ = os.Unsetenv("GITHUB_PAT")
+
+		flags := &data.CmdMigrateFlags{
+			TargetAPIURL: "",
+		}
+
+		_, err := GetGitHubAuthToken(flags, logger)
+		if err != nil {
+			assert.Contains(t, err.Error(), "github.com")
+		}
+	})
+}

@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -1209,4 +1210,100 @@ func TestCmdMigrateFlagsEmbeddedExportFlags(t *testing.T) {
 	assert.Equal(t, "target-org", migrateFlags.TargetOrg)
 	assert.Equal(t, "target-repo", migrateFlags.TargetRepo)
 	assert.Equal(t, "private", migrateFlags.TargetRepoVisibility.String())
+}
+
+func TestMigrateTargetAPIURLFlag(t *testing.T) {
+	cmd := NewCmdMigrate()
+
+	flag := cmd.PersistentFlags().Lookup("target-api-url")
+	assert.NotNil(t, flag, "target-api-url flag should exist")
+	assert.Equal(t, "https://api.github.com", flag.DefValue,
+		"Default target API URL should be https://api.github.com")
+}
+
+func TestMigrateTargetAPIURLGHECom(t *testing.T) {
+	cmd := NewCmdMigrate()
+
+	testCases := []struct {
+		name        string
+		apiURL      string
+		expectedURL string
+	}{
+		{
+			name:        "Default GitHub.com API URL",
+			apiURL:      "",
+			expectedURL: "https://api.github.com",
+		},
+		{
+			name:        "GHE.com API URL",
+			apiURL:      "https://api.octocorp.ghe.com",
+			expectedURL: "https://api.octocorp.ghe.com",
+		},
+		{
+			name:        "GHES API URL",
+			apiURL:      "https://github.example.com/api/v3",
+			expectedURL: "https://github.example.com/api/v3",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			args := []string{
+				"--workspace", "test-ws",
+				"--repo", "test-repo",
+				"--target-org", "test-org",
+				"--github-target-pat", "ghp_test_token",
+				"--access-token", "test-bb-token",
+			}
+			if tc.apiURL != "" {
+				args = append(args, "--target-api-url", tc.apiURL)
+			}
+
+			err := cmd.ParseFlags(args)
+			assert.NoError(t, err)
+
+			val, err := cmd.PersistentFlags().GetString("target-api-url")
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expectedURL, val)
+		})
+	}
+}
+
+func TestMigrateCommandFlagsIncludesTargetAPIURL(t *testing.T) {
+	cmd := NewCmdMigrate()
+
+	expectedFlags := []string{
+		"target-api-url",
+		"target-org",
+		"target-repo",
+		"github-target-pat",
+		"target-repo-visibility",
+	}
+
+	for _, flagName := range expectedFlags {
+		flag := cmd.PersistentFlags().Lookup(flagName)
+		assert.NotNil(t, flag, "Flag %s should exist", flagName)
+	}
+}
+
+func TestMigrateFlagsWithTargetAPIURL(t *testing.T) {
+	flags := data.CmdMigrateFlags{
+		TargetOrg:            "github-org",
+		TargetRepo:           "github-repo",
+		TargetAPIURL:         "https://api.octocorp.ghe.com",
+		TargetRepoVisibility: data.RepoVisibility("private"),
+	}
+
+	assert.Equal(t, "https://api.octocorp.ghe.com", flags.TargetAPIURL)
+
+	jsonData, err := json.Marshal(flags)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, jsonData)
+
+	var unmarshaledFlags data.CmdMigrateFlags
+	err = json.Unmarshal(jsonData, &unmarshaledFlags)
+	assert.NoError(t, err)
+
+	assert.Equal(t, flags.TargetAPIURL, unmarshaledFlags.TargetAPIURL)
+	assert.Equal(t, flags.TargetOrg, unmarshaledFlags.TargetOrg)
 }

@@ -726,3 +726,130 @@ func TestSourceRepositoryURLConstruction(t *testing.T) {
 		})
 	}
 }
+
+func TestMigrateGHEComTargetAPIURL(t *testing.T) {
+	testCases := []struct {
+		name            string
+		targetAPIURL    string
+		expectedHost    string
+		expectedBaseURL string
+		expectError     bool
+	}{
+		{
+			name:            "github.com default",
+			targetAPIURL:    "https://api.github.com",
+			expectedHost:    "https://uploads.github.com",
+			expectedBaseURL: "https://uploads.github.com/organizations/%d/gei/archive",
+			expectError:     false,
+		},
+		{
+			name:            "GHE.com octocorp subdomain",
+			targetAPIURL:    "https://api.octocorp.ghe.com",
+			expectedHost:    "https://uploads.octocorp.ghe.com",
+			expectedBaseURL: "https://uploads.octocorp.ghe.com/organizations/%d/gei/archive",
+			expectError:     false,
+		},
+		{
+			name:            "GHE.com custom subdomain",
+			targetAPIURL:    "https://api.myenterprise.ghe.com",
+			expectedHost:    "https://uploads.myenterprise.ghe.com",
+			expectedBaseURL: "https://uploads.myenterprise.ghe.com/organizations/%d/gei/archive",
+			expectError:     false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			baseURL, host, err := GetUploadsBaseURL(tc.targetAPIURL)
+			if tc.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.expectedBaseURL, baseURL)
+				assert.Equal(t, tc.expectedHost, host)
+			}
+		})
+	}
+}
+
+func TestMigrateUploadsURLApplied(t *testing.T) {
+	// Save original values
+	originalBaseURL := uploadsBaseURL
+	originalHost := uploadsHost
+	defer func() {
+		uploadsBaseURL = originalBaseURL
+		uploadsHost = originalHost
+	}()
+
+	targetAPIURL := "https://api.octocorp.ghe.com"
+	newBaseURL, newHost, err := GetUploadsBaseURL(targetAPIURL)
+	assert.NoError(t, err)
+
+	SetUploadsBaseURL(newBaseURL, newHost)
+
+	// Verify global state was updated
+	assert.Equal(t, "https://uploads.octocorp.ghe.com/organizations/%d/gei/archive", uploadsBaseURL)
+	assert.Equal(t, "https://uploads.octocorp.ghe.com", uploadsHost)
+
+	// Verify format string works
+	formatted := fmt.Sprintf(uploadsBaseURL, 99999)
+	assert.Equal(t, "https://uploads.octocorp.ghe.com/organizations/99999/gei/archive", formatted)
+}
+
+func TestGetUploadsBaseURLInvalidURL(t *testing.T) {
+	testCases := []struct {
+		name        string
+		apiURL      string
+		expectError bool
+	}{
+		{"Empty string returns default", "", false},
+		{"Malformed URL falls back to default", "://not-a-url", false},
+		{"Missing scheme treated as GHES", "api.github.com", true},
+		{"GHES URL is unsupported", "https://github.example.com/api/v3", true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			baseURL, host, err := GetUploadsBaseURL(tc.apiURL)
+			if tc.expectError {
+				assert.Error(t, err, "Expected error for URL: %s", tc.apiURL)
+			} else {
+				assert.NoError(t, err, "Expected no error for URL: %s", tc.apiURL)
+				assert.NotEmpty(t, baseURL, "Base URL should not be empty")
+				assert.NotEmpty(t, host, "Host should not be empty")
+			}
+		})
+	}
+}
+
+func TestMigrateHostResolution(t *testing.T) {
+	testCases := []struct {
+		name         string
+		targetAPIURL string
+		expectedHost string
+	}{
+		{
+			name:         "github.com resolves correctly",
+			targetAPIURL: "https://api.github.com",
+			expectedHost: "github.com",
+		},
+		{
+			name:         "GHE.com resolves subdomain correctly",
+			targetAPIURL: "https://api.octocorp.ghe.com",
+			expectedHost: "octocorp.ghe.com",
+		},
+		{
+			name:         "GHES resolves hostname correctly",
+			targetAPIURL: "https://github.example.com/api/v3",
+			expectedHost: "github.example.com",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, host, err := GetAPIURLhost(tc.targetAPIURL)
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expectedHost, host)
+		})
+	}
+}

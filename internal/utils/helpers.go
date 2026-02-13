@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,15 +40,45 @@ func GetGitHubAuthToken(migrateFlags *data.CmdMigrateFlags, logger *zap.Logger) 
 		return envToken, nil
 	}
 
-	host := "github.com"
-	token, _ := auth.TokenForHost("github.com")
+	_, host, err := GetAPIURLhost(migrateFlags.TargetAPIURL)
+	if err != nil || host == "" {
+		host = "github.com"
+	}
+
+	token, _ := auth.TokenForHost(host)
 	if token != "" {
-		logger.Debug("Using GitHub token from gh CLI keychain")
+		logger.Debug("Using GitHub token from gh CLI keychain",
+			zap.String("host", host))
 		return token, nil
 	}
 
 	return "", fmt.Errorf("no GitHub auth token found for host %s; "+
 		"use --github-target-pat / GITHUB_PAT or run `gh auth login -h %s`", host, host)
+}
+
+func GetAPIURLhost(apiURL string) (string, string, error) {
+	if apiURL == "" || apiURL == "https://api.github.com" {
+		return "api.github.com", "github.com", nil
+	}
+
+	parsed, err := url.Parse(apiURL)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse target API URL %q: %w", apiURL, err)
+	}
+
+	host := parsed.Hostname()
+	if host == "" {
+		return "", "", fmt.Errorf("could not determine host from target API URL %q", apiURL)
+	}
+
+	// For GHE.com URLs: https://api.<subdomain>.ghe.com
+	//   authHost   = <subdomain>.ghe.com   (for token lookup)
+	//   clientHost = api.<subdomain>.ghe.com (for go-gh client)
+	if strings.HasPrefix(host, "api.") && strings.HasSuffix(host, ".ghe.com") {
+		return host, strings.TrimPrefix(host, "api."), nil
+	}
+
+	return host, host, nil
 }
 
 func formatDateToZ(inputDate string) string {
