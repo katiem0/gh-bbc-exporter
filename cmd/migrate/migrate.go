@@ -67,7 +67,7 @@ func NewCmdMigrate() *cobra.Command {
 				zap.String("targetRepo", migrateFlags.TargetRepo),
 				zap.String("targetAPIURL", migrateFlags.TargetAPIURL))
 
-			host, _, err := utils.GetAPIURLhost(migrateFlags.TargetAPIURL)
+			host, _, err := utils.GetAPIURLHost(migrateFlags.TargetAPIURL)
 			if err != nil {
 				return fmt.Errorf("invalid target API URL: %w", err)
 			}
@@ -252,7 +252,7 @@ func runCmdMigrate(exportFlags *data.CmdExportFlags, migrateFlags *data.CmdMigra
 		return fmt.Errorf("unsupported target for migration uploads: %w", err)
 	}
 
-	utils.SetUploadsBaseURL(newUploadsBaseURL, newUploadsHost)
+	g.SetUploadsBaseURL(newUploadsBaseURL, newUploadsHost)
 	logger.Debug("Uploads base URL configured",
 		zap.String("uploadsBaseURL", newUploadsBaseURL),
 		zap.String("uploadsHost", newUploadsHost))

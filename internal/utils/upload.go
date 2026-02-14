@@ -17,44 +17,52 @@ import (
 )
 
 var (
-	DefaultPartSize           int64  = 100 * 1024 * 1024  // 100 MB
-	DefaultMultipartThreshold int64  = 5000 * 1024 * 1024 // 5 GB
-	uploadsBaseURL            string = "https://uploads.github.com/organizations/%d/gei/archive"
-	uploadsHost               string = "https://uploads.github.com"
+	DefaultPartSize           int64 = 100 * 1024 * 1024  // 100 MB
+	DefaultMultipartThreshold int64 = 5000 * 1024 * 1024 // 5 GB
+)
+
+const (
+	defaultUploadsBaseURL = "https://uploads.github.com/organizations/%d/gei/archive"
+	defaultUploadsHost    = "https://uploads.github.com"
 )
 
 func GetUploadsBaseURL(targetAPIURL string) (string, string, error) {
 	if targetAPIURL == "" {
-		return "https://uploads.github.com/organizations/%d/gei/archive",
-			"https://uploads.github.com", nil
+		return defaultUploadsBaseURL, defaultUploadsHost, nil
 	}
 
 	parsed, err := url.Parse(targetAPIURL)
 	if err != nil {
-		return uploadsBaseURL, uploadsHost, nil
+		return "", "", fmt.Errorf("failed to parse target API URL %q: %w", targetAPIURL, err)
 	}
 
 	apiHost := parsed.Hostname()
+	if apiHost == "" {
+		return "", "", fmt.Errorf("invalid target API URL: no hostname found in %s", targetAPIURL)
+	}
+
 	if apiHost == "api.github.com" {
-		return "https://uploads.github.com/organizations/%d/gei/archive",
-			"https://uploads.github.com", nil
+		return defaultUploadsBaseURL, defaultUploadsHost, nil
 	}
 
 	// For GHE.com URLs: https://api.<subdomain>.ghe.com
 	// Uploads endpoint: https://uploads.<subdomain>.ghe.com/organizations/%d/gei/archive
 	if strings.HasPrefix(apiHost, "api.") && strings.HasSuffix(apiHost, ".ghe.com") {
+		if parsed.Scheme != "https" {
+			return "", "", fmt.Errorf("target API URL must use HTTPS: %s", targetAPIURL)
+		}
 		gheSubdomain := strings.TrimPrefix(apiHost, "api.")
-		gheUploadsBase := fmt.Sprintf("%s://uploads.%s/organizations/%%d/gei/archive", parsed.Scheme, gheSubdomain)
-		gheUploadsHost := fmt.Sprintf("%s://uploads.%s", parsed.Scheme, gheSubdomain)
+		gheUploadsBase := fmt.Sprintf("https://uploads.%s/organizations/%%d/gei/archive", gheSubdomain)
+		gheUploadsHost := fmt.Sprintf("https://uploads.%s", gheSubdomain)
 		return gheUploadsBase, gheUploadsHost, nil
 	}
 
 	return "", "", fmt.Errorf("invalid or unsupported target API URL: %s", targetAPIURL)
 }
 
-func SetUploadsBaseURL(baseURL, host string) {
-	uploadsBaseURL = baseURL
-	uploadsHost = host
+func (g *APIGetter) SetUploadsBaseURL(baseURL, host string) {
+	g.uploadsBaseURL = baseURL
+	g.uploadsHost = host
 }
 
 func (g *APIGetter) UploadArchiveToGitHub(orgID int, archivePath string, logger *zap.Logger) (string, error) {
@@ -112,7 +120,7 @@ func (g *APIGetter) UploadArchiveToGitHub(orgID int, archivePath string, logger 
 }
 
 func (g *APIGetter) uploadSingleFile(ctx context.Context, orgID int, file *os.File, fileName string, fileSize int64, logger *zap.Logger) (string, error) {
-	uploadURL := fmt.Sprintf("%s?name=%s", fmt.Sprintf(uploadsBaseURL, orgID), url.QueryEscape(fileName))
+	uploadURL := fmt.Sprintf("%s?name=%s", fmt.Sprintf(g.uploadsBaseURL, orgID), url.QueryEscape(fileName))
 
 	logger.Debug("Uploading file in single request",
 		zap.String("url", uploadURL),
@@ -330,7 +338,7 @@ func (g *APIGetter) uploadMultipartFile(ctx context.Context, orgID int, file *os
 }
 
 func (g *APIGetter) startMultipartUpload(ctx context.Context, orgID int, fileName string, fileSize int64, logger *zap.Logger) (string, string, string, error) {
-	uploadURL := fmt.Sprintf("%s/blobs/uploads", fmt.Sprintf(uploadsBaseURL, orgID))
+	uploadURL := fmt.Sprintf("%s/blobs/uploads", fmt.Sprintf(g.uploadsBaseURL, orgID))
 
 	logger.Debug("Preparing multipart upload initiation request",
 		zap.String("url", uploadURL),
@@ -412,7 +420,7 @@ func (g *APIGetter) startMultipartUpload(ctx context.Context, orgID int, fileNam
 }
 
 func (g *APIGetter) uploadPart(ctx context.Context, location string, data []byte, partNumber int, logger *zap.Logger) (string, error) {
-	uploadURL := uploadsHost + location
+	uploadURL := g.uploadsHost + location
 
 	logger.Debug("Uploading part via REST client",
 		zap.Int("partNumber", partNumber),
@@ -464,7 +472,7 @@ func (g *APIGetter) uploadPart(ctx context.Context, location string, data []byte
 }
 
 func (g *APIGetter) completeMultipartUpload(ctx context.Context, lastLocation string, logger *zap.Logger) (string, error) {
-	finalizeURL := uploadsHost + lastLocation
+	finalizeURL := g.uploadsHost + lastLocation
 
 	logger.Debug("Completing multipart upload via REST client",
 		zap.String("finalizeURL", finalizeURL))

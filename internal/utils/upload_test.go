@@ -46,9 +46,10 @@ func TestUploadArchiveToGitHub(t *testing.T) {
 	restClient := &api.RESTClient{}
 	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
 
-	oldUploadsBaseURL := uploadsBaseURL
-	uploadsBaseURL = testServer.URL + "/organizations/%d/gei/archive"
-	defer func() { uploadsBaseURL = oldUploadsBaseURL }()
+	apiGetter.SetUploadsBaseURL(
+		testServer.URL+"/organizations/%d/gei/archive",
+		testServer.URL,
+	)
 
 	uri, err := apiGetter.UploadArchiveToGitHub(12345, archivePath, logger)
 
@@ -95,6 +96,10 @@ func TestUploadSingleFile(t *testing.T) {
 	gqlClient := &api.GraphQLClient{}
 	restClient := &api.RESTClient{}
 	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
+	apiGetter.SetUploadsBaseURL(
+		testServer.URL+"/organizations/%d/gei/archive",
+		testServer.URL,
+	)
 
 	file, err := os.Open(archivePath)
 	assert.NoError(t, err)
@@ -102,10 +107,6 @@ func TestUploadSingleFile(t *testing.T) {
 
 	fileInfo, err := file.Stat()
 	assert.NoError(t, err)
-
-	oldUploadsBaseURL := uploadsBaseURL
-	uploadsBaseURL = testServer.URL + "/organizations/%d/gei/archive"
-	defer func() { uploadsBaseURL = oldUploadsBaseURL }()
 
 	ctx := context.Background()
 	uri, err := apiGetter.uploadSingleFile(ctx, 12345, file, "small-archive.tar.gz", fileInfo.Size(), logger)
@@ -169,14 +170,10 @@ func TestUploadMultipartFileIntegration(t *testing.T) {
 
 	gqlClient := &api.GraphQLClient{}
 	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
-	oldUploadsBaseURL := uploadsBaseURL
-	oldUploadsHost := uploadsHost
-	uploadsBaseURL = testServer.URL + "/organizations/%d/gei/archive"
-	uploadsHost = testServer.URL
-	defer func() {
-		uploadsBaseURL = oldUploadsBaseURL
-		uploadsHost = oldUploadsHost
-	}()
+	apiGetter.SetUploadsBaseURL(
+		testServer.URL+"/organizations/%d/gei/archive",
+		testServer.URL,
+	)
 
 	oldThreshold := DefaultMultipartThreshold
 	oldPartSize := DefaultPartSize
@@ -223,10 +220,10 @@ func TestStartMultipartUpload(t *testing.T) {
 	assert.NoError(t, err)
 
 	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
-
-	oldUploadsBaseURL := uploadsBaseURL
-	uploadsBaseURL = testServer.URL + "/organizations/%d/gei/archive"
-	defer func() { uploadsBaseURL = oldUploadsBaseURL }()
+	apiGetter.SetUploadsBaseURL(
+		testServer.URL+"/organizations/%d/gei/archive",
+		testServer.URL,
+	)
 
 	ctx := context.Background()
 	guid, uploadID, location, err := apiGetter.startMultipartUpload(ctx, 12345, "test-file.tar.gz", 1000000, logger)
@@ -260,10 +257,10 @@ func TestUploadPartIntegration(t *testing.T) {
 	assert.NoError(t, err)
 
 	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
-
-	oldUploadsHost := uploadsHost
-	uploadsHost = testServer.URL
-	defer func() { uploadsHost = oldUploadsHost }()
+	apiGetter.SetUploadsBaseURL(
+		testServer.URL+"/organizations/%d/gei/archive",
+		testServer.URL,
+	)
 
 	ctx := context.Background()
 	location := "/organizations/12345/gei/archive/blobs/uploads?part_number=1&guid=test-guid-123&upload_id=test-upload-456"
@@ -299,10 +296,10 @@ func TestCompleteMultipartUploadIntegration(t *testing.T) {
 	assert.NoError(t, err)
 
 	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
-	oldUploadsHost := uploadsHost
-	uploadsHost = testServer.URL
-	defer func() { uploadsHost = oldUploadsHost }()
-
+	apiGetter.SetUploadsBaseURL(
+		testServer.URL+"/organizations/%d/gei/archive",
+		testServer.URL,
+	)
 	ctx := context.Background()
 	lastLocation := "/organizations/12345/gei/archive/blobs/uploads?part_number=3&guid=test-guid-123&upload_id=test-upload-456"
 	uri, err := apiGetter.completeMultipartUpload(ctx, lastLocation, logger)
@@ -331,10 +328,10 @@ func TestUploadArchiveServerError(t *testing.T) {
 	gqlClient := &api.GraphQLClient{}
 	restClient := &api.RESTClient{}
 	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
-
-	oldUploadsBaseURL := uploadsBaseURL
-	uploadsBaseURL = testServer.URL + "/organizations/%d/gei/archive"
-	defer func() { uploadsBaseURL = oldUploadsBaseURL }()
+	apiGetter.SetUploadsBaseURL(
+		testServer.URL+"/organizations/%d/gei/archive",
+		testServer.URL,
+	)
 
 	_, err = apiGetter.UploadArchiveToGitHub(12345, archivePath, logger)
 
@@ -367,10 +364,10 @@ func TestUploadLargeFileForceMultipart(t *testing.T) {
 	assert.NoError(t, err)
 
 	apiGetter := NewAPIGetter(gqlClient, restClient, "invalid-token-for-test")
-
-	oldUploadsBaseURL := uploadsBaseURL
-	uploadsBaseURL = testServer.URL + "/organizations/%d/gei/archive"
-	defer func() { uploadsBaseURL = oldUploadsBaseURL }()
+	apiGetter.SetUploadsBaseURL(
+		testServer.URL+"/organizations/%d/gei/archive",
+		testServer.URL,
+	)
 
 	oldThreshold := DefaultMultipartThreshold
 	DefaultMultipartThreshold = 1
@@ -410,10 +407,10 @@ func TestUploadEmptyFile(t *testing.T) {
 	gqlClient := &api.GraphQLClient{}
 	restClient := &api.RESTClient{}
 	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
-
-	oldUploadsBaseURL := uploadsBaseURL
-	uploadsBaseURL = testServer.URL + "/organizations/%d/gei/archive"
-	defer func() { uploadsBaseURL = oldUploadsBaseURL }()
+	apiGetter.SetUploadsBaseURL(
+		testServer.URL+"/organizations/%d/gei/archive",
+		testServer.URL,
+	)
 
 	_, err = apiGetter.UploadArchiveToGitHub(12345, archivePath, logger)
 
@@ -449,10 +446,10 @@ func TestUploadWithMissingToken(t *testing.T) {
 	gqlClient := &api.GraphQLClient{}
 	restClient := &api.RESTClient{}
 	apiGetter := NewAPIGetter(gqlClient, restClient, "")
-
-	oldUploadsBaseURL := uploadsBaseURL
-	uploadsBaseURL = testServer.URL + "/organizations/%d/gei/archive"
-	defer func() { uploadsBaseURL = oldUploadsBaseURL }()
+	apiGetter.SetUploadsBaseURL(
+		testServer.URL+"/organizations/%d/gei/archive",
+		testServer.URL,
+	)
 
 	_, err = apiGetter.UploadArchiveToGitHub(12345, archivePath, logger)
 
@@ -487,10 +484,10 @@ func TestUploadWithRetry(t *testing.T) {
 	gqlClient := &api.GraphQLClient{}
 	restClient := &api.RESTClient{}
 	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
-
-	oldUploadsBaseURL := uploadsBaseURL
-	uploadsBaseURL = testServer.URL + "/organizations/%d/gei/archive"
-	defer func() { uploadsBaseURL = oldUploadsBaseURL }()
+	apiGetter.SetUploadsBaseURL(
+		testServer.URL+"/organizations/%d/gei/archive",
+		testServer.URL,
+	)
 
 	_, err = apiGetter.UploadArchiveToGitHub(12345, archivePath, logger)
 
@@ -506,18 +503,13 @@ func TestUploadPartSize(t *testing.T) {
 func TestUploadURLConstruction(t *testing.T) {
 	orgID := 12345
 	expectedURL := fmt.Sprintf("https://uploads.github.com/organizations/%d/gei/archive", orgID)
-	actualURL := fmt.Sprintf(uploadsBaseURL, orgID)
+	actualURL := fmt.Sprintf(defaultUploadsBaseURL, orgID)
 	assert.Equal(t, expectedURL, actualURL)
 }
 
 func TestSetUploadsBaseURL(t *testing.T) {
-	// Save original values
-	originalBaseURL := uploadsBaseURL
-	originalHost := uploadsHost
-	defer func() {
-		uploadsBaseURL = originalBaseURL
-		uploadsHost = originalHost
-	}()
+	gqlClient := &api.GraphQLClient{}
+	restClient := &api.RESTClient{}
 
 	testCases := []struct {
 		name            string
@@ -551,29 +543,103 @@ func TestSetUploadsBaseURL(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			SetUploadsBaseURL(tc.baseURL, tc.host)
-			assert.Equal(t, tc.expectedBaseURL, uploadsBaseURL)
-			assert.Equal(t, tc.expectedHost, uploadsHost)
+			apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
+			apiGetter.SetUploadsBaseURL(tc.baseURL, tc.host)
+			assert.Equal(t, tc.expectedBaseURL, apiGetter.uploadsBaseURL)
+			assert.Equal(t, tc.expectedHost, apiGetter.uploadsHost)
 		})
 	}
 }
 
 func TestSetUploadsBaseURLIntegrationWithUpload(t *testing.T) {
-	// Save original values
-	originalBaseURL := uploadsBaseURL
-	originalHost := uploadsHost
-	defer func() {
-		uploadsBaseURL = originalBaseURL
-		uploadsHost = originalHost
-	}()
+	gqlClient := &api.GraphQLClient{}
+	restClient := &api.RESTClient{}
+	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
 
 	// Set a GHE.com URL
-	SetUploadsBaseURL(
+	apiGetter.SetUploadsBaseURL(
 		"https://uploads.octocorp.ghe.com/organizations/%d/gei/archive",
 		"https://uploads.octocorp.ghe.com",
 	)
 
 	// Verify the format string works with an org ID
-	result := fmt.Sprintf(uploadsBaseURL, 12345)
+	result := fmt.Sprintf(apiGetter.uploadsBaseURL, 12345)
 	assert.Equal(t, "https://uploads.octocorp.ghe.com/organizations/12345/gei/archive", result)
+}
+
+func TestGetUploadsBaseURLInvalidURL(t *testing.T) {
+	testCases := []struct {
+		name        string
+		apiURL      string
+		expectError bool
+	}{
+		{"Empty string returns default", "", false},
+		{"Malformed URL returns error", "://not-a-url", true},
+		{"Missing scheme treated as GHES", "api.github.com", true},
+		{"GHES URL is unsupported", "https://github.example.com/api/v3", true},
+		{"GitHub.com with trailing slash", "https://api.github.com/", false},
+		{"GitHub.com with path", "https://api.github.com/graphql", false},
+		{"GitHub.com exact match", "https://api.github.com", false},
+		{"Empty hostname in URL", "https:///path", true},
+		{"HTTP GHE.com URL rejected", "http://api.octocorp.ghe.com", true},
+		{"HTTP GitHub.com still returns HTTPS default", "http://api.github.com", false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			baseURL, host, err := GetUploadsBaseURL(tc.apiURL)
+			if tc.expectError {
+				assert.Error(t, err, "Expected error for URL: %s", tc.apiURL)
+			} else {
+				assert.NoError(t, err, "Expected no error for URL: %s", tc.apiURL)
+				assert.NotEmpty(t, baseURL, "Base URL should not be empty")
+				assert.NotEmpty(t, host, "Host should not be empty")
+				// Verify output always uses HTTPS
+				assert.True(t, strings.HasPrefix(baseURL, "https://"),
+					"Base URL should always use HTTPS, got: %s", baseURL)
+				assert.True(t, strings.HasPrefix(host, "https://"),
+					"Host should always use HTTPS, got: %s", host)
+			}
+		})
+	}
+}
+
+func TestGetUploadsBaseURLGitHubComVariants(t *testing.T) {
+	expectedBaseURL := "https://uploads.github.com/organizations/%d/gei/archive"
+	expectedHost := "https://uploads.github.com"
+
+	variants := []string{
+		"",
+		"https://api.github.com",
+		"https://api.github.com/",
+		"https://api.github.com/graphql",
+		"https://api.github.com/v3",
+	}
+
+	for _, apiURL := range variants {
+		t.Run(apiURL, func(t *testing.T) {
+			baseURL, host, err := GetUploadsBaseURL(apiURL)
+			assert.NoError(t, err, "GitHub.com variant should not error: %s", apiURL)
+			assert.Equal(t, expectedBaseURL, baseURL, "Base URL mismatch for: %s", apiURL)
+			assert.Equal(t, expectedHost, host, "Host mismatch for: %s", apiURL)
+		})
+	}
+}
+
+func TestGetUploadsBaseURLRejectsHTTP(t *testing.T) {
+	testCases := []struct {
+		name   string
+		apiURL string
+	}{
+		{"HTTP GHE.com", "http://api.octocorp.ghe.com"},
+		{"HTTP GHE.com with path", "http://api.mycompany.ghe.com/graphql"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := GetUploadsBaseURL(tc.apiURL)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "must use HTTPS")
+		})
+	}
 }

@@ -40,7 +40,7 @@ func GetGitHubAuthToken(migrateFlags *data.CmdMigrateFlags, logger *zap.Logger) 
 		return envToken, nil
 	}
 
-	_, host, err := GetAPIURLhost(migrateFlags.TargetAPIURL)
+	_, host, err := GetAPIURLHost(migrateFlags.TargetAPIURL)
 	if err != nil || host == "" {
 		host = "github.com"
 	}
@@ -56,8 +56,8 @@ func GetGitHubAuthToken(migrateFlags *data.CmdMigrateFlags, logger *zap.Logger) 
 		"use --github-target-pat / GITHUB_PAT or run `gh auth login -h %s`", host, host)
 }
 
-func GetAPIURLhost(apiURL string) (string, string, error) {
-	if apiURL == "" || apiURL == "https://api.github.com" {
+func GetAPIURLHost(apiURL string) (string, string, error) {
+	if apiURL == "" {
 		return "api.github.com", "github.com", nil
 	}
 
@@ -69,6 +69,11 @@ func GetAPIURLhost(apiURL string) (string, string, error) {
 	host := parsed.Hostname()
 	if host == "" {
 		return "", "", fmt.Errorf("could not determine host from target API URL %q", apiURL)
+	}
+
+	// Treat any URL with api.github.com as the default GitHub.com endpoint
+	if host == "api.github.com" {
+		return "api.github.com", "github.com", nil
 	}
 
 	// For GHE.com URLs: https://api.<subdomain>.ghe.com

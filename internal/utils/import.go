@@ -17,16 +17,20 @@ type Getter interface {
 }
 
 type APIGetter struct {
-	gqlClient  api.GraphQLClient
-	restClient api.RESTClient
-	authToken  string
+	gqlClient      api.GraphQLClient
+	restClient     api.RESTClient
+	authToken      string
+	uploadsBaseURL string
+	uploadsHost    string
 }
 
 func NewAPIGetter(gqlClient *api.GraphQLClient, restClient *api.RESTClient, authToken string) *APIGetter {
 	return &APIGetter{
-		gqlClient:  *gqlClient,
-		restClient: *restClient,
-		authToken:  authToken,
+		gqlClient:      *gqlClient,
+		restClient:     *restClient,
+		authToken:      authToken,
+		uploadsBaseURL: defaultUploadsBaseURL,
+		uploadsHost:    defaultUploadsHost,
 	}
 }
 

@@ -773,78 +773,23 @@ func TestMigrateGHEComTargetAPIURL(t *testing.T) {
 }
 
 func TestMigrateUploadsURLApplied(t *testing.T) {
-	// Save original values
-	originalBaseURL := uploadsBaseURL
-	originalHost := uploadsHost
-	defer func() {
-		uploadsBaseURL = originalBaseURL
-		uploadsHost = originalHost
-	}()
+	gqlClient := &api.GraphQLClient{}
+	restClient := &api.RESTClient{}
+	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
 
 	targetAPIURL := "https://api.octocorp.ghe.com"
 	newBaseURL, newHost, err := GetUploadsBaseURL(targetAPIURL)
 	assert.NoError(t, err)
 
-	SetUploadsBaseURL(newBaseURL, newHost)
+	apiGetter.SetUploadsBaseURL(newBaseURL, newHost)
 
-	// Verify global state was updated
-	assert.Equal(t, "https://uploads.octocorp.ghe.com/organizations/%d/gei/archive", uploadsBaseURL)
-	assert.Equal(t, "https://uploads.octocorp.ghe.com", uploadsHost)
+	// Verify instance state was updated
+	assert.Equal(t, "https://uploads.octocorp.ghe.com/organizations/%d/gei/archive", apiGetter.uploadsBaseURL)
+	assert.Equal(t, "https://uploads.octocorp.ghe.com", apiGetter.uploadsHost)
 
 	// Verify format string works
-	formatted := fmt.Sprintf(uploadsBaseURL, 99999)
+	formatted := fmt.Sprintf(apiGetter.uploadsBaseURL, 99999)
 	assert.Equal(t, "https://uploads.octocorp.ghe.com/organizations/99999/gei/archive", formatted)
-}
-
-func TestGetUploadsBaseURLInvalidURL(t *testing.T) {
-	testCases := []struct {
-		name        string
-		apiURL      string
-		expectError bool
-	}{
-		{"Empty string returns default", "", false},
-		{"Malformed URL falls back to default", "://not-a-url", false},
-		{"Missing scheme treated as GHES", "api.github.com", true},
-		{"GHES URL is unsupported", "https://github.example.com/api/v3", true},
-		{"GitHub.com with trailing slash", "https://api.github.com/", false},
-		{"GitHub.com with path", "https://api.github.com/graphql", false},
-		{"GitHub.com exact match", "https://api.github.com", false},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			baseURL, host, err := GetUploadsBaseURL(tc.apiURL)
-			if tc.expectError {
-				assert.Error(t, err, "Expected error for URL: %s", tc.apiURL)
-			} else {
-				assert.NoError(t, err, "Expected no error for URL: %s", tc.apiURL)
-				assert.NotEmpty(t, baseURL, "Base URL should not be empty")
-				assert.NotEmpty(t, host, "Host should not be empty")
-			}
-		})
-	}
-}
-
-func TestGetUploadsBaseURLGitHubComVariants(t *testing.T) {
-	expectedBaseURL := "https://uploads.github.com/organizations/%d/gei/archive"
-	expectedHost := "https://uploads.github.com"
-
-	variants := []string{
-		"",
-		"https://api.github.com",
-		"https://api.github.com/",
-		"https://api.github.com/graphql",
-		"https://api.github.com/v3",
-	}
-
-	for _, apiURL := range variants {
-		t.Run(apiURL, func(t *testing.T) {
-			baseURL, host, err := GetUploadsBaseURL(apiURL)
-			assert.NoError(t, err, "GitHub.com variant should not error: %s", apiURL)
-			assert.Equal(t, expectedBaseURL, baseURL, "Base URL mismatch for: %s", apiURL)
-			assert.Equal(t, expectedHost, host, "Host mismatch for: %s", apiURL)
-		})
-	}
 }
 
 func TestMigrateHostResolution(t *testing.T) {
@@ -872,7 +817,7 @@ func TestMigrateHostResolution(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, host, err := GetAPIURLhost(tc.targetAPIURL)
+			_, host, err := GetAPIURLHost(tc.targetAPIURL)
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expectedHost, host)
 		})

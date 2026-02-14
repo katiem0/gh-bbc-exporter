@@ -3053,36 +3053,62 @@ func TestHashStringSpecialCharacters(t *testing.T) {
 	}
 }
 
-func TestGetAPIURLhostGHECom(t *testing.T) {
+func TestGetAPIURLHostGHECom(t *testing.T) {
 	testCases := []struct {
-		name         string
-		apiURL       string
-		expectedHost string
-		expectError  bool
+		name            string
+		apiURL          string
+		expectedHost    string
+		expectedAPIHost string
+		expectError     bool
 	}{
 		{
-			name:         "Default github.com",
-			apiURL:       "https://api.github.com",
-			expectedHost: "github.com",
-			expectError:  false,
+			name:            "Default github.com",
+			apiURL:          "https://api.github.com",
+			expectedHost:    "github.com",
+			expectedAPIHost: "api.github.com",
+			expectError:     false,
 		},
 		{
-			name:         "GHE.com - octocorp",
-			apiURL:       "https://api.octocorp.ghe.com",
-			expectedHost: "octocorp.ghe.com",
-			expectError:  false,
+			name:            "GitHub.com with trailing slash",
+			apiURL:          "https://api.github.com/",
+			expectedHost:    "github.com",
+			expectedAPIHost: "api.github.com",
+			expectError:     false,
 		},
 		{
-			name:         "GHE.com - mycompany",
-			apiURL:       "https://api.mycompany.ghe.com",
-			expectedHost: "mycompany.ghe.com",
-			expectError:  false,
+			name:            "GitHub.com with graphql path",
+			apiURL:          "https://api.github.com/graphql",
+			expectedHost:    "github.com",
+			expectedAPIHost: "api.github.com",
+			expectError:     false,
 		},
 		{
-			name:         "GHES URL with /api/v3",
-			apiURL:       "https://github.example.com/api/v3",
-			expectedHost: "github.example.com",
-			expectError:  false,
+			name:            "GitHub.com with v3 path",
+			apiURL:          "https://api.github.com/v3",
+			expectedHost:    "github.com",
+			expectedAPIHost: "api.github.com",
+			expectError:     false,
+		},
+		{
+			name:            "GHE.com - octocorp",
+			apiURL:          "https://api.octocorp.ghe.com",
+			expectedHost:    "octocorp.ghe.com",
+			expectedAPIHost: "api.octocorp.ghe.com",
+			expectError:     false,
+		},
+		{
+			name:            "GHE.com - mycompany",
+			apiURL:          "https://api.mycompany.ghe.com",
+			expectedHost:    "mycompany.ghe.com",
+			expectedAPIHost: "api.mycompany.ghe.com",
+			expectError:     false,
+		},
+		{
+			name:            "GHES URL with /api/v3",
+			apiURL:          "https://github.example.com/api/v3",
+			expectedHost:    "github.example.com",
+			expectedAPIHost: "github.example.com",
+			expectError:     false,
 		},
 		{
 			name:        "Invalid URL",
@@ -3090,21 +3116,23 @@ func TestGetAPIURLhostGHECom(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:         "Empty URL",
-			apiURL:       "",
-			expectedHost: "github.com",
-			expectError:  false,
+			name:            "Empty URL",
+			apiURL:          "",
+			expectedHost:    "github.com",
+			expectedAPIHost: "api.github.com",
+			expectError:     false,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, host, err := GetAPIURLhost(tc.apiURL)
+			apiHost, host, err := GetAPIURLHost(tc.apiURL)
 			if tc.expectError {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tc.expectedHost, host)
+				assert.Equal(t, tc.expectedAPIHost, apiHost)
 			}
 		})
 	}
