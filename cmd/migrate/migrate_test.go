@@ -1370,6 +1370,7 @@ func TestMigratePreRunValidatesTargetAPIURL(t *testing.T) {
 }
 
 func TestMigrateGHESFailsFastBeforeExport(t *testing.T) {
+	cleanupExportDirs(t)
 	defer cleanupExportDirs(t)
 
 	cmd := NewCmdMigrate()
