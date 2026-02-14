@@ -16,7 +16,8 @@ repositories into a format compatible with GitHub Enterprise migrations.
 
 ## Overview
 
-This extension helps you migrate repositories from Bitbucket Cloud to GitHub Enterprise Cloud
+This extension helps you migrate repositories from Bitbucket Cloud to GitHub Enterprise Cloud,
+GitHub Enterprise Cloud Managed Users, and GitHub Enterprise Cloud with data residency
 by creating an export archive that matches the format expected by GitHub Enterprise Importer (GEI).
 
 The exporter creates a complete migration archive containing:
@@ -48,6 +49,16 @@ Bitbucket Cloud provides two authentication methods for their API:
 - API Tokens (recommended)
 - Workspace Access Tokens (premium membership)
 - Basic Authentication with App Passwords (deprecated, will be discontinued after September 9, 2025)
+
+> [!Important]
+> The extension uses the following authentication priority order:
+>
+> 1. Workspace Access Token (`--access-token` / `BITBUCKET_ACCESS_TOKEN`)
+> 2. API Token with Email (`--api-token` + `--email` / `BITBUCKET_API_TOKEN` + `BITBUCKET_EMAIL`)
+> 3. API Token with header auth (`--api-token` / `BITBUCKET_API_TOKEN`)
+> 4. Username and App Password (`--user` + `--app-password` / `BITBUCKET_USERNAME` + `BITBUCKET_APP_PASSWORD`)
+>
+> If multiple methods are provided, a warning is displayed and the highest priority method is used.
 
 #### API Tokens
 
@@ -196,8 +207,7 @@ Flags:
   -a, --bbc-api-url string                                 Bitbucket API to use (default "https://api.bitbucket.org/2.0")
   -t, --access-token string                                Bitbucket workspace access token for authentication (env:
                                                            BITBUCKET_ACCESS_TOKEN)
-      --api-token string                                   Bitbucket API token for authentication (env:
-                                                           BITBUCKET_API_TOKEN)
+      --api-token string                                   Bitbucket API token for authentication (env: BITBUCKET_API_TOKEN)
   -e, --email string                                       Atlassian account email for API token authentication (env:
                                                            BITBUCKET_EMAIL)
   -u, --user string                                        Bitbucket username for basic authentication (env:
@@ -210,16 +220,18 @@ Flags:
   -o, --output string                                      Output directory for exported data (default:
                                                            ./bitbucket-export-TIMESTAMP)
       --open-prs-only                                      Export only open pull requests
-      --prs-from-date string                               Export pull requests created on or after this date
-                                                           (format: YYYY-MM-DD)
-      --skip-commit-lookup                                 Skip Bitbucket API lookups to retrieve commit SHAs (use
-                                                           local lookup only)
+      --prs-from-date string                               Export pull requests created on or after this date (format:
+                                                           YYYY-MM-DD)
+      --skip-commit-lookup                                 Skip Bitbucket API lookups to retrieve commit SHAs (use local
+                                                           lookup only)
       --target-org string                                  Target GitHub organization (required)
       --target-repo string                                 Target repository name (defaults to source repo name)
       --github-target-pat string                           GitHub Personal Access Token (env: GITHUB_PAT)
-      --target-repo-visibility <internal|private|public>   The visibility of the target repo. Defaults to private.
-                                                           Valid values are public, private, or internal. (default
-                                                           private)
+      --target-api-url string                              The URL of the target API, if not migrating to github.com.
+                                                           Defaults to https://api.github.com (default
+                                                           "https://api.github.com")
+      --target-repo-visibility <internal|private|public>   The visibility of the target repo. Defaults to private. Valid
+                                                           values are public, private, or internal. (default private)
   -d, --debug                                              Enable debug logging
 
 Global Flags:
@@ -251,6 +263,23 @@ gh bbc-exporter migrate -w bitbucket-workspace -r source-repo \
    --target-org github-org --github-target-pat ghp_xxxxx \
    -t your-bitbucket-token
 ```
+
+#### Migrating to GitHub Enterprise Cloud with Data Residency
+
+For migrations to a GHE.com instance, use the `--target-api-url` flag:
+
+```sh
+gh bbc-exporter migrate -w bitbucket-workspace -r source-repo \
+   --target-org github-org \
+   --target-api-url https://api.your-slug.ghe.com \
+   --github-target-pat ghp_xxxxx \
+   -t your-bitbucket-token
+```
+
+> [!Note]
+> GitHub Enterprise Cloud with data residency (GHE.com) requires the `--target-api-url` flag
+> pointing to your instance's API endpoint. The uploads URL is automatically derived from the
+> API URL. GitHub Enterprise Server (GHES) is not supported.
 
 ### Advanced Options
 
@@ -374,7 +403,7 @@ orchestrate the migration.
 - Repository and Pull request labels have not been implemented
 - User information is limited to what's available from Bitbucket API
 - [Archives larger than 40 GiB][storage-increase] are not supported by GitHub-owned storage
-- GitHub Enterprise Cloud with data residency is not supported
+- GitHub Enterprise Server (GHES) is not supported as a migration target
 
 ### Repository Name Handling
 

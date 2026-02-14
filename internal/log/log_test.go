@@ -33,6 +33,29 @@ func TestNewLogger(t *testing.T) {
 	}()
 }
 
+func TestLogWarnAndErrorOutputs(t *testing.T) {
+	var buf bytes.Buffer
+
+	encoderConfig := zap.NewDevelopmentEncoderConfig()
+	encoder := zapcore.NewConsoleEncoder(encoderConfig)
+	core := zapcore.NewCore(encoder, zapcore.AddSync(&buf), zap.DebugLevel)
+
+	testLogger := zap.New(core)
+
+	// Test warn level
+	testLogger.Warn("warn message", zap.String("detail", "something"))
+	assert.Contains(t, buf.String(), "warn message")
+	assert.Contains(t, buf.String(), "detail")
+
+	buf.Reset()
+
+	// Test error level
+	testLogger.Error("error message", zap.String("reason", "failure"))
+	assert.Contains(t, buf.String(), "error message")
+	assert.Contains(t, buf.String(), "reason")
+	assert.Contains(t, buf.String(), "failure")
+}
+
 func TestLogOutputs(t *testing.T) {
 	// Create a buffer to capture log output
 	var buf bytes.Buffer

@@ -726,3 +726,100 @@ func TestSourceRepositoryURLConstruction(t *testing.T) {
 		})
 	}
 }
+
+func TestMigrateGHEComTargetAPIURL(t *testing.T) {
+	testCases := []struct {
+		name            string
+		targetAPIURL    string
+		expectedHost    string
+		expectedBaseURL string
+		expectError     bool
+	}{
+		{
+			name:            "github.com default",
+			targetAPIURL:    "https://api.github.com",
+			expectedHost:    "https://uploads.github.com",
+			expectedBaseURL: "https://uploads.github.com/organizations/%d/gei/archive",
+			expectError:     false,
+		},
+		{
+			name:            "GHE.com octocorp subdomain",
+			targetAPIURL:    "https://api.octocorp.ghe.com",
+			expectedHost:    "https://uploads.octocorp.ghe.com",
+			expectedBaseURL: "https://uploads.octocorp.ghe.com/organizations/%d/gei/archive",
+			expectError:     false,
+		},
+		{
+			name:            "GHE.com custom subdomain",
+			targetAPIURL:    "https://api.myenterprise.ghe.com",
+			expectedHost:    "https://uploads.myenterprise.ghe.com",
+			expectedBaseURL: "https://uploads.myenterprise.ghe.com/organizations/%d/gei/archive",
+			expectError:     false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			baseURL, host, err := GetUploadsBaseURL(tc.targetAPIURL)
+			if tc.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.expectedBaseURL, baseURL)
+				assert.Equal(t, tc.expectedHost, host)
+			}
+		})
+	}
+}
+
+func TestMigrateUploadsURLApplied(t *testing.T) {
+	gqlClient := &api.GraphQLClient{}
+	restClient := &api.RESTClient{}
+	apiGetter := NewAPIGetter(gqlClient, restClient, "test-token")
+
+	targetAPIURL := "https://api.octocorp.ghe.com"
+	newBaseURL, newHost, err := GetUploadsBaseURL(targetAPIURL)
+	assert.NoError(t, err)
+
+	apiGetter.SetUploadsBaseURL(newBaseURL, newHost)
+
+	// Verify instance state was updated
+	assert.Equal(t, "https://uploads.octocorp.ghe.com/organizations/%d/gei/archive", apiGetter.uploadsBaseURL)
+	assert.Equal(t, "https://uploads.octocorp.ghe.com", apiGetter.uploadsHost)
+
+	// Verify format string works
+	formatted := fmt.Sprintf(apiGetter.uploadsBaseURL, 99999)
+	assert.Equal(t, "https://uploads.octocorp.ghe.com/organizations/99999/gei/archive", formatted)
+}
+
+func TestMigrateHostResolution(t *testing.T) {
+	testCases := []struct {
+		name         string
+		targetAPIURL string
+		expectedHost string
+	}{
+		{
+			name:         "github.com resolves correctly",
+			targetAPIURL: "https://api.github.com",
+			expectedHost: "github.com",
+		},
+		{
+			name:         "GHE.com resolves subdomain correctly",
+			targetAPIURL: "https://api.octocorp.ghe.com",
+			expectedHost: "octocorp.ghe.com",
+		},
+		{
+			name:         "GHES resolves hostname correctly",
+			targetAPIURL: "https://github.example.com/api/v3",
+			expectedHost: "github.example.com",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, host, err := GetAPIURLHost(tc.targetAPIURL)
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expectedHost, host)
+		})
+	}
+}

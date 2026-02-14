@@ -377,6 +377,40 @@ func TestCreateReviewThreads(t *testing.T) {
 	assert.Equal(t, "2023-01-01T14:00:00Z", threads[1]["created_at"])
 }
 
+func TestCreateReviewThreadsEmpty(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, "output", logger, false, "")
+
+	threads := exporter.createReviewThreads([]data.PullRequestReviewComment{})
+	assert.Empty(t, threads, "Empty comments should produce no threads")
+
+	threads = exporter.createReviewThreads(nil)
+	assert.Empty(t, threads, "Nil comments should produce no threads")
+}
+
+func TestCreateReviewsEmpty(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, "output", logger, false, "")
+
+	reviews := exporter.createReviews([]data.PullRequestReviewComment{})
+	assert.Empty(t, reviews, "Empty comments should produce no reviews")
+
+	reviews = exporter.createReviews(nil)
+	assert.Empty(t, reviews, "Nil comments should produce no reviews")
+}
+
+func TestValidateExportDataMissingFiles(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "validate-missing-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+	assert.NotPanics(t, func() {
+		_ = exporter.validateExportData()
+	})
+}
+
 func TestCloneRepositoryErrors(t *testing.T) {
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "clone-test-")

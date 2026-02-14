@@ -12,6 +12,7 @@ type CmdMigrateFlags struct {
 	TargetOrg            string
 	TargetRepo           string
 	TargetRepoVisibility RepoVisibility
+	TargetAPIURL         string
 	GitHubPAT            string
 }
 
