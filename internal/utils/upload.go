@@ -24,18 +24,21 @@ var (
 )
 
 func GetUploadsBaseURL(targetAPIURL string) (string, string, error) {
-	if targetAPIURL == "" || targetAPIURL == "https://api.github.com" {
+	if targetAPIURL == "" {
 		return "https://uploads.github.com/organizations/%d/gei/archive",
 			"https://uploads.github.com", nil
 	}
 
 	parsed, err := url.Parse(targetAPIURL)
 	if err != nil {
-		// Fall back to default
 		return uploadsBaseURL, uploadsHost, nil
 	}
 
 	apiHost := parsed.Hostname()
+	if apiHost == "api.github.com" {
+		return "https://uploads.github.com/organizations/%d/gei/archive",
+			"https://uploads.github.com", nil
+	}
 
 	// For GHE.com URLs: https://api.<subdomain>.ghe.com
 	// Uploads endpoint: https://uploads.<subdomain>.ghe.com/organizations/%d/gei/archive
@@ -46,7 +49,6 @@ func GetUploadsBaseURL(targetAPIURL string) (string, string, error) {
 		return gheUploadsBase, gheUploadsHost, nil
 	}
 
-	// GHES does not support GEI migrations
 	return "", "", fmt.Errorf("invalid or unsupported target API URL: %s", targetAPIURL)
 }
 

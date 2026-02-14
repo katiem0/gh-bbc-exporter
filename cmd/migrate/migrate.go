@@ -31,6 +31,10 @@ func NewCmdMigrate() *cobra.Command {
 			if migrateFlags.TargetOrg == "" {
 				return fmt.Errorf("target GitHub organization must be specified")
 			}
+			_, _, err := utils.GetUploadsBaseURL(migrateFlags.TargetAPIURL)
+			if err != nil {
+				return fmt.Errorf("unsupported target API URL: %w", err)
+			}
 
 			if exportFlags.PRsFromDate != "" {
 				_, err := time.Parse("2006-01-02", exportFlags.PRsFromDate)

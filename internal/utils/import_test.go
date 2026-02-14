@@ -806,6 +806,9 @@ func TestGetUploadsBaseURLInvalidURL(t *testing.T) {
 		{"Malformed URL falls back to default", "://not-a-url", false},
 		{"Missing scheme treated as GHES", "api.github.com", true},
 		{"GHES URL is unsupported", "https://github.example.com/api/v3", true},
+		{"GitHub.com with trailing slash", "https://api.github.com/", false},
+		{"GitHub.com with path", "https://api.github.com/graphql", false},
+		{"GitHub.com exact match", "https://api.github.com", false},
 	}
 
 	for _, tc := range testCases {
@@ -818,6 +821,28 @@ func TestGetUploadsBaseURLInvalidURL(t *testing.T) {
 				assert.NotEmpty(t, baseURL, "Base URL should not be empty")
 				assert.NotEmpty(t, host, "Host should not be empty")
 			}
+		})
+	}
+}
+
+func TestGetUploadsBaseURLGitHubComVariants(t *testing.T) {
+	expectedBaseURL := "https://uploads.github.com/organizations/%d/gei/archive"
+	expectedHost := "https://uploads.github.com"
+
+	variants := []string{
+		"",
+		"https://api.github.com",
+		"https://api.github.com/",
+		"https://api.github.com/graphql",
+		"https://api.github.com/v3",
+	}
+
+	for _, apiURL := range variants {
+		t.Run(apiURL, func(t *testing.T) {
+			baseURL, host, err := GetUploadsBaseURL(apiURL)
+			assert.NoError(t, err, "GitHub.com variant should not error: %s", apiURL)
+			assert.Equal(t, expectedBaseURL, baseURL, "Base URL mismatch for: %s", apiURL)
+			assert.Equal(t, expectedHost, host, "Host mismatch for: %s", apiURL)
 		})
 	}
 }

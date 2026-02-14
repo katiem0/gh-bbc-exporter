@@ -1307,3 +1307,85 @@ func TestMigrateFlagsWithTargetAPIURL(t *testing.T) {
 	assert.Equal(t, flags.TargetAPIURL, unmarshaledFlags.TargetAPIURL)
 	assert.Equal(t, flags.TargetOrg, unmarshaledFlags.TargetOrg)
 }
+
+func TestMigratePreRunValidatesTargetAPIURL(t *testing.T) {
+	defer cleanupExportDirs(t)
+
+	testCases := []struct {
+		name        string
+		apiURL      string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "GHES URL fails fast in PreRunE",
+			apiURL:      "https://github.example.com/api/v3",
+			expectError: true,
+			errorMsg:    "unsupported target API URL",
+		},
+		{
+			name:        "Non-GHE custom URL fails fast in PreRunE",
+			apiURL:      "https://custom.enterprise.com/api",
+			expectError: true,
+			errorMsg:    "unsupported target API URL",
+		},
+		{
+			name:        "Default github.com URL passes PreRunE",
+			apiURL:      "https://api.github.com",
+			expectError: false,
+		},
+		{
+			name:        "GHE.com URL passes PreRunE",
+			apiURL:      "https://api.octocorp.ghe.com",
+			expectError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := NewCmdMigrate()
+
+			args := []string{
+				"--workspace", "test-ws",
+				"--repo", "test-repo",
+				"--target-org", "test-org",
+				"--access-token", "test-token",
+				"--target-api-url", tc.apiURL,
+			}
+			cmd.SetArgs(args)
+
+			err := cmd.Execute()
+
+			if tc.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tc.errorMsg)
+			} else {
+				if err != nil {
+					assert.NotContains(t, err.Error(), "unsupported target API URL",
+						"PreRunE should not reject valid target API URL: %s", tc.apiURL)
+				}
+			}
+		})
+	}
+}
+
+func TestMigrateGHESFailsFastBeforeExport(t *testing.T) {
+	defer cleanupExportDirs(t)
+
+	cmd := NewCmdMigrate()
+	cmd.SetArgs([]string{
+		"--workspace", "test-ws",
+		"--repo", "test-repo",
+		"--target-org", "test-org",
+		"--access-token", "test-token",
+		"--target-api-url", "https://github.example.com/api/v3",
+	})
+
+	err := cmd.Execute()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported target API URL")
+
+	// Verify no export directory was created (export never started)
+	matches, _ := filepath.Glob("./bitbucket-export-*")
+	assert.Empty(t, matches, "No export directory should be created when target API URL is invalid")
+}

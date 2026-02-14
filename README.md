@@ -17,7 +17,7 @@ repositories into a format compatible with GitHub Enterprise migrations.
 ## Overview
 
 This extension helps you migrate repositories from Bitbucket Cloud to GitHub Enterprise Cloud,
-GitHub Enterprise Cloud Managed Users, and GiThub Enterprise Cloud with data residency
+GitHub Enterprise Cloud Managed Users, and GitHub Enterprise Cloud with data residency
 by creating an export archive that matches the format expected by GitHub Enterprise Importer (GEI).
 
 The exporter creates a complete migration archive containing:
