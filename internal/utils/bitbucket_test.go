@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -664,6 +665,29 @@ func TestGetPullRequestCommentsWithThreads(t *testing.T) {
                 ],
                 "next": null
             }`))
+		} else if strings.Contains(r.URL.Path, "diff") {
+			// Return a valid unified diff for test/file.txt where line 10 is modified
+			w.WriteHeader(http.StatusOK)
+			w.Header().Set("Content-Type", "text/plain")
+			diff := "diff --git a/test/file.txt b/test/file.txt\n" +
+				"index abc1234..def5678 100644\n" +
+				"--- a/test/file.txt\n" +
+				"+++ b/test/file.txt\n" +
+				"@@ -1,12 +1,12 @@\n" +
+				" line 1\n" +
+				" line 2\n" +
+				" line 3\n" +
+				" line 4\n" +
+				" line 5\n" +
+				" line 6\n" +
+				" line 7\n" +
+				" line 8\n" +
+				" line 9\n" +
+				"-old line 10\n" +
+				"+new line 10\n" +
+				" line 11\n" +
+				" line 12\n"
+			_, _ = w.Write([]byte(diff))
 		} else {
 			// For commit SHA lookups
 			w.WriteHeader(http.StatusOK)
@@ -1021,12 +1045,13 @@ func TestGetPullRequestCommentsConcurrent(t *testing.T) {
 	elapsed := time.Since(start)
 
 	assert.NoError(t, err)
-	assert.Equal(t, 5, requestCount, "Should make one request per PR")
+	// Each PR now makes 2 requests: one for the diff and one for comments
+	assert.Equal(t, 10, requestCount, "Should make two requests per PR (diff + comments)")
 	assert.Len(t, regularComments, 5, "Should have one comment per PR")
 	assert.Empty(t, reviewComments, "Should have no review comments")
 
-	// Since the current implementation is sequential, expect at least 250ms (5 * 50ms)
-	assert.GreaterOrEqual(t, elapsed, 250*time.Millisecond, "Should take at least 5*50ms")
+	// Diffs are fetched in parallel; comments are sequential (5 * 50ms = 250ms minimum)
+	assert.GreaterOrEqual(t, elapsed, 250*time.Millisecond, "Should take at least 5*50ms for sequential comment fetching")
 
 	// Log the actual time for debugging
 	t.Logf("Fetching comments for %d PRs took %v", len(prs), elapsed)
@@ -1166,6 +1191,10 @@ func TestGetPullRequestCommentsWithShortSHAs(t *testing.T) {
                 ],
                 "next": null
             }`))
+		} else if strings.Contains(r.URL.Path, "diff") {
+			// Return a minimal valid diff so inline comments are not demoted
+			w.WriteHeader(http.StatusOK)
+			writeResponse(t, w, []byte("diff --git a/test.txt b/test.txt\nindex 0000000..1234567 100644\n--- a/test.txt\n+++ b/test.txt\n@@ -0,0 +1,10 @@\n+line 1\n+line 2\n+line 3\n+line 4\n+line 5\n+line 6\n+line 7\n+line 8\n+line 9\n+line 10\n"))
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -1203,5 +1232,281 @@ func TestGetPullRequestCommentsWithShortSHAs(t *testing.T) {
 
 	for _, comment := range regularComments {
 		assert.Equal(t, "https://bitbucket.org/workspace/repo/pull/1", comment.PullRequest)
+	}
+}
+
+// TestGetPullRequestsSquashMergeHeadSHAFallback verifies that when a squash-merged PR's
+// head SHA does not exist as a git object in the local pack (branch was deleted after merge),
+// the head SHA is replaced with the merge commit SHA so GEI has a valid object to reference.
+func TestGetPullRequestsSquashMergeHeadSHAFallback(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+
+	// Build the directory structure the production code expects:
+	// exportDir/repositories/workspace/repo.git
+	exportDir := t.TempDir()
+	repoDir := filepath.Join(exportDir, "repositories", "workspace", "repo.git")
+	assert.NoError(t, os.MkdirAll(repoDir, 0755))
+
+	// Create a regular repo, make a commit, then clone it as bare into the expected path.
+	// git commit doesn't work directly on a bare repo, so we use a temp working tree.
+	workDir := t.TempDir()
+	gitEnv := append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com")
+
+	for _, step := range []struct {
+		args []string
+		dir  string
+	}{
+		{[]string{"init", workDir}, ""},
+		{[]string{"commit", "--allow-empty", "-m", "initial"}, workDir},
+		{[]string{"clone", "--bare", workDir, repoDir}, ""},
+	} {
+		cmd := exec.Command("git", step.args...)
+		cmd.Dir = step.dir
+		cmd.Env = gitEnv
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v failed: %s: %v", step.args, out, err)
+		}
+	}
+
+	// Get the real commit SHA that exists in the bare repo
+	cmd := exec.Command("git", "--git-dir", repoDir, "rev-parse", "HEAD")
+	out, err := cmd.Output()
+	assert.NoError(t, err)
+	existingSHA := strings.TrimSpace(string(out))
+	assert.Len(t, existingSHA, 40)
+
+	// A SHA that definitely does not exist in the repo
+	missingSHA := strings.Repeat("a", 40)
+
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// Return two merged PRs:
+		//   PR 1: head SHA exists in pack (regular merge or squash with branch kept)
+		//   PR 2: head SHA does NOT exist in pack (squash merge, branch deleted)
+		// Both have a merge_commit that points to existingSHA.
+		writeResponse(t, w, []byte(`{
+			"values": [
+				{
+					"id": 1,
+					"title": "Regular merge PR",
+					"state": "MERGED",
+					"updated_on": "2024-01-01T00:00:00+00:00",
+					"created_on": "2024-01-01T00:00:00+00:00",
+					"author": {"uuid": "{test-uuid}"},
+					"source":      {"branch": {"name": "feature"}, "commit": {"hash": "`+existingSHA+`"}},
+					"destination": {"branch": {"name": "main"},    "commit": {"hash": "`+existingSHA+`"}},
+					"merge_commit": {"hash": "`+existingSHA+`"}
+				},
+				{
+					"id": 2,
+					"title": "Squash merge PR - branch deleted",
+					"state": "MERGED",
+					"updated_on": "2024-01-02T00:00:00+00:00",
+					"created_on": "2024-01-02T00:00:00+00:00",
+					"author": {"uuid": "{test-uuid}"},
+					"source":      {"branch": {"name": "squash-branch"}, "commit": {"hash": "`+missingSHA+`"}},
+					"destination": {"branch": {"name": "main"},          "commit": {"hash": "`+existingSHA+`"}},
+					"merge_commit": {"hash": "`+existingSHA+`"}
+				}
+			],
+			"next": null
+		}`))
+	}))
+	defer testServer.Close()
+
+	client := &Client{
+		baseURL:        testServer.URL,
+		httpClient:     testServer.Client(),
+		logger:         logger,
+		commitSHACache: make(map[string]string),
+		exportDir:      exportDir,
+	}
+
+	prs, err := client.GetPullRequests("workspace", "repo", false, "")
+	assert.NoError(t, err)
+	assert.Len(t, prs, 2)
+
+	// PR 1: head SHA exists in pack — should be unchanged
+	assert.Equal(t, existingSHA, prs[0].Head.SHA,
+		"PR with existing head SHA should not be modified")
+
+	// PR 2: head SHA missing from pack — should fall back to merge commit SHA
+	assert.Equal(t, existingSHA, prs[1].Head.SHA,
+		"PR with missing head SHA should fall back to merge commit SHA")
+	assert.NotEqual(t, missingSHA, prs[1].Head.SHA,
+		"Missing head SHA should not be retained")
+}
+
+func TestParseHunkNewStart(t *testing.T) {
+	tests := []struct {
+		name     string
+		header   string
+		expected int
+	}{
+		{
+			name:     "standard hunk header",
+			header:   "@@ -10,6 +15,8 @@",
+			expected: 15,
+		},
+		{
+			name:     "new file starting at line 1",
+			header:   "@@ -0,0 +1,5 @@",
+			expected: 1,
+		},
+		{
+			name:     "no comma in new-file range",
+			header:   "@@ -1 +1 @@",
+			expected: 1,
+		},
+		{
+			name:     "hunk header with function context",
+			header:   "@@ -10,6 +15,8 @@ func foo() {",
+			expected: 15,
+		},
+		{
+			name:     "first line of file",
+			header:   "@@ -1,3 +1,3 @@",
+			expected: 1,
+		},
+		{
+			name:     "empty string falls back to 1",
+			header:   "",
+			expected: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, parseHunkNewStart(tt.header))
+		})
+	}
+}
+
+func TestParseDiffHunk(t *testing.T) {
+	// A simple two-file diff used across several cases.
+	simpleDiff := strings.Join([]string{
+		"diff --git a/foo.go b/foo.go",
+		"index 0000001..0000002 100644",
+		"--- a/foo.go",
+		"+++ b/foo.go",
+		"@@ -1,4 +1,5 @@",
+		" line1",
+		" line2",
+		"+added line",
+		" line3",
+		" line4",
+		"diff --git a/bar.go b/bar.go",
+		"index 0000003..0000004 100644",
+		"--- a/bar.go",
+		"+++ b/bar.go",
+		"@@ -1,3 +1,3 @@",
+		" alpha",
+		"-removed",
+		"+replaced",
+		" beta",
+	}, "\n")
+
+	tests := []struct {
+		name             string
+		diff             string
+		filePath         string
+		targetLine       int
+		expectNil        bool
+		expectedPosition int
+		expectHunkPrefix string // @@ header the hunk should start with
+	}{
+		{
+			name:             "added line matched",
+			diff:             simpleDiff,
+			filePath:         "foo.go",
+			targetLine:       3, // "+added line" is the 3rd new-file line
+			expectedPosition: 4, // position 1=@@, 2=line1, 3=line2, 4=+added line
+			expectHunkPrefix: "@@ -1,4 +1,5 @@",
+		},
+		{
+			name:             "context line matched",
+			diff:             simpleDiff,
+			filePath:         "foo.go",
+			targetLine:       4, // " line3" is the 4th new-file line
+			expectedPosition: 5,
+			expectHunkPrefix: "@@ -1,4 +1,5 @@",
+		},
+		{
+			name:             "replaced line in second file",
+			diff:             simpleDiff,
+			filePath:         "bar.go",
+			targetLine:       2, // "+replaced" is the 2nd new-file line
+			expectedPosition: 4, // position 1=@@, 2=alpha, 3=-removed, 4=+replaced
+			expectHunkPrefix: "@@ -1,3 +1,3 @@",
+		},
+		{
+			name:      "file not in diff returns nil",
+			diff:      simpleDiff,
+			filePath:  "missing.go",
+			targetLine: 1,
+			expectNil: true,
+		},
+		{
+			name:      "target line beyond end of hunk returns nil",
+			diff:      simpleDiff,
+			filePath:  "foo.go",
+			targetLine: 99,
+			expectNil: true,
+		},
+		{
+			name: "multi-hunk file: target in second hunk",
+			diff: strings.Join([]string{
+				"diff --git a/multi.go b/multi.go",
+				"index 0000001..0000002 100644",
+				"--- a/multi.go",
+				"+++ b/multi.go",
+				"@@ -1,3 +1,3 @@",
+				" a",
+				"-old",
+				"+new",
+				"@@ -10,3 +10,4 @@",
+				" x",
+				"+inserted",
+				" y",
+				" z",
+			}, "\n"),
+			filePath:         "multi.go",
+			targetLine:       11, // "+inserted" is new-file line 11
+			expectedPosition: 3,  // position 1=@@, 2=x, 3=+inserted
+			expectHunkPrefix: "@@ -10,3 +10,4 @@",
+		},
+		{
+			name: "deleted-only hunk has no new-file lines for target",
+			diff: strings.Join([]string{
+				"diff --git a/gone.go b/gone.go",
+				"index 0000001..0000002 100644",
+				"--- a/gone.go",
+				"+++ b/gone.go",
+				"@@ -1,3 +0,0 @@",
+				"-line1",
+				"-line2",
+				"-line3",
+			}, "\n"),
+			filePath:   "gone.go",
+			targetLine: 1,
+			expectNil:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseDiffHunk(tt.diff, tt.filePath, tt.targetLine)
+			if tt.expectNil {
+				assert.Nil(t, result)
+				return
+			}
+			assert.NotNil(t, result)
+			assert.Equal(t, tt.expectedPosition, result.Position)
+			assert.True(t, strings.HasPrefix(result.Hunk, tt.expectHunkPrefix),
+				"hunk should start with %q, got %q", tt.expectHunkPrefix, result.Hunk)
+		})
 	}
 }
