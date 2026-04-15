@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
@@ -26,9 +28,10 @@ type Client struct {
 	username         string // Will be removed after Sept 2025 with appPass
 	appPass          string // To be deprecated Sept 2025
 	logger           *zap.Logger
-	commitSHACache   map[string]string
-	exportDir        string
-	skipCommitLookup bool
+	commitSHACache      map[string]string
+	prSourceCommitCache map[int]string // prID -> original source branch tip SHA
+	exportDir           string
+	skipCommitLookup    bool
 }
 
 func NewClient(baseURL, accessToken, apiToken, email, username, appPass string, logger *zap.Logger, exportDir string, skipCommitLookup bool) *Client {
@@ -66,9 +69,10 @@ func NewClient(baseURL, accessToken, apiToken, email, username, appPass string, 
 		username:         username,
 		appPass:          appPass,
 		logger:           logger,
-		commitSHACache:   make(map[string]string),
-		exportDir:        exportDir,
-		skipCommitLookup: skipCommitLookup,
+		commitSHACache:      make(map[string]string),
+		prSourceCommitCache: make(map[int]string),
+		exportDir:           exportDir,
+		skipCommitLookup:    skipCommitLookup,
 	}
 }
 
@@ -95,6 +99,20 @@ func (c *Client) GetRepository(workspace, repoSlug string) (*data.BitbucketRepos
 	}
 
 	return &repo, nil
+}
+
+func (c *Client) setAuth(req *http.Request) {
+	if c.accessToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	} else if c.apiToken != "" {
+		if c.email != "" {
+			req.SetBasicAuth(c.email, c.apiToken)
+		} else {
+			req.SetBasicAuth("x-bitbucket-api-token-auth", c.apiToken)
+		}
+	} else if c.username != "" && c.appPass != "" {
+		req.SetBasicAuth(c.username, c.appPass)
+	}
 }
 
 func (c *Client) makeRequest(method, endpoint string, v interface{}) error {
@@ -137,18 +155,7 @@ func (c *Client) makeRequest(method, endpoint string, v interface{}) error {
 			return err
 		}
 
-		if c.accessToken != "" {
-			req.Header.Set("Authorization", "Bearer "+c.accessToken)
-		} else if c.apiToken != "" {
-			if c.email != "" {
-				req.SetBasicAuth(c.email, c.apiToken)
-			} else {
-				req.SetBasicAuth("x-bitbucket-api-token-auth", c.apiToken)
-			}
-		} else if c.username != "" && c.appPass != "" {
-			req.SetBasicAuth(c.username, c.appPass)
-		}
-
+		c.setAuth(req)
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := c.httpClient.Do(req)
@@ -442,6 +449,33 @@ func (c *Client) GetPullRequests(workspace, repoSlug string, openPRsOnly bool, p
 				mergeCommitSHA = &fullMergeSHA
 			}
 
+			// For squash-merged PRs with deleted branches, the head SHA may not exist
+			// as a git object in the pack. Fall back to the merge commit SHA so GEI
+			// has a valid commit to show in the Commits tab rather than nothing.
+			if pr.State == "MERGED" && mergeCommitSHA != nil {
+				repoPath := filepath.Join(c.exportDir, "repositories", workspace, repoSlug+".git")
+				if _, statErr := os.Stat(repoPath); statErr != nil {
+					c.logger.Debug("repo path not found, skipping head SHA check",
+						zap.String("repo_path", repoPath),
+						zap.Error(statErr))
+				} else {
+					cmd := exec.Command("git", "cat-file", "-e", headSHA)
+					cmd.Dir = repoPath
+					if err := cmd.Run(); err != nil {
+						c.logger.Debug("head SHA not in pack, falling back to merge commit SHA for PR",
+							zap.Int("pr_id", pr.ID),
+							zap.String("head_sha", headSHA),
+							zap.String("merge_commit_sha", *mergeCommitSHA))
+						headSHA = *mergeCommitSHA
+						// Update the source commit cache so review comments use the same
+						// valid SHA — the original branch tip is not in the pack.
+						if c.prSourceCommitCache != nil {
+							c.prSourceCommitCache[pr.ID] = headSHA
+						}
+					}
+				}
+			}
+
 			// Create the Pull Request with GitHub-compatible structure
 			pullRequest := data.PullRequest{
 				Type:       "pull_request",
@@ -550,6 +584,146 @@ func (c *Client) GetFullCommitSHA(workspace, repoSlug, commitHash string) (strin
 	return commitHash, nil
 }
 
+// GetPullRequestDiff fetches the unified diff for a pull request as raw text.
+func (c *Client) GetPullRequestDiff(workspace, repoSlug string, prID int) (string, error) {
+	fullURL := fmt.Sprintf("%s/repositories/%s/%s/pullrequests/%d/diff",
+		c.baseURL, workspace, repoSlug, prID)
+
+	req, err := http.NewRequest("GET", fullURL, nil)
+	if err != nil {
+		return "", err
+	}
+
+	c.setAuth(req)
+	req.Header.Set("Accept", "text/plain")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("diff request failed with status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+// DiffHunkResult holds the extracted diff hunk and GitHub position for an inline comment.
+type DiffHunkResult struct {
+	Hunk     string
+	Position int
+}
+
+// parseDiffHunk finds the unified diff hunk for a given file path and new-file line number,
+// returning the hunk text and the GitHub position (1-based count from the @@ header line).
+// Returns nil if the file or line cannot be found in the diff.
+func parseDiffHunk(diff, filePath string, targetLine int) *DiffHunkResult {
+	lines := strings.Split(diff, "\n")
+
+	inTargetFile := false
+	var hunkLines []string
+	hunkStarted := false
+	newFileLineNum := 0
+	position := 0
+	targetPosition := -1
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "diff --git ") {
+			if targetPosition != -1 {
+				break
+			}
+			inTargetFile = strings.HasSuffix(line, " b/"+filePath)
+			hunkStarted = false
+			hunkLines = nil
+			newFileLineNum = 0
+			position = 0
+			continue
+		}
+
+		if !inTargetFile {
+			continue
+		}
+
+		if strings.HasPrefix(line, "--- ") || strings.HasPrefix(line, "+++ ") ||
+			strings.HasPrefix(line, "index ") || strings.HasPrefix(line, "new file") ||
+			strings.HasPrefix(line, "deleted file") || strings.HasPrefix(line, "similarity") ||
+			strings.HasPrefix(line, "rename") {
+			continue
+		}
+
+		if strings.HasPrefix(line, "@@ ") {
+			if targetPosition != -1 {
+				break
+			}
+			hunkStarted = true
+			hunkLines = []string{line}
+			position = 1
+			newFileLineNum = parseHunkNewStart(line) - 1
+			continue
+		}
+
+		if !hunkStarted {
+			continue
+		}
+
+		hunkLines = append(hunkLines, line)
+		position++
+
+		switch {
+		case strings.HasPrefix(line, "+"):
+			newFileLineNum++
+			if newFileLineNum == targetLine {
+				targetPosition = position
+			}
+		case strings.HasPrefix(line, "-"):
+			// Removed lines don't advance the new file line number
+		default:
+			newFileLineNum++
+			if newFileLineNum == targetLine {
+				targetPosition = position
+			}
+		}
+
+		if targetPosition != -1 {
+			break
+		}
+	}
+
+	if targetPosition == -1 {
+		return nil
+	}
+
+	return &DiffHunkResult{
+		Hunk:     strings.Join(hunkLines, "\n"),
+		Position: targetPosition,
+	}
+}
+
+// parseHunkNewStart extracts the new-file start line number from a unified diff hunk header.
+// e.g. "@@ -10,6 +15,8 @@" returns 15.
+func parseHunkNewStart(hunkHeader string) int {
+	parts := strings.Fields(hunkHeader)
+	for _, part := range parts {
+		if strings.HasPrefix(part, "+") {
+			numPart := strings.TrimPrefix(part, "+")
+			if idx := strings.Index(numPart, ","); idx != -1 {
+				numPart = numPart[:idx]
+			}
+			var n int
+			if _, err := fmt.Sscanf(numPart, "%d", &n); err == nil {
+				return n
+			}
+		}
+	}
+	return 1
+}
+
 func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests []data.PullRequest) ([]data.IssueComment, []data.PullRequestReviewComment, error) {
 	c.logger.Info("Fetching pull request comments")
 
@@ -572,11 +746,48 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 
 	resolvedSHAs := make(map[int]bool)
 	failedPRs := 0
+	prDiffCache := make(map[int]string) // prID -> raw unified diff
+	var prDiffMu sync.Mutex
+	var wg sync.WaitGroup
+
+	for prID := range prURLMap {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			diff, err := c.GetPullRequestDiff(workspace, repoSlug, id)
+			if err != nil {
+				c.logger.Debug("Failed to fetch PR diff, inline comments will be demoted if no diff available",
+					zap.Int("pr_id", id),
+					zap.Error(err))
+				return
+			}
+			prDiffMu.Lock()
+			prDiffCache[id] = diff
+			prDiffMu.Unlock()
+		}(prID)
+	}
+	wg.Wait()
 
 	for prID := range prURLMap {
 		page := 1
 		pageLen := 100
 		hasMore := true
+
+		// Accumulate inline comments whose real diff hunk can't be found,
+		// grouped by thread URL for a single coherent issue comment per thread.
+		type demotedEntry struct {
+			userUUID  string
+			body      string
+			createdAt string
+		}
+		type demotedMeta struct {
+			path           string
+			lineNumber     int
+			firstCommentID int
+			prURL          string
+		}
+		demotedEntries := make(map[string][]demotedEntry) // threadURL -> entries
+		demotedMetas := make(map[string]demotedMeta)      // threadURL -> metadata
 
 		for hasMore {
 			baseEndpoint := fmt.Sprintf("repositories/%s/%s/pullrequests/%d/comments",
@@ -656,35 +867,81 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 					prFullURL := formatURL("pr", workspace, repoSlug, prNumber)
 					userURL := formatURL("user", workspace, "", strings.Trim(comment.User.UUID, "{}"))
 					commitSHA := prCommitMap[prID]
+					prDiff := prDiffCache[prID]
 
-					// Create diff hunk
-					diffHunk := fmt.Sprintf("@@ -0,0 +1,%d @@\n+%s", lineNumber, transformedBody)
+					if prDiff == "" {
+						// No diff available (e.g. squash merge with deleted branch) — demote
+						// the inline review comment to a regular issue comment so it appears
+						// as readable plain text rather than a broken preserved fallback.
+						commentURL := formatURL("issue_comment", workspace, repoSlug, prNumber, comment.ID)
+						prURL := formatURL("pr", workspace, repoSlug, prNumber)
+						demotedBody := fmt.Sprintf("_[Inline comment on `%s` line %d]_\n\n%s",
+							comment.Inline.Path, lineNumber, transformedBody)
+						regularComments = append(regularComments, data.IssueComment{
+							Type:        "issue_comment",
+							URL:         commentURL,
+							User:        userURL,
+							Body:        demotedBody,
+							CreatedAt:   createdAt,
+							Formatter:   "markdown",
+							Reactions:   []string{},
+							PullRequest: prURL,
+						})
+						c.logger.Debug("Demoted inline review comment to issue comment (no diff available)",
+							zap.Int("pr_id", prID),
+							zap.String("path", comment.Inline.Path),
+							zap.Int("line", lineNumber))
+					} else {
+						// Diff is available — extract the real hunk and position.
+						diffHunkResult := parseDiffHunk(prDiff, comment.Inline.Path, lineNumber)
 
-					// Create review comment with correct format
-					reviewComment := data.PullRequestReviewComment{
-						Type:                    "pull_request_review_comment",
-						URL:                     commentURL,
-						PullRequest:             prFullURL,
-						PullRequestReview:       reviewURL,
-						PullRequestReviewThread: threadURL,
-						User:                    userURL,
-						CommitID:                commitSHA,
-						OriginalCommitId:        commitSHA,
-						Path:                    comment.Inline.Path,
-						Position:                lineNumber,
-						OriginalPosition:        lineNumber,
-						Body:                    transformedBody,
-						CreatedAt:               createdAt,
-						UpdatedAt:               updatedAt,
-						Formatter:               "markdown",
-						DiffHunk:                diffHunk,
-						State:                   1,
-						InReplyTo:               inReplyTo,
-						Reactions:               []string{},
-						SubjectType:             "line",
+						if diffHunkResult == nil {
+							// Real hunk not found (e.g. large PR where Bitbucket truncated
+							// the diff). Accumulate into a grouped issue comment per thread.
+							uuid := strings.Trim(comment.User.UUID, "{}")
+							demotedEntries[threadURL] = append(demotedEntries[threadURL], demotedEntry{
+								userUUID:  uuid,
+								body:      transformedBody,
+								createdAt: createdAt,
+							})
+							if _, exists := demotedMetas[threadURL]; !exists {
+								demotedMetas[threadURL] = demotedMeta{
+									path:           comment.Inline.Path,
+									lineNumber:     lineNumber,
+									firstCommentID: comment.ID,
+									prURL:          formatURL("pr", workspace, repoSlug, prNumber),
+								}
+							}
+							c.logger.Debug("Queued inline review comment for grouped demote (hunk not found in diff)",
+								zap.Int("pr_id", prID),
+								zap.String("path", comment.Inline.Path),
+								zap.Int("line", lineNumber))
+						} else {
+							reviewComment := data.PullRequestReviewComment{
+								Type:                    "pull_request_review_comment",
+								URL:                     commentURL,
+								PullRequest:             prFullURL,
+								PullRequestReview:       reviewURL,
+								PullRequestReviewThread: threadURL,
+								User:                    userURL,
+								CommitID:                commitSHA,
+								OriginalCommitId:        commitSHA,
+								Path:                    comment.Inline.Path,
+								Position:                diffHunkResult.Position,
+								OriginalPosition:        diffHunkResult.Position,
+								Body:                    transformedBody,
+								CreatedAt:               createdAt,
+								UpdatedAt:               updatedAt,
+								Formatter:               "markdown",
+								DiffHunk:                diffHunkResult.Hunk,
+								State:                   1,
+								InReplyTo:               inReplyTo,
+								Reactions:               []string{},
+								SubjectType:             "line",
+							}
+							reviewComments = append(reviewComments, reviewComment)
+						}
 					}
-
-					reviewComments = append(reviewComments, reviewComment)
 				} else {
 					commentURL := formatURL("issue_comment", workspace, repoSlug, prNumber, comment.ID)
 					prURL := formatURL("pr", workspace, repoSlug, prNumber)
@@ -709,6 +966,35 @@ func (c *Client) GetPullRequestComments(workspace, repoSlug string, pullRequests
 			if hasMore {
 				page++
 			}
+		}
+
+		// Emit one grouped issue comment per demoted thread
+		for tURL, entries := range demotedEntries {
+			meta := demotedMetas[tURL]
+			var sb strings.Builder
+			sb.WriteString(fmt.Sprintf("_[Inline comment thread on `%s` line %d]_\n\n", meta.path, meta.lineNumber))
+			for _, e := range entries {
+				displayName := e.userUUID
+				if user, ok := c.userCache[e.userUUID]; ok {
+					if user.DisplayName != "" {
+						displayName = user.DisplayName
+					} else if user.Nickname != "" {
+						displayName = user.Nickname
+					}
+				}
+				sb.WriteString(fmt.Sprintf("**%s**: %s\n\n", displayName, e.body))
+			}
+			commentURL := formatURL("issue_comment", workspace, repoSlug, fmt.Sprintf("%d", prID), meta.firstCommentID)
+			regularComments = append(regularComments, data.IssueComment{
+				Type:        "issue_comment",
+				URL:         commentURL,
+				User:        formatURL("user", workspace, "", entries[0].userUUID),
+				Body:        strings.TrimRight(sb.String(), "\n"),
+				CreatedAt:   entries[0].createdAt,
+				Formatter:   "markdown",
+				Reactions:   []string{},
+				PullRequest: meta.prURL,
+			})
 		}
 	}
 
