@@ -827,6 +827,52 @@ func TestGetOutputPath(t *testing.T) {
 	assert.Equal(t, "", path, "Empty output dir should remain empty until Export() is called")
 }
 
+// TestUpdateRepositoryFieldPreservesWikiURLNull guards the GHE migrator wiki-import
+// fix at the disk round-trip layer: editing repositories_000001.json (e.g. to
+// update default_branch) must not silently turn `"wiki_url":null` into
+// `"wiki_url":""`, which would re-trigger InvalidTarballUrl.
+func TestUpdateRepositoryFieldPreservesWikiURLNull(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "update-repo-field-wiki-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	logger, _ := zap.NewDevelopment()
+	exporter := NewExporter(&Client{}, tempDir, logger, false, "")
+
+	// Seed with WikiURL nil (the only state we ever produce post-fix).
+	initial := []data.Repository{
+		{
+			Type:          "repository",
+			Name:          "r",
+			Slug:          "r",
+			DefaultBranch: "main",
+			WikiURL:       nil,
+		},
+	}
+	err = exporter.writeJSONFile("repositories_000001.json", initial)
+	assert.NoError(t, err)
+
+	exporter.updateRepositoryField("r", "default_branch", "develop")
+	exporter.updateRepositoryField("r", "git_url", "tarball://root/repositories/ws/r.git")
+
+	b, err := os.ReadFile(filepath.Join(tempDir, "repositories_000001.json"))
+	assert.NoError(t, err)
+
+	// Normalize JSON so the assertion is whitespace-insensitive (the migrator
+	// consumes raw JSON regardless of indentation).
+	var compact bytes.Buffer
+	assert.NoError(t, json.Compact(&compact, b))
+
+	assert.Contains(t, compact.String(), `"wiki_url":null`,
+		"wiki_url must remain null after round-trip through updateRepositoryField")
+	assert.NotContains(t, compact.String(), `"wiki_url":""`)
+
+	var repos []data.Repository
+	assert.NoError(t, json.Unmarshal(b, &repos))
+	assert.Nil(t, repos[0].WikiURL)
+	assert.Equal(t, "develop", repos[0].DefaultBranch)
+}
+
 func TestUpdateRepositoryFieldCaseInsensitive(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "update-repo-field-case-")
 	assert.NoError(t, err)

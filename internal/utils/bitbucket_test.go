@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
@@ -1203,5 +1205,66 @@ func TestGetPullRequestCommentsWithShortSHAs(t *testing.T) {
 
 	for _, comment := range regularComments {
 		assert.Equal(t, "https://bitbucket.org/workspace/repo/pull/1", comment.PullRequest)
+	}
+}
+
+// TestGetUsersAlwaysEmitsEmptyEmailsArray pins the fix for the GHE migrator's
+// `users.emails.find(...)` NoMethodError: every data.User construction path in
+// GetUsers must produce JSON with `"emails":[]`, never `"emails":null`.
+func TestGetUsersAlwaysEmitsEmptyEmailsArray(t *testing.T) {
+	cases := []struct {
+		name    string
+		handler http.HandlerFunc
+	}{
+		{
+			name: "members loop",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				writeResponse(t, w, []byte(`{"values":[{"user":{"display_name":"Test User","uuid":"{test-uuid}"}}],"next":null}`))
+			},
+		},
+		{
+			name: "empty members fallback",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				writeResponse(t, w, []byte(`{"values":[],"next":null}`))
+			},
+		},
+		{
+			name: "api error fallback",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+				writeResponse(t, w, []byte(`{"error":"boom"}`))
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(tc.handler)
+			defer srv.Close()
+
+			logger, _ := zap.NewDevelopment()
+			client := &Client{
+				baseURL:        srv.URL,
+				httpClient:     srv.Client(),
+				logger:         logger,
+				commitSHACache: make(map[string]string),
+			}
+
+			users, err := client.GetUsers("workspace", "repo")
+			assert.NoError(t, err)
+			require.NotEmpty(t, users)
+
+			for _, u := range users {
+				assert.NotNil(t, u.Emails,
+					"Emails must be non-nil so JSON serializes as [] (GHE migrator calls .find on it)")
+			}
+
+			b, err := json.Marshal(users)
+			assert.NoError(t, err)
+			assert.Contains(t, string(b), `"emails":[]`)
+			assert.NotContains(t, string(b), `"emails":null`)
+		})
 	}
 }

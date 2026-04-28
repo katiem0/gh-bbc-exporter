@@ -18,6 +18,7 @@ import (
 
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
@@ -504,6 +505,37 @@ func TestCreateBasicUsers_Fallback(t *testing.T) {
 	assert.Equal(t, "user", users[0].Type)
 	assert.Equal(t, "ws-fallback", users[0].Login)
 	assert.Equal(t, "ws-fallback", users[0].Name)
+
+	// Pins the fix for the GHE migrator's users.emails.find(...) NoMethodError:
+	// the basic-users fallback must serialize emails as [], not null.
+	assert.NotNil(t, users[0].Emails, "Emails must be non-nil so JSON serializes as []")
+	b, err := json.Marshal(users)
+	assert.NoError(t, err)
+	assert.Contains(t, string(b), `"emails":[]`)
+	assert.NotContains(t, string(b), `"emails":null`)
+}
+
+// TestCreateRepositoriesDataEmitsWikiURLNull pins the fix for the GHE migrator's
+// InvalidTarballUrl on wiki import: an unset wiki_url must serialize as null
+// (falsy in Ruby) so the migrator skips the wiki-import branch entirely.
+func TestCreateRepositoriesDataEmitsWikiURLNull(t *testing.T) {
+	logger, err := zap.NewDevelopment()
+	require.NoError(t, err)
+	defer func() { _ = logger.Sync() }()
+	exporter := NewExporter(&Client{}, "", logger, false, "")
+
+	repos := exporter.createRepositoriesData(&data.BitbucketRepository{
+		Name:      "r",
+		Slug:      "r",
+		CreatedOn: "2024-01-01T00:00:00+00:00",
+	}, "ws")
+	assert.Len(t, repos, 1)
+	assert.Nil(t, repos[0].WikiURL, "WikiURL must be nil so it serializes as null")
+
+	b, err := json.Marshal(repos)
+	assert.NoError(t, err)
+	assert.Contains(t, string(b), `"wiki_url":null`)
+	assert.NotContains(t, string(b), `"wiki_url":""`)
 }
 
 func TestUpdateRepositoryField(t *testing.T) {

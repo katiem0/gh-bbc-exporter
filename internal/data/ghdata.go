@@ -98,7 +98,7 @@ type Repository struct {
 	CreatedAt              string                 `json:"created_at"`
 	GitURL                 string                 `json:"git_url"`
 	DefaultBranch          string                 `json:"default_branch"`
-	WikiURL                string                 `json:"wiki_url"`
+	WikiURL                *string                `json:"wiki_url"`
 	PublicKeys             []interface{}          `json:"public_keys"`
 	RepositoryTopics       []interface{}          `json:"repository_topics,omitempty"`
 	SecurityAndAnalysis    map[string]interface{} `json:"security_and_analysis,omitempty"`
