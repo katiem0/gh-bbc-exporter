@@ -238,7 +238,7 @@ func (c *Client) GetUsers(workspace, repoSlug string) ([]data.User, error) {
 					Company:   nil,
 					Website:   nil,
 					Location:  nil,
-					Emails:    nil,
+					Emails:    []data.Email{},
 					CreatedAt: formatDateToZ(time.Now().Format(time.RFC3339)),
 				},
 			}, nil
@@ -257,7 +257,7 @@ func (c *Client) GetUsers(workspace, repoSlug string) ([]data.User, error) {
 				Company:   nil,
 				Website:   nil,
 				Location:  nil,
-				Emails:    nil,
+				Emails:    []data.Email{},
 				CreatedAt: formatDateToZ(time.Now().Format(time.RFC3339)),
 			}
 
@@ -279,7 +279,7 @@ func (c *Client) GetUsers(workspace, repoSlug string) ([]data.User, error) {
 			Company:   nil,
 			Website:   nil,
 			Location:  nil,
-			Emails:    nil,
+			Emails:    []data.Email{},
 			CreatedAt: formatDateToZ(time.Now().Format(time.RFC3339)),
 		})
 	}

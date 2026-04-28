@@ -160,3 +160,50 @@ func TestCmdExportFlagsDefaults(t *testing.T) {
 	assert.Empty(t, flags.BitbucketAppPass)
 	assert.Empty(t, flags.BitbucketAPIURL)
 }
+func TestUserEmailsMarshalsAsEmptyArrayNotNull(t *testing.T) {
+	u := User{
+		Type:   "user",
+		Login:  "alice",
+		Name:   "Alice",
+		Emails: []Email{},
+	}
+	b, err := json.Marshal(u)
+	assert.NoError(t, err)
+	assert.Contains(t, string(b), `"emails":[]`,
+		"emails must serialize as [] so the GHE migrator can call .find on it")
+	assert.NotContains(t, string(b), `"emails":null`)
+}
+
+func TestUserEmailsNilMarshalsAsNull(t *testing.T) {
+	// Guard test: documents the bug behavior we're avoiding.
+	u := User{Type: "user", Login: "alice", Emails: nil}
+	b, err := json.Marshal(u)
+	assert.NoError(t, err)
+	assert.Contains(t, string(b), `"emails":null`,
+		"sanity check: nil slice still serializes to null in Go")
+}
+
+func TestRepositoryWikiURLNilMarshalsAsNull(t *testing.T) {
+	r := Repository{Type: "repository", Name: "r", Slug: "r"}
+	b, err := json.Marshal(r)
+	assert.NoError(t, err)
+	assert.Contains(t, string(b), `"wiki_url":null`,
+		"wiki_url must be null when unset so the GHE migrator skips wiki import")
+	assert.NotContains(t, string(b), `"wiki_url":""`)
+}
+
+func TestRepositoryWikiURLPointerWhenSet(t *testing.T) {
+	s := "https://example.com/wiki.tar.gz"
+	r := Repository{Type: "repository", Name: "r", Slug: "r", WikiURL: &s}
+	b, err := json.Marshal(r)
+	assert.NoError(t, err)
+	assert.Contains(t, string(b), `"wiki_url":"https://example.com/wiki.tar.gz"`)
+}
+
+func TestRepositoryWikiURLRoundTripNull(t *testing.T) {
+	in := []byte(`{"type":"repository","name":"r","slug":"r","wiki_url":null}`)
+	var r Repository
+	err := json.Unmarshal(in, &r)
+	assert.NoError(t, err)
+	assert.Nil(t, r.WikiURL)
+}
