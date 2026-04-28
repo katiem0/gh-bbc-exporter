@@ -858,11 +858,14 @@ func TestUpdateRepositoryFieldPreservesWikiURLNull(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join(tempDir, "repositories_000001.json"))
 	assert.NoError(t, err)
 
-	// Field must still serialize as null (string match, not unmarshal, since the
-	// migrator consumes the raw JSON).
-	assert.Contains(t, string(b), `"wiki_url": null`,
+	// Normalize JSON so the assertion is whitespace-insensitive (the migrator
+	// consumes raw JSON regardless of indentation).
+	var compact bytes.Buffer
+	assert.NoError(t, json.Compact(&compact, b))
+
+	assert.Contains(t, compact.String(), `"wiki_url":null`,
 		"wiki_url must remain null after round-trip through updateRepositoryField")
-	assert.NotContains(t, string(b), `"wiki_url": ""`)
+	assert.NotContains(t, compact.String(), `"wiki_url":""`)
 
 	var repos []data.Repository
 	assert.NoError(t, json.Unmarshal(b, &repos))

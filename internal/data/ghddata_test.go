@@ -174,15 +174,6 @@ func TestUserEmailsMarshalsAsEmptyArrayNotNull(t *testing.T) {
 	assert.NotContains(t, string(b), `"emails":null`)
 }
 
-func TestUserEmailsNilMarshalsAsNull(t *testing.T) {
-	// Guard test: documents the bug behavior we're avoiding.
-	u := User{Type: "user", Login: "alice", Emails: nil}
-	b, err := json.Marshal(u)
-	assert.NoError(t, err)
-	assert.Contains(t, string(b), `"emails":null`,
-		"sanity check: nil slice still serializes to null in Go")
-}
-
 func TestRepositoryWikiURLNilMarshalsAsNull(t *testing.T) {
 	r := Repository{Type: "repository", Name: "r", Slug: "r"}
 	b, err := json.Marshal(r)

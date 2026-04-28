@@ -18,6 +18,7 @@ import (
 
 	"github.com/katiem0/gh-bbc-exporter/internal/data"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
@@ -518,7 +519,9 @@ func TestCreateBasicUsers_Fallback(t *testing.T) {
 // InvalidTarballUrl on wiki import: an unset wiki_url must serialize as null
 // (falsy in Ruby) so the migrator skips the wiki-import branch entirely.
 func TestCreateRepositoriesDataEmitsWikiURLNull(t *testing.T) {
-	logger, _ := zap.NewDevelopment()
+	logger, err := zap.NewDevelopment()
+	require.NoError(t, err)
+	defer func() { _ = logger.Sync() }()
 	exporter := NewExporter(&Client{}, "", logger, false, "")
 
 	repos := exporter.createRepositoriesData(&data.BitbucketRepository{
