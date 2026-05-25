@@ -32,7 +32,7 @@ jobs:
         run: go build -v .
 
       - name: Run linting
-        uses: golangci/golangci-lint-action@v9.2.0
+        uses: golangci/golangci-lint-action@v9.2.1
         with:
           version: latest
           args: --timeout=5m
