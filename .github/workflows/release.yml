@@ -13,9 +13,9 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
 
-      - uses: cli/gh-extension-precompile@v2.1.0
+      - uses: cli/gh-extension-precompile@v2.2.0
         with:
           generate_attestations: true
           go_version_file: go.mod
